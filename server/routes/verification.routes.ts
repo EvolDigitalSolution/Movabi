@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { verifiedPaymentAccount } from '../services/driver-payment-account-status';
+import { loadInspectionEvidence } from '../services/driver-inspection-evidence';
 import { BIKE_INSPECTION_SLOTS, parseOnboardingItems, serializeOnboardingItems } from './driver-onboarding.routes';
 import { GbMotService } from '../services/gb-mot.service';
 import { GbMotMonitorService } from '../services/gb-mot-monitor.service';
@@ -366,7 +367,8 @@ router.post('/driver-submission', async (req, res) => {
       authEmailConfirmed: canonicalProfile.emailConfirmed,
       countryCode: submissionProfile.country_code,
       marketCity: submissionProfile.market_city || submissionProfile.city,
-      paymentAccount: await verifiedPaymentAccount(user.id, req.app.locals.vayduPaymentAccountSetup)
+      paymentAccount: await verifiedPaymentAccount(user.id, req.app.locals.vayduPaymentAccountSetup),
+      inspection: await loadInspectionEvidence(supabase, user.id, profile.tenant_id, vehicle)
     });
     const resubmission = [profile.driver_review_status, profile.verification_status].includes('action_required');
     const { error: auditError } = await supabase.from('driver_requirement_audit').insert({
@@ -464,7 +466,8 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
       authEmailConfirmed: !!authUser?.user?.email_confirmed_at,
       countryCode: profile.country_code || profile.country || vehicle?.country_code,
       // Same payment-account authority as onboarding (missing it blocked every driver's review).
-      paymentAccount: await verifiedPaymentAccount(driverId, req.app.locals.vayduPaymentAccountSetup)
+      paymentAccount: await verifiedPaymentAccount(driverId, req.app.locals.vayduPaymentAccountSetup),
+      inspection: await loadInspectionEvidence(supabase, driverId, profile.tenant_id, vehicle)
     });
     const blockingRequirements = getBlockingRequirements(requirementsInput);
     // Release closure: the CANONICAL resolution (DriverRequirementService) is the
@@ -750,7 +753,9 @@ router.post('/drivers/:driverId/manual-approve', async (req, res) => {
       countryCode: approvalProfile.country_code,
       marketCity: approvalProfile.market_city || approvalProfile.city,
       // Same payment-account authority as onboarding (missing it made every approval refuse).
-      paymentAccount: await verifiedPaymentAccount(driverId, req.app.locals.vayduPaymentAccountSetup)
+      paymentAccount: await verifiedPaymentAccount(driverId, req.app.locals.vayduPaymentAccountSetup),
+      // Approval needs every required inspection photo APPROVED for the current vehicle revision.
+      inspection: await loadInspectionEvidence(supabase, driverId, approvalProfile.tenant_id, approvalVehicleRow)
     });
 
     const approvalBlockers = approvalResolution.automaticRequirements.filter((item) => item.blockingForSubmission);

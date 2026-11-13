@@ -75,17 +75,20 @@ console.log(`BATCH1F_SERVICE_AND_ROUTE_RUNTIME=${count}_PASSED`);
 const bookingCode=stripTypeScriptTypes(readFileSync(new URL('../server/routes/booking.routes.ts',import.meta.url),'utf8'));
 const start=bookingCode.indexOf('async function requirePayoutEligible('),end=bookingCode.indexOf('\n/**',start);
 assert.ok(start>=0&&end>start);
-let payouts=0,markets=0;
-const acquisition=new Function('supabaseAdmin','assertDriverJobMarket','cashRideAcquisitionApproved','PayoutEligibilityService','mapCashCreditError','DriverPaymentAccountService','sandboxDestinationProvider',
+let payouts=0,markets=0,inspections=0,inspectionBlocked=false;
+// The acquisition gate also requires an approved vehicle inspection (2026-11-13), checked before any shortcut.
+const acquisition=new Function('supabaseAdmin','assertDriverJobMarket','cashRideAcquisitionApproved','PayoutEligibilityService','mapCashCreditError','DriverPaymentAccountService','sandboxDestinationProvider','assertInspectionApproved',
  'return ('+bookingCode.slice(start,end).trim()+');')(
  {rpc(...args){return requestDb.rpc(...args);}},async()=>{markets++;},api.cashRideAcquisitionApproved,
  {async assertEligible(){payouts++;}},api.mapCashCreditError,
- class {async ready(){payouts++;return {currency:'NGN'};}},()=>{});
+ class {async ready(){payouts++;return {currency:'NGN'};}},()=>{},
+ async()=>{inspections++;if(inspectionBlocked)throw Object.assign(new Error('Your vehicle inspection is awaiting admin review.'),{code:'INSPECTION_NOT_APPROVED'});});
 const response=()=>({statusCode:200,body:null,status(n){this.statusCode=n;return this;},json(v){this.body=v;return this;}});
 await test('actual acquisition wrapper skips Stripe only for enabled approved cash Ride',async()=>{requestDb=db();payouts=markets=0;assert.equal(await acquisition(driver,response(),job()),true);assert.equal(payouts,0);assert.equal(markets,1);});
 await test('actual acquisition wrapper preserves payout check while pilot disabled',async()=>{const s=state();s.pilotEnabled=false;requestDb=db(s);payouts=0;assert.equal(await acquisition(driver,response(),job()),true);assert.equal(payouts,1);});
 await test('actual acquisition wrapper keeps card payout guard',async()=>{requestDb=db();payouts=0;assert.equal(await acquisition(driver,response(),{...job(),payment_method:'card'}),true);assert.equal(payouts,1);assert.equal(requestDb.calls.length,0);});
 await test('actual acquisition wrapper stops on cash reconciliation failure',async()=>{const s=state();s.balance.deficitMinor='1';requestDb=db(s);payouts=0;const r=response();assert.equal(await acquisition(driver,r,job()),false);assert.equal(r.statusCode,409);assert.equal(r.body.code,'CASH_CREDIT_RECONCILIATION_REQUIRED');assert.equal(payouts,0);});
+await test('actual acquisition wrapper refuses an unapproved inspection before any cash or payout shortcut',async()=>{requestDb=db();payouts=inspections=0;inspectionBlocked=true;const r=response();assert.equal(await acquisition(driver,r,job()),false);inspectionBlocked=false;assert.equal(r.statusCode,403);assert.equal(r.body.code,'INSPECTION_NOT_APPROVED');assert.equal(payouts,0);assert.equal(inspections,1);});
 let eligibilityCode=stripTypeScriptTypes(readFileSync(new URL('../server/services/driver-eligibility.service.ts',import.meta.url),'utf8'));
 globalThis.__b1fErrorMapper=api.mapCashCreditError;
 eligibilityCode=eligibilityCode.replace(/import\s*\{\s*mapCashCreditError\s*\}\s*from\s*'\.\/driver-cash-credit'\s*;/,'const mapCashCreditError=globalThis.__b1fErrorMapper;');

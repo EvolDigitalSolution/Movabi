@@ -81,6 +81,13 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     execFile('docker', ['exec', '-e', 'PGPASSWORD=isolated-test', dbName, 'psql', '-U', 'postgres', '-d', testDb, '-X', '-v', 'ON_ERROR_STOP=1', '-qAt', '-c', query],
       (err, stdout) => err ? reject(err) : resolve(String(stdout).trim()));
   });
+  // Fixture drivers are approved drivers: give every driver vehicle approved inspection photos for its
+  // CURRENT revision (all slots, covering both the 6-slot and 3-slot policies), as acquisition requires.
+  const approveInspections = () => sql(`INSERT INTO public.driver_vehicle_inspection_photos(driver_id,tenant_id,vehicle_id,vehicle_revision,slot,storage_path,byte_size,content_type,status)
+    SELECT v.user_id,p.tenant_id,v.id,v.inspection_revision,s.slot,'inspection/'||v.user_id||'/'||s.slot||'.jpg',1000,'image/jpeg','approved'
+    FROM public.vehicles v JOIN public.profiles p ON p.id=v.user_id AND p.role='driver' AND p.tenant_id IS NOT NULL
+    CROSS JOIN unnest(ARRAY['front','rear','side','dashboard','seats_interior','left_side','right_side']) AS s(slot)
+    WHERE NOT EXISTS (SELECT 1 FROM public.driver_vehicle_inspection_photos x WHERE x.vehicle_id=v.id AND x.vehicle_revision=v.inspection_revision AND x.slot=s.slot AND x.status<>'replaced');`);
   const logDir = join(tmpdir(), `${dbName}-logs`);
   let server: http.Server | undefined;
   try {
@@ -134,7 +141,7 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     $$;`);
 
     // Supabase storage shim (buckets/objects) for snapshots whose migrations register storage objects.
-    if (process.env['VAYDU_REHEARSAL_SCHEMA']) sql(`CREATE SCHEMA IF NOT EXISTS storage; CREATE TABLE IF NOT EXISTS storage.buckets (id text PRIMARY KEY, name text NOT NULL, public boolean DEFAULT false, file_size_limit bigint, allowed_mime_types text[], owner uuid, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()); CREATE TABLE IF NOT EXISTS storage.objects (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), bucket_id text REFERENCES storage.buckets(id), name text, owner uuid, metadata jsonb, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(), last_accessed_at timestamptz DEFAULT now()); ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;`);
+    sql(`CREATE SCHEMA IF NOT EXISTS storage; CREATE TABLE IF NOT EXISTS storage.buckets (id text PRIMARY KEY, name text NOT NULL, public boolean DEFAULT false, file_size_limit bigint, allowed_mime_types text[], owner uuid, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()); CREATE TABLE IF NOT EXISTS storage.objects (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), bucket_id text REFERENCES storage.buckets(id), name text, owner uuid, metadata jsonb, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(), last_accessed_at timestamptz DEFAULT now()); ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;`);
     // Restore the committed, reviewed public schema snapshot (schema only).
     docker('cp', schemaFile, `${dbName}:/tmp/schema.sql`);
     docker('exec', dbName, 'sh', '-c',
@@ -202,6 +209,10 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
       '20261264700000_referral_adjudication_guard.sql',
       '20261264800000_profiles_moderation_audit.sql',
       '20261264900000_profiles_market_trigger_definer.sql',
+      // Inspection release (applied on develop): vehicle inspection revision + photo registration.
+      '20261265000000_driver_submission_authority.sql',
+      '20261265100000_driver_inspection_photos.sql',
+      '20261265200000_driver_inspection_repair.sql',
       '20261267000000_driver_cancellation_attribution.sql',
       '20261268000000_cancellation_fee_quote.sql',
       // Cash-ride chain (635a285) + the merge that reconciles it with the roadmap cash functions.
@@ -286,9 +297,10 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
       VALUES('${customer.user.id}','${tenantId}','customer','GB','London','approved',true),
             ('${carDriver.user.id}','${tenantId}','driver','GB','London','approved',true),
             ('${bikeDriver.user.id}','${tenantId}','driver','GB','London','approved',true);`);
-    sql(`INSERT INTO public.vehicles(id,user_id,type,vehicle_subtype,make,model,color,year,license_plate,is_verified,vehicle_verified,service_eligibility)
-      VALUES('${carDriver.user.id}','${carDriver.user.id}','car','standard','Ford','Focus','red','2020','AB12 CDE',true,true,'["delivery"]'::jsonb),
-            ('${bikeDriver.user.id}','${bikeDriver.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','BIKE 001',true,true,'["delivery"]'::jsonb);`);
+    // capacity = the vehicle class, as the app saves it (onboarding.page: capacity: vehicleClass).
+    sql(`INSERT INTO public.vehicles(id,user_id,type,vehicle_subtype,make,model,color,year,license_plate,is_verified,vehicle_verified,service_eligibility,capacity)
+      VALUES('${carDriver.user.id}','${carDriver.user.id}','car','standard','Ford','Focus','red','2020','AB12 CDE',true,true,'["delivery"]'::jsonb,'standard'),
+            ('${bikeDriver.user.id}','${bikeDriver.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','BIKE 001',true,true,'["delivery"]'::jsonb,'bike');`); approveInspections();
     sql(`INSERT INTO public.jobs(id,tenant_id,customer_id,country_code,driver_id,accepted_driver_id,status,payment_status,pickup_address,dropoff_address,scheduled_time,metadata,fulfilment_category,fulfilment_snapshot)
       VALUES('${jobId}','${tenantId}','${customer.user.id}','GB',NULL,NULL,'searching','authorized','1 Test Street','2 Test Road',now(),'{"service_vehicle_class":"bike","service_slug":"ride"}'::jsonb,'bike','{"category":"bike","allowedSubtypes":["pedal_bicycle","e_bike","motorcycle","moped"],"maxWeightKg":20,"maxLengthCm":120}');`);
     // Canonical synthetic top-up funding for the Bike driver (Stripe GB test adapter).
@@ -366,7 +378,7 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     sql(`INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_market_city,verification_status,onboarding_completed)
       VALUES('${bikeTwo.user.id}','${tenantId}','driver','GB','London','approved',true);`);
     sql(`INSERT INTO public.vehicles(id,user_id,type,vehicle_subtype,make,model,color,year,license_plate,is_verified,vehicle_verified,service_eligibility)
-      VALUES('${bikeTwo.user.id}','${bikeTwo.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','BIKE 002',false,false,'["delivery"]'::jsonb);`);
+      VALUES('${bikeTwo.user.id}','${bikeTwo.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','BIKE 002',false,false,'["delivery"]'::jsonb);`); approveInspections();
     const pendingJob = '33333333-3333-3333-3333-333333333333';
     sql(`INSERT INTO public.jobs(id,tenant_id,customer_id,country_code,driver_id,accepted_driver_id,status,payment_status,pickup_address,dropoff_address,scheduled_time,pickup_lat,pickup_lng,metadata,fulfilment_category,fulfilment_snapshot)
       VALUES('${pendingJob}','${tenantId}','${customer.user.id}','GB',NULL,NULL,'searching','authorized','3 Test Street','4 Test Road',now(),51.5074,-0.1278,'{"service_vehicle_class":"bike","service_slug":"ride"}'::jsonb,'bike','{"category":"bike","allowedSubtypes":["pedal_bicycle","e_bike","motorcycle","moped"]}');`);
@@ -408,7 +420,7 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     sql(`INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_market_city,verification_status,onboarding_completed)
       VALUES('${bikeThree.user.id}','${tenantId}','driver','GB','London','approved',true);`);
     sql(`INSERT INTO public.vehicles(id,user_id,type,vehicle_subtype,make,model,color,year,license_plate,is_verified,vehicle_verified,service_eligibility)
-      VALUES('${bikeThree.user.id}','${bikeThree.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','BIKE 003',true,false,'["delivery"]'::jsonb);`);
+      VALUES('${bikeThree.user.id}','${bikeThree.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','BIKE 003',true,false,'["delivery"]'::jsonb);`); approveInspections();
     const precedenceJob = '66666666-6666-6666-6666-666666666666';
     sql(`INSERT INTO public.jobs(id,tenant_id,customer_id,country_code,driver_id,accepted_driver_id,status,payment_status,pickup_address,dropoff_address,scheduled_time,metadata,fulfilment_category,fulfilment_snapshot)
       VALUES('${precedenceJob}','${tenantId}','${customer.user.id}','GB',NULL,NULL,'searching','authorized','9 Test Street','10 Test Road',now(),'{"service_vehicle_class":"bike","service_slug":"ride"}'::jsonb,'bike','{"category":"bike","allowedSubtypes":["pedal_bicycle"]}');`);
@@ -551,7 +563,7 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
       VALUES('${adminUser.user.id}','${tenantId}','admin','GB','London','approved',true),
             ('${bikeFour.user.id}','${tenantId}','driver','GB','London','approved',true);`);
     sql(`INSERT INTO public.vehicles(id,user_id,type,vehicle_subtype,make,model,color,year,license_plate,is_verified,vehicle_verified,service_eligibility)
-      VALUES('${bikeFour.user.id}','${bikeFour.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','BIKE 004',true,true,'["delivery"]'::jsonb);`);
+      VALUES('${bikeFour.user.id}','${bikeFour.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','BIKE 004',true,true,'["delivery"]'::jsonb);`); approveInspections();
     const adminJob = '77777777-7777-7777-7777-777777777777';
     sql(`INSERT INTO public.jobs(id,tenant_id,customer_id,country_code,driver_id,accepted_driver_id,status,payment_status,pickup_address,dropoff_address,scheduled_time,metadata,fulfilment_category,fulfilment_snapshot)
       VALUES('${adminJob}','${tenantId}','${customer.user.id}','GB',NULL,NULL,'searching','authorized','13 A Street','14 B Road',now(),'{"service_vehicle_class":"bike","service_slug":"ride"}'::jsonb,'bike','{"category":"bike","allowedSubtypes":["pedal_bicycle"]}');`);
@@ -615,7 +627,7 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     sql(`INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_market_city,verification_status,onboarding_completed)
       VALUES('${bikeB.user.id}','${tenantB}','driver','GB','London','approved',true);`);
     sql(`INSERT INTO public.vehicles(id,user_id,type,vehicle_subtype,make,model,color,year,license_plate,is_verified,vehicle_verified,service_eligibility)
-      VALUES('${bikeB.user.id}','${bikeB.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','BIKE 00B',true,true,'["delivery"]'::jsonb);`);
+      VALUES('${bikeB.user.id}','${bikeB.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','BIKE 00B',true,true,'["delivery"]'::jsonb);`); approveInspections();
     const wrongTenantFeed = await feedRows(bikeB.access_token);
     expect(wrongTenantFeed.map((r: any) => r.id), 'wrong-tenant driver must not see the job').not.toContain(feedJobId);
 
@@ -631,7 +643,7 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     sql(`INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_market_city,verification_status,onboarding_completed)
       VALUES('${bikeFive.user.id}','${tenantId}','driver','GB','London','approved',true);`);
     sql(`INSERT INTO public.vehicles(id,user_id,type,vehicle_subtype,make,model,color,year,license_plate,is_verified,vehicle_verified,service_eligibility)
-      VALUES('${bikeFive.user.id}','${bikeFive.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','BIKE 005',true,true,'["delivery"]'::jsonb);`);
+      VALUES('${bikeFive.user.id}','${bikeFive.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','BIKE 005',true,true,'["delivery"]'::jsonb);`); approveInspections();
     const historyJob = '99999999-9999-9999-9999-999999999999';
     sql(`INSERT INTO public.jobs(id,tenant_id,customer_id,country_code,driver_id,accepted_driver_id,status,payment_status,pickup_address,dropoff_address,scheduled_time,metadata,fulfilment_category,fulfilment_snapshot)
       VALUES('${historyJob}','${tenantId}','${customer.user.id}','GB','${bikeFive.user.id}',NULL,'assigned','authorized','31 H Street','32 H Road',now(),'{"service_vehicle_class":"bike","service_slug":"ride"}'::jsonb,'bike','{"category":"bike","allowedSubtypes":["pedal_bicycle"]}');`);
@@ -650,7 +662,7 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
       sql(`INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code,registration_market_city,verification_status,onboarding_completed,registration_activated_at)
         VALUES('${u.user.id}','${tenantId}','driver','GB','GB','London','approved',true,now());`);
       sql(`INSERT INTO public.vehicles(id,user_id,type,vehicle_subtype,make,model,color,year,license_plate,is_verified,vehicle_verified,service_eligibility)
-        VALUES('${u.user.id}','${u.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','${plate}',true,true,'["delivery"]'::jsonb);`);
+        VALUES('${u.user.id}','${u.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','${plate}',true,true,'["delivery"]'::jsonb);`); approveInspections();
       sql(`INSERT INTO public.driver_cash_credit_enrolments_v1e(tenant_id,driver_id,country_code,currency_code,terms_version,consented_at,enabled)
         VALUES('${tenantId}','${u.user.id}','GB','GBP','fixture-terms',now()-interval '1 hour',true) ON CONFLICT DO NOTHING;`);
       return u;

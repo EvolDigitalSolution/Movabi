@@ -782,7 +782,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
 
             <div class="grid gap-3">@for(group of setupGroups;track group.section){
               @if(sectionFor(group.section)?.applicable){
-              <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"><div class="flex flex-col items-start gap-2"><h3 class="text-sm font-black text-slate-900">{{group.label}}</h3><span class="text-xs font-bold" [class.text-green-600]="reviewSectionStatus(group.section)==='complete'" [class.text-sky-600]="reviewSectionStatus(group.section)==='under_review'" [class.text-amber-600]="reviewSectionStatus(group.section)!=='complete'&&reviewSectionStatus(group.section)!=='under_review'">{{reviewSectionStatus(group.section)==='complete'?'Complete':reviewSectionStatus(group.section)==='under_review'?'Under review':reviewSectionStatus(group.section)==='action_required'?'Action required':'Missing'}}</span></div>
+              <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"><div class="flex flex-col items-start gap-2"><h3 class="text-sm font-black text-slate-900">{{group.label}}</h3><span class="text-xs font-bold" [class.text-green-600]="reviewSectionStatus(group.section)==='complete'" [class.text-sky-600]="reviewSectionStatus(group.section)==='under_review'" [class.text-amber-600]="reviewSectionStatus(group.section)!=='complete'&&reviewSectionStatus(group.section)!=='under_review'">{{reviewSectionStatus(group.section)==='complete'?'Complete':reviewSectionStatus(group.section)==='under_review'?'Under review':reviewSectionStatus(group.section)==='action_required'?'Action required':($any(group).missingLabel||'Missing')}}</span></div>
                 @if(group.category&&!reviewRequirementsFor(group.category).length&&group.empty){<p class="mt-2 text-xs text-slate-500">{{group.empty}}</p>}
                 @else{<div class="mt-2 space-y-2">@for(requirement of reviewRequirementsFor(group.category);track requirement.code){<div class="flex items-start gap-2 text-xs"><span [class.text-green-600]="requirement.completed" [class.text-rose-600]="requirement.status==='missing'||requirement.status==='invalid'||requirement.status==='rejected'||requirement.status==='expired'||requirement.status==='under_age'" [class.text-amber-600]="!requirement.completed&&requirement.status==='under_review'">{{requirement.completed?'✓':'●'}}</span><span class="font-semibold text-slate-700">{{requirement.label}}{{requirement.completed?'':' — '+requirement.reason}}</span><span class="ml-auto shrink-0 font-black" [class.text-green-600]="requirement.completed" [class.text-sky-600]="requirement.status==='under_review'" [class.text-rose-600]="requirement.status==='missing'||requirement.status==='invalid'||requirement.status==='rejected'||requirement.status==='expired'||requirement.status==='under_age'">{{requirementStatusLabel(requirement)}}</span></div>}</div>}
               </div>}}
@@ -941,7 +941,9 @@ export class OnboardingPage implements OnInit {
         {section:'basicDetails' as const,category:'basic' as const,label:'Basic details',empty:'Add your basic account information.'},
         {section:'services' as const,category:'services' as const,label:'Services',empty:'Select the services you want to provide.'},
         {section:'operatingMethod' as const,category:'operating' as const,label:'Operating method',empty:'Choose how you will provide the selected services.'},
-        {section:'vehicle' as const,category:'vehicle' as const,label:'Vehicle / Bicycle requirements',empty:'Complete the applicable vehicle requirements.'},
+        {section:'vehicle' as const,category:'vehicle' as const,label:'Vehicle details',empty:'Complete the applicable vehicle details.'},
+        // Inspection is its own section: saved photo uploads (driver) and admin review are separate rows.
+        {section:'inspection' as const,category:'inspection' as const,label:'Vehicle inspection',empty:'Upload the required inspection photos.',missingLabel:'Missing photos'},
         {section:'documents' as const,category:'documents' as const,label:'Documents',empty:'Complete the applicable document requirements.'},
         {section:'serviceLicensing' as const,category:'licensing' as const,label:'Service-specific licensing',empty:''},
         {section:'agreement' as const,category:'agreement' as const,label:'Agreement',empty:'Review and accept the Driver Agreement.'},
@@ -1218,7 +1220,7 @@ export class OnboardingPage implements OnInit {
     }
 
     /** Review rows: identical to canonical, except the agreement reflects effective acceptance. */
-    reviewRequirementsFor(category: 'basic'|'services'|'operating'|'vehicle'|'documents'|'licensing'|'agreement'|'review') {
+    reviewRequirementsFor(category: 'basic'|'services'|'operating'|'vehicle'|'inspection'|'documents'|'licensing'|'agreement'|'review') {
         return this.requirementsFor(category).map(row => row.code === 'agreement.driver_terms' && !row.completed && this.agreementAccepted()
             ? { ...row, completed: true, status: 'completed', blockingForSubmission: false }
             : row);
@@ -1231,7 +1233,7 @@ export class OnboardingPage implements OnInit {
         return status;
     }
 
-    requirementsFor(category:'basic'|'services'|'operating'|'vehicle'|'documents'|'licensing'|'agreement'|'review'){const rows=this.onboardingStatus.state()?.automaticRequirements||[];if(category==='review')return[];if(category==='operating')return rows.filter(item=>item.code==='vehicle.operating_method');if(category==='vehicle')return rows.filter(item=>item.category==='vehicle'&&item.code!=='vehicle.operating_method');return rows.filter(item=>item.category===category);}
+    requirementsFor(category:'basic'|'services'|'operating'|'vehicle'|'inspection'|'documents'|'licensing'|'agreement'|'review'){const rows=this.onboardingStatus.state()?.automaticRequirements||[];if(category==='review')return[];if(category==='operating')return rows.filter(item=>item.code==='vehicle.operating_method');if(category==='vehicle')return rows.filter(item=>item.category==='vehicle'&&item.code!=='vehicle.operating_method');return rows.filter(item=>item.category===category);}
     sectionFor(section:keyof import('../../../../../core/services/driver/driver-onboarding-status.service').DriverSetupSectionStatus){return this.onboardingStatus.state()?.sectionStatus?.[section];}
     setupProgressPercent(){return this.onboardingStatus.state()?.progress?.percentage||0;}
     setupStatusLabel(){return String(this.onboardingStatus.state()?.overallStatus||'not_started').replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase());}
@@ -1423,7 +1425,7 @@ export class OnboardingPage implements OnInit {
         ['profile.full_name', 'profile.phone', 'profile.address', 'profile.date_of_birth', 'profile.email_verification'],
         ['document.driving_licence'],
         ['work.right_to_work', 'licence.private_hire'],
-        ['service.selection', 'vehicle.operating_method', 'vehicle.subtype', 'vehicle.make', 'vehicle.model', 'vehicle.colour', 'vehicle.year', 'vehicle.registration', 'document.insurance', 'document.private_hire_vehicle_license', 'document.private_hire_insurance', 'document.goods_in_transit', 'vehicle.bicycle_declaration', 'vehicle.delivery_equipment', 'document.bike_inspection', 'document.e_bike_specifications', 'document.e_bike_classification'],
+        ['service.selection', 'vehicle.operating_method', 'vehicle.subtype', 'vehicle.make', 'vehicle.model', 'vehicle.colour', 'vehicle.year', 'vehicle.registration', 'document.insurance', 'document.private_hire_vehicle_license', 'document.private_hire_insurance', 'document.goods_in_transit', 'vehicle.bicycle_declaration', 'vehicle.delivery_equipment', 'document.bike_inspection', 'vehicle.inspection_photos', 'document.e_bike_specifications', 'document.e_bike_classification'],
         ['agreement.driver_terms']
     ];
 

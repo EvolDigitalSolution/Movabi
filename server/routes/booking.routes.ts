@@ -1,3 +1,4 @@
+import { assertInspectionApproved } from '../services/driver-inspection-evidence';
 import {DriverPaymentAccountService,sandboxDestinationProvider} from '../services/driver-payment-account.service';
 import { cashRideAcquisitionApproved, mapCashCreditError, isCashRide } from '../services/driver-cash-credit';
 import {assertDriverJobMarket} from '../services/driver-market-scope';
@@ -413,6 +414,9 @@ async function getAuthUserId(req: Request): Promise<string | null> {
 async function requirePayoutEligible(driverId: string, res: Response, job:any): Promise<boolean> {
     try {
         await assertDriverJobMarket(supabaseAdmin,driverId,job);
+        // Every acquisition path (direct accept, negotiation accept, claim) needs an approved vehicle
+        // inspection for the driver's CURRENT vehicle revision, before any cash or payout shortcut.
+        await assertInspectionApproved(supabaseAdmin,driverId);
         if (await cashRideAcquisitionApproved(supabaseAdmin,driverId,job)) return true;
         if(String(job.country_code).toUpperCase()==='NG'){
             if(job.metadata?.driver_settlement_method!=='transfer')throw new Error('Booking settlement method/timing must be approved before acquiring paid work.');

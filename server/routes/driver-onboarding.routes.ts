@@ -1,5 +1,6 @@
 import { GbMotMonitorService } from '../services/gb-mot-monitor.service';
 import { verifiedPaymentAccount } from '../services/driver-payment-account-status';
+import { loadInspectionEvidence } from '../services/driver-inspection-evidence';
 import { rateLimit } from 'express-rate-limit';
 import { GbMotService } from '../services/gb-mot.service';
 import { Request, Response, Router } from 'express';
@@ -73,7 +74,7 @@ router.get('/status', async (req, res) => {
     const canonicalProfile=mapDriverProfile(profile,!!authUser.user?.email_confirmed_at);
     const passengerLicence=readPassengerLicence(profile);
     const identityEditability=DriverIdentityEditabilityService.resolve(profile,requestRows||[]);
-    const resolution=DriverRequirementService.resolve({profile,canonicalProfile,vehicle:canonicalVehicle,authEmailConfirmed:canonicalProfile.emailConfirmed,adminRequests,countryCode:profile.country_code,marketCity:profile.market_city||profile.city,paymentAccount:await verifiedPaymentAccount(driverId,req.app.locals.vayduPaymentAccountSetup)});
+    const resolution=DriverRequirementService.resolve({profile,canonicalProfile,vehicle:canonicalVehicle,authEmailConfirmed:canonicalProfile.emailConfirmed,adminRequests,countryCode:profile.country_code,marketCity:profile.market_city||profile.city,paymentAccount:await verifiedPaymentAccount(driverId,req.app.locals.vayduPaymentAccountSetup),inspection:await loadInspectionEvidence(supabaseAdmin,driverId,profile.tenant_id,vehicle)});
     const motRestriction=await supabaseAdmin.rpc('gb_driver_mot_blocked',{p_driver:driverId});
     if(motRestriction.error)throw Error('Unable to verify MOT compliance. Please retry.');
     if(motRestriction.data)resolution.onlineEligibility={allowed:false,reasons:[...resolution.onlineEligibility.reasons,'Vehicle MOT expired or unverified. Renew your MOT and recheck your registration.']};
@@ -432,7 +433,7 @@ router.post('/submit-review', async (req,res)=>{
       : profileInput;
     effectiveProfile.verification_items = serializeOnboardingItems({...parseOnboardingItems(profileInput.verification_items), ...serverOwnedItems});
     const canonicalProfile=mapDriverProfile(effectiveProfile,!!auth.user?.email_confirmed_at);
-    const resolution=DriverRequirementService.resolve({profile:effectiveProfile,canonicalProfile,vehicle:vehicleInput,authEmailConfirmed:canonicalProfile.emailConfirmed,countryCode:effectiveProfile.country_code,marketCity:effectiveProfile.market_city||effectiveProfile.city,paymentAccount:await verifiedPaymentAccount(driverId,req.app.locals.vayduPaymentAccountSetup)});
+    const resolution=DriverRequirementService.resolve({profile:effectiveProfile,canonicalProfile,vehicle:vehicleInput,authEmailConfirmed:canonicalProfile.emailConfirmed,countryCode:effectiveProfile.country_code,marketCity:effectiveProfile.market_city||effectiveProfile.city,paymentAccount:await verifiedPaymentAccount(driverId,req.app.locals.vayduPaymentAccountSetup),inspection:await loadInspectionEvidence(supabaseAdmin,driverId,profile.tenant_id,vehicle)});
     const blockers=resolution.automaticRequirements.filter(item=>item.blockingForSubmission);
     const{error:auditError}=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,event_type:resubmission?'resubmission_validated':'submission_validated',selected_services:resolution.selectedServices,requirement_codes:resolution.automaticRequirements.map(item=>item.code)});
     if(auditError){logSubmitReviewDbError('requirement-audit-insert',auditError);throw auditError;}

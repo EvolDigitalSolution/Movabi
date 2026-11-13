@@ -1,11 +1,12 @@
 import {calculateCalendarAge,CanonicalDriverProfile,mapDriverProfile,parseDriverDateOfBirth} from '../models/driver-profile.model';
 import { readPassengerLicence } from '../models/driver-passenger-licence.model';
+import { InspectionEvidence, inspectionProgress } from './driver-inspection-progress';
 
 export type CanonicalDriverService = 'ride' | 'delivery' | 'errand' | 'van-moving';
 export type DriverOperatingVehicle = 'bicycle' | 'e_bike' | 'motorcycle' | 'car' | 'small_van' | 'large_van' | null;
 export type RequirementState = 'completed' | 'missing' | 'invalid' | 'under_age' | 'under_review' | 'approved' | 'rejected' | 'not_applicable' | 'expired';
 export interface ResolvedDriverRequirement {
-  code: string; label: string; category: 'basic' | 'services' | 'vehicle' | 'documents' | 'agreement' | 'licensing';
+  code: string; label: string; category: 'basic' | 'services' | 'vehicle' | 'inspection' | 'documents' | 'agreement' | 'licensing';
   status: RequirementState; required: boolean; completed: boolean; blockingForSubmission: boolean; blockingForOnline: boolean;
   needsAdminReview: boolean; reason: string; services: CanonicalDriverService[];
   expiryDate?: string | null; expiringSoon?: boolean;
@@ -20,13 +21,13 @@ export interface DriverRequirementResolution {
 }
 export type DriverSetupSectionState='not_applicable'|'incomplete'|'complete'|'action_required'|'under_review';
 export interface DriverSetupSection {applicable:boolean;status:DriverSetupSectionState;}
-export interface DriverSetupSectionStatus {basicDetails:DriverSetupSection;services:DriverSetupSection;operatingMethod:DriverSetupSection;vehicle:DriverSetupSection;documents:DriverSetupSection;serviceLicensing:DriverSetupSection;agreement:DriverSetupSection;review:DriverSetupSection;}
+export interface DriverSetupSectionStatus {basicDetails:DriverSetupSection;services:DriverSetupSection;operatingMethod:DriverSetupSection;vehicle:DriverSetupSection;inspection:DriverSetupSection;documents:DriverSetupSection;serviceLicensing:DriverSetupSection;agreement:DriverSetupSection;review:DriverSetupSection;}
 export interface DriverVehicleValidation {id:string;userId:string;type:string;subtype:string|null;make:string|null;model:string|null;colour:string|null;year:number|null;registrationNumber:string|null;capacity:string|null;serviceEligibility:string[];status:string;}
 /** Server-verified payment-account state for the driver's configured market. */
 export interface DriverPaymentAccountInput {provider:string|null;state:'not_started'|'in_progress'|'action_required'|'reconciliation_required'|'completed'|'unavailable';available:boolean;reason?:string|null;}
 
 export class DriverRequirementService {
-  static resolve(input: { profile: any; canonicalProfile?:CanonicalDriverProfile; vehicle?: DriverVehicleValidation|null; authEmailConfirmed: boolean; adminRequests?: DriverAdminRequest[]; countryCode?: string|null; marketCity?: string|null; now?: Date; paymentAccount?: DriverPaymentAccountInput|null }): DriverRequirementResolution {
+  static resolve(input: { profile: any; canonicalProfile?:CanonicalDriverProfile; vehicle?: DriverVehicleValidation|null; authEmailConfirmed: boolean; adminRequests?: DriverAdminRequest[]; countryCode?: string|null; marketCity?: string|null; now?: Date; paymentAccount?: DriverPaymentAccountInput|null; inspection?: InspectionEvidence|null }): DriverRequirementResolution {
     const profile=input.profile||{}, onboardingItems=this.onboardingItems(profile.verification_items), vehicle:DriverVehicleValidation=input.vehicle||{id:'',userId:'',type:'',subtype:null,make:null,model:null,colour:null,year:null,registrationNumber:null,capacity:null,serviceEligibility:[],status:'missing'}, now=input.now||new Date();
     const canonicalProfile=input.canonicalProfile||mapDriverProfile({id:String(profile.id||''),...profile},input.authEmailConfirmed);
     const selectedServices=this.services(profile,vehicle,onboardingItems); const vehicleType=this.vehicle(vehicle,profile); const requirements:ResolvedDriverRequirement[]=[];
@@ -67,7 +68,7 @@ export class DriverRequirementService {
         } else if(marketClass==='bicycle'){
           add('vehicle.bicycle_declaration','Bicycle details','vehicle',this.has(vehicle.type)||onboardingItems['bicycle_declaration']===true,'Add bicycle details or confirm your bicycle declaration.');
           add('vehicle.delivery_equipment','Delivery equipment','vehicle',onboardingItems['delivery_equipment_confirmed']===true,'Confirm suitable delivery equipment.');
-          add('document.bike_inspection','Bike inspection','documents',onboardingItems['bike_inspection_approved']===true,'Complete a bike inspection and upload the evidence.');
+          if(!input.inspection)add('document.bike_inspection','Bike inspection','documents',onboardingItems['bike_inspection_approved']===true,'Complete a bike inspection and upload the evidence.');
         } else {
           requirements.push({code:'document.e_bike_classification',label:'E-bike market classification',category:'documents',status:'under_review',required:true,completed:false,blockingForSubmission:true,blockingForOnline:true,needsAdminReview:true,reason:'This e-bike has not been classified for the market yet. An admin review is required.',services:selectedServices});
         }
@@ -82,7 +83,26 @@ export class DriverRequirementService {
         add('vehicle.colour','Vehicle colour','vehicle',this.has(vehicle.colour),'Add the vehicle colour.'); add('vehicle.year','Vehicle year','vehicle',Number(vehicle.year)>1900,'Add a valid vehicle year.');
         add('vehicle.bicycle_declaration','Bicycle details','vehicle',this.has(vehicle.type)||onboardingItems['bicycle_declaration']===true,'Add bicycle details or confirm your bicycle declaration.');
         add('vehicle.delivery_equipment','Delivery equipment','vehicle',onboardingItems['delivery_equipment_confirmed']===true,'Confirm suitable delivery equipment.');
-        add('document.bike_inspection','Bike inspection','documents',onboardingItems['bike_inspection_approved']===true,'Complete a bike inspection and upload the evidence.');
+        if(!input.inspection)add('document.bike_inspection','Bike inspection','documents',onboardingItems['bike_inspection_approved']===true,'Complete a bike inspection and upload the evidence.');
+      }
+      if(input.inspection){
+        // Vehicle inspection from the saved photos of the CURRENT vehicle revision (never a client flag).
+        // Upload completion and admin approval are separate rows; submission needs both (as the
+        // submit_driver_with_current_inspection RPC already enforces), and so does going online.
+        const p=inspectionProgress(input.inspection);
+        const names=(slots:string[])=>slots.map(slot=>slot.replace(/_/g,' ')).join(', ');
+        const photosReason=!input.inspection.vehicle?'Save your vehicle first, then upload the inspection photos.'
+          :p.rejected.length?`Replace rejected photos: ${names(p.rejected)}.`
+          :p.missing.length?`Missing photos: ${names(p.missing)} (${p.uploaded} of ${p.required} uploaded).`
+          :`All ${p.required} photos uploaded.`;
+        requirements.push({code:'vehicle.inspection_photos',label:'Inspection photos',category:'inspection',
+          status:p.uploadsComplete?'completed':p.rejected.length?'rejected':'missing',required:true,completed:p.uploadsComplete,
+          blockingForSubmission:!p.uploadsComplete,blockingForOnline:!p.uploadsComplete,needsAdminReview:false,reason:photosReason,services:selectedServices});
+        requirements.push({code:'vehicle.inspection_review',label:'Inspection review',category:'inspection',
+          status:p.approvalComplete?'approved':p.uploadsComplete?'under_review':'missing',required:true,completed:p.approvalComplete,
+          blockingForSubmission:!p.approvalComplete,blockingForOnline:!p.approvalComplete,needsAdminReview:p.uploadsComplete&&!p.approvalComplete,
+          reason:p.approvalComplete?'Inspection approved.':p.uploadsComplete?`Awaiting admin review (${p.approved} of ${p.required} approved).`:'Admin review starts once every required photo is uploaded.',
+          services:selectedServices});
       }
       if(selectedServices.includes('ride')){
         // Canonical passenger-licence evaluation: the licensing requirement is
@@ -151,7 +171,7 @@ export class DriverRequirementService {
     const byCategory=(category:ResolvedDriverRequirement['category'])=>requirements.filter(row=>row.category===category);
     const vehicleRows=byCategory('vehicle'),operatingRows=vehicleRows.filter(row=>row.code==='vehicle.operating_method'),vehicleDetailRows=vehicleRows.filter(row=>row.code!=='vehicle.operating_method');
     const licensingRows=byCategory('licensing');
-    const sectionStatus:DriverSetupSectionStatus={basicDetails:section(byCategory('basic')),services:section(byCategory('services')),operatingMethod:section(operatingRows,selectedServices.length>0),vehicle:section(vehicleDetailRows,selectedServices.length>0),documents:section(byCategory('documents'),selectedServices.length>0),serviceLicensing:section(licensingRows,licensingRows.length>0),agreement:section(byCategory('agreement')),review:{applicable:true,status:approved?'complete':review?'under_review':actionRequired||openAdmin.length?'action_required':'incomplete'}};
+    const sectionStatus:DriverSetupSectionStatus={basicDetails:section(byCategory('basic')),services:section(byCategory('services')),operatingMethod:section(operatingRows,selectedServices.length>0),vehicle:section(vehicleDetailRows,selectedServices.length>0),inspection:section(byCategory('inspection'),selectedServices.length>0&&!!input.inspection),documents:section(byCategory('documents'),selectedServices.length>0),serviceLicensing:section(licensingRows,licensingRows.length>0),agreement:section(byCategory('agreement')),review:{applicable:true,status:approved?'complete':review?'under_review':actionRequired||openAdmin.length?'action_required':'incomplete'}};
     const applicableSections=Object.values(sectionStatus).filter(item=>item.applicable),completed=applicableSections.filter(item=>item.status==='complete').length,total=applicableSections.length;
     return {selectedServices,vehicleType,automaticRequirements:requirements,adminRequests,warnings,sectionStatus,progress:{completed,total,percentage:total?Math.round(completed/total*100):0},overallStatus,onlineEligibility:{allowed:onlineReasons.length===0,reasons:Array.from(new Set(onlineReasons))},age};
   }

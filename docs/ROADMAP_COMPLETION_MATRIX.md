@@ -162,7 +162,7 @@ Scope of each, so neither is read as the other:
 | 1a | Driver acceptance/cancellation metrics from offer events (incl. driver + admin reporting) | ✓ | ✓ | ✓ at `bcd6ab9`: real-PG **38/38** + 7 migration-lifecycle checks (`bash scripts/driver-metrics/run-realdb-tests.sh`, `docs/roadmap-evidence/driver-metrics-realdb.log`); upgraded-clone rehearsal checks 1 + 2 (above); specs 121/121 (`driver-offer-metrics`, `driver-offer-metrics-view`, `batch2c-phase-b-transition`, `wallet-auth-payment-consistency`, `driver-ranking-v23`, `batch2c-schema-lineage-guard`, `campaign-admin-controls`); `npm run build:mobile:develop` and `ng build admin` pass | ✗ | ✗ | **D9 (user, 2026-11-12): driver-initiated only; a voluntary handback of an accepted assignment counts once and is also reported as `driverHandoffs` — settled, not to be re-asked.** `20261267000000`: `cancel_job_with_actor` (actor recorded in the cancelling transaction; `cancel_job_safely` unchanged); `record_negotiated_assignment` (negotiated acceptances enter the denominator; owner-only; idempotent); `driver_offer_metrics_v2` (SQL aggregate, no row limit). **Identity + window:** one assignment = (driver, job) whose acceptance is in the window, counted once however many offers/re-acceptances; numerator and every exclusion class are subsets of exactly those assignments, each classified once (invariant tested for every driver; the service fails closed if violated). **Proven on real PG:** reason text never decides; repeated offers (3) = 1 assignment, 2 accepted offers; duplicate handback event = 1 row, 1 handoff; handback then re-accept then cancel = counted once; assignment accepted 40 days ago and cancelled now is in neither side; customer, admin (dispute refund now records the admin), other-driver and customer no-show are excluded and reported; historical no-actor = `unattributedCancellations`; guards 42501/22023; retries never overwrite the actor; service_role-only on all three functions; 1,500 assignments counted exactly. **Migration/API order:** migration first is compatible (old API keeps working, its cancels are unattributed — proven with the 635a285 package). An API calling `cancel_job_with_actor` without the migration is refused and changes nothing (proven post-rollback). Re-apply is idempotent; rollback restores the schema exactly and keeps recorded history. **Reporting:** driver dashboard and admin driver modal (`GET /api/admin/drivers/:driverId/offer-metrics`, tenant-scoped) show counted vs not-counted cancellations. **Gaps:** admin-assigned jobs (no offer, no negotiation) are outside the metric; no browser test of the two UI cards yet. |
 | 1b | Location-aware matching using reliability | ✓ | ✓ | prior (unit 81/81) | ? | ✗ | Weights default 0 → reliability off until D3. |
 | 1c | Availability messages = server decision | ~ | ✓ | prior | ? | n/a | Customer "no driver" text not browser-bound to the server reason yet. |
-| 2a | Six-slot vehicle inspection | ✓ | ✓ | prior | ~ (inspection release per records) | ? | On-device upload unverified. |
+| 2a | Vehicle inspection (6 slots for motor vehicles, 3 for bikes) **in readiness, submission, approval and eligibility** | ✓ | ✓ | ✓ local (2026-11-13), on a **real backend** and the **real review screen**; see below | ✗ (develop still runs 3c91991, which shows "Complete" with no photos) | n/a | **NOT complete until deployed to develop and your own application is re-checked there.** On-device upload still unverified. |
 | 2b | Account-sharing protections | ~ | ✓ | ✓ suspension revokes the same token + refresh (rehearsal, both checks) | ? | n/a | Only suspension/revocation exists; the sharing policy itself is undefined (D4). |
 | 3 | Backend per-driver completion PIN policy | ✓ | ✓ | ~ migration applies (rehearsal); PIN flow prior (7/7) | ✗ | ✗ | Needs D5. |
 | 4a | Traffic indicators | ✓ | ✓ | prior (`traffic-route.spec.ts`) | ? | ? | Live TomTom key unverified. |
@@ -179,6 +179,70 @@ Scope of each, so neither is read as the other:
 | 8 | Ride-market readiness validation | ~ | ✓ | prior | ? | n/a | Must report collection, payout and cash-ride readiness as separate states. |
 | 9a | Operational reporting + monitoring | ~ | ~ | ✓ `report-unresolved-payment-ops.cjs` exit 0 / 2 / 3 against the upgraded clone (rehearsal) | ? | ✗ | No scheduled consumer or alert target. |
 | 9b | Backup restoration + recovery | ~ | n/a | ✗ | ~ | n/a | Fresh isolated restore drill of a current develop backup outstanding (runbook step 2 creates one). |
+
+### Vehicle inspection in readiness (2026-11-13; area 2a)
+
+**Defect (reported by the user):** the review screen showed "Vehicle / Bicycle requirements — Complete" with
+no inspection images.
+- **Cause:** the canonical readiness response (`DriverRequirementService.resolve`) had no inspection
+  requirement for cars or vans. For bikes it read only the `bike_inspection_approved` profile flag, which is set at
+  submission time, not the saved photos.
+- **Consequences:** the review section, progress, overall status and online eligibility could all say
+  complete with zero images. The submission RPC (`submit_driver_with_current_inspection`) did check for approved
+  photos, so the screen and the backend disagreed.
+
+**Fix:**
+- **Evidence:** `server/services/driver-inspection-evidence.ts` loads the photos saved for the driver's
+  **current** vehicle and inspection revision. `driver-inspection-progress.ts` is the pure part, also
+  bundled into the admin app.
+- **Slot policy** is the existing one (`server/shared/driver-inspection.ts`): 6 motor slots, and 3 for bikes,
+  which keeps the bicycle exemption.
+- **What counts:** replaced photos never count; a rejected photo must be replaced; a vehicle change
+  rotates the revision, so earlier photos stop counting.
+- **Readiness** has a new `inspection` category and section with two separate rows:
+  - **Inspection photos** (upload completion): "Missing photos: … (n of 6 uploaded)";
+  - **Inspection review** (admin approval): "Awaiting admin review (n of 6 approved)".
+
+  Both block submission and going online. For bikes the evidence replaces the old flag-based row.
+- **Enforced on the backend:**
+  - readiness: `GET /api/driver-onboarding/status`;
+  - submit-review and `/api/verification/driver-submission`;
+  - admin pre-verify and `manual-approve` (refused with "Missing photos …");
+  - go-online (`market-availability`);
+  - **acquisition**: `requirePayoutEligible` covers direct accept, negotiation accept and claim, with
+    `INSPECTION_NOT_APPROVED` checked before any cash or payout shortcut.
+- **Review screen:** "Vehicle details" and "Vehicle inspection" are separate groups. Inspection reads
+  "Missing photos" until every required slot has a valid saved upload. A driver with missing photos resumes
+  at stage 4.
+
+**Evidence (local, real backend):**
+- **Unit and readiness:** `src/testing/vehicle-inspection-readiness.spec.ts`, 17/17. Covers zero, partial,
+  removed (replaced or deleted), rejected, all uploaded, all approved, the bike 3-slot exemption, no vehicle,
+  and callers that pass no evidence.
+- **Real backend:** `src/testing/vehicle-inspection-readiness.integration.spec.ts`, 1/1. Runs postgres:15.1
+  restored from develop's live schema plus the release, with GoTrue, PostgREST and the real onboarding and
+  verification routers called as a driver and as an admin:
+  - zero, partial, all uploaded;
+  - submission refused ("Inspection photos still need approval …");
+  - the admin approves 6 photos (a driver attempt gets 403);
+  - submission 200, then admin approval 200;
+  - a removed photo gives "Missing photos: front (5 of 6 uploaded)" and acquisition is refused;
+  - a vehicle change gives 0 of 6 and admin approval is refused (422).
+- **Real review screen:** `e2e/driver-inspection-review.spec.ts` (`npx playwright test -c
+  playwright.inspection-review.config.ts`), 5/5. The real Angular page renders the **real** readiness responses
+  saved by the integration test (`e2e/fixtures/inspection-readiness/*.json`).
+- **Regressions brought into line:**
+  - The route harness's approved fixture drivers now have approved photos, and the bike row's `capacity` is
+    `'bike'` as the app saves it.
+  - The harness default chain now includes the inspection migrations `20261265*`, which develop has.
+  - Batch 1F acquisition check: +1 case (38).
+  - `verify-merge.sh` was silently extracting an **empty** chain since the spec edit; fixed, with a guard.
+- **Full suite:** 3,507 passed; only the 2 known environment items fail. Server and app typecheck.
+
+**Your own application on develop:** run `deploy/vaydu-develop-release/trace-driver-inspection.sql`, which is
+read-only and takes your email as a parameter. It shows the saved photos per slot and revision, and what the
+new readiness logic will report. The develop review screen will still show the old wording until this
+release is deployed.
 
 ## Unresolved policies (cannot be invented)
 

@@ -24,7 +24,7 @@ export interface DriverOnboardingStatus {
 }
 export type DriverSetupSectionState='not_applicable'|'incomplete'|'complete'|'action_required'|'under_review';
 export interface DriverSetupSection {applicable:boolean;status:DriverSetupSectionState;}
-export interface DriverSetupSectionStatus {basicDetails:DriverSetupSection;services:DriverSetupSection;operatingMethod:DriverSetupSection;vehicle:DriverSetupSection;documents:DriverSetupSection;serviceLicensing:DriverSetupSection;agreement:DriverSetupSection;review:DriverSetupSection;}
+export interface DriverSetupSectionStatus {basicDetails:DriverSetupSection;services:DriverSetupSection;operatingMethod:DriverSetupSection;vehicle:DriverSetupSection;inspection?:DriverSetupSection;documents:DriverSetupSection;serviceLicensing:DriverSetupSection;agreement:DriverSetupSection;review:DriverSetupSection;}
 export interface CanonicalDriverProfile {id:string;fullName:string|null;phone:string|null;dateOfBirth:string|null;residentialAddress:string|null;emailConfirmed:boolean;verificationStatus:string|null;}
 export type DriverOnboardingService = 'ride' | 'delivery' | 'errand' | 'van-moving';
 /**
@@ -43,7 +43,7 @@ export interface DriverEligibilityVerdict {
     authority: { evaluatedBy: string; sqlAuthority: string; enforced: boolean };
 }export interface DriverPassengerLicence {councilName:string|null;licenceNumber:string|null;badgeNumber:string|null;expiryDate:string|null;status:string|null;complete:boolean;}
 export interface DriverVehicle { id:string;userId:string;type:string;make:string|null;model:string|null;colour:string|null;year:number|null;registrationNumber:string|null;capacity:string|null;serviceEligibility:string[];status:string; }
-export interface DriverAutomaticRequirement { code:string;label:string;category:'basic'|'services'|'vehicle'|'documents'|'agreement'|'licensing';status:string;required:boolean;completed:boolean;blockingForSubmission:boolean;blockingForOnline:boolean;needsAdminReview:boolean;reason:string;services:string[]; }
+export interface DriverAutomaticRequirement { code:string;label:string;category:'basic'|'services'|'vehicle'|'inspection'|'documents'|'agreement'|'licensing';status:string;required:boolean;completed:boolean;blockingForSubmission:boolean;blockingForOnline:boolean;needsAdminReview:boolean;reason:string;services:string[]; }
 export interface DriverAdminRequest { id:string;requirementCode:string;requestType?:string|null;item:string;status:'pending'|'rejected'|'approved';publicMessage:string;submittedAt:string|null;updatedAt:string|null;resolvedAt:string|null;nextAction:string; }
 export type DriverOnboardingEventType =
     | 'driver_registration_started' | 'driver_onboarding_submitted' | 'driver_vehicle_submitted'

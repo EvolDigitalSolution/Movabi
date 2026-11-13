@@ -11,7 +11,11 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 # The roadmap chain only: the rehearsal list minus the cash-ride chain, the merge, and later unrelated migrations.
-chain="$(sed -n '/for (const migration of \[/,/\]) {/p' "$root/src/testing/bike-authenticated-routes.integration.spec.ts" | grep -oE "'[^']+\.sql'" | tr -d "'" | grep -Ev '^(20261266|20261267|20261268|20261269)')"
+chain="$(sed -n '/for (const migration of \(releaseChain ?? \)\?\[/,/\]) {/p' "$root/src/testing/bike-authenticated-routes.integration.spec.ts" | grep -oE "'[^']+\.sql'" | tr -d "'" | grep -Ev '^(20261266|20261267|20261268|20261269)')"
+# Guard: an extraction that finds nothing would silently test less (happened once when the spec changed).
+chain_count="$(echo "$chain" | grep -c '\.sql$' || true)"
+[ "$chain_count" -ge 30 ] || { echo "FATAL: roadmap chain extraction found $chain_count migrations"; exit 1; }
+echo "roadmap chain: $chain_count migrations"
 cash="20261266000000_driver_cash_credit_market_pilot.sql 20261266100000_cash_ride_booking_fee_hold.sql 20261266200000_cash_ride_activation.sql 20261266300000_cash_ride_completion.sql"
 merge="20261269000000_merge_cash_pilot_with_roadmap_cash.sql"
 tmp="$(mktemp -d)"; fail=0; dbs=()
@@ -46,6 +50,8 @@ SQL
   for _ in $(seq 1 120); do [ "$(qd "$db" -c "select to_regclass('auth.users') is not null and exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='auth' and p.proname='uid')")" = t ] && break; sleep 0.5; done
   sleep 2; docker rm -f "$auth" >/dev/null
   qd "$db" -c "CREATE TABLE IF NOT EXISTS auth.job_messages (id uuid); CREATE OR REPLACE FUNCTION auth.debug_errand_insert() RETURNS trigger LANGUAGE plpgsql AS \$\$ BEGIN RETURN NEW; END \$\$;"
+  # Minimal Supabase storage shim: the inspection migrations (20261265*) register a bucket and storage policies.
+  qd "$db" -c "CREATE SCHEMA IF NOT EXISTS storage; CREATE TABLE IF NOT EXISTS storage.buckets (id text PRIMARY KEY, name text NOT NULL, public boolean DEFAULT false, file_size_limit bigint, allowed_mime_types text[], owner uuid, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()); CREATE TABLE IF NOT EXISTS storage.objects (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), bucket_id text REFERENCES storage.buckets(id), name text, owner uuid, metadata jsonb, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(), last_accessed_at timestamptz DEFAULT now()); ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;"
   sed 's/CREATE SCHEMA public;/CREATE SCHEMA IF NOT EXISTS public;/; s/CREATE EXTENSION /CREATE EXTENSION IF NOT EXISTS /' "$root/supabase/baseline/deployed_public_schema.sql" | qd "$db" >/dev/null
   qd "$db" < "$root/supabase/baseline/candidate/001_tenants.sql" >/dev/null 2>&1
   qd "$db" -c "INSERT INTO public.system_configs(key,value) VALUES('countries','[{\"code\":\"GB\",\"currency\":\"GBP\"},{\"code\":\"NG\",\"currency\":\"NGN\"}]'::jsonb) ON CONFLICT DO NOTHING;" >/dev/null

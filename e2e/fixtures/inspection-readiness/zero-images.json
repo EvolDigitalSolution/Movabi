@@ -1,0 +1,564 @@
+{
+ "vehicleLookup": {
+  "provider": "DVSA_MOT",
+  "enabled": false
+ },
+ "driverId": "5b9ee4d3-c5d6-430b-921d-96b047284fe9",
+ "registrationAllowed": true,
+ "overallStatus": "incomplete",
+ "profile": {
+  "id": "5b9ee4d3-c5d6-430b-921d-96b047284fe9",
+  "tenant_id": "aaaaaaaa-1111-4111-8111-111111111111",
+  "full_name": "Ada Driver",
+  "phone": "07000000000",
+  "role": "driver",
+  "stripe_customer_id": null,
+  "stripe_account_id": null,
+  "is_online": false,
+  "is_available": true,
+  "last_active_at": "2026-11-13T13:08:16.138694+00:00",
+  "currency_code": "GBP",
+  "country_code": "GB",
+  "created_at": "2026-11-13T13:08:16.138694+00:00",
+  "updated_at": "2026-11-13T13:08:16.138694+00:00",
+  "subscription_status": "inactive",
+  "pricing_plan": "starter",
+  "commission_rate": 15,
+  "onboarding_completed": false,
+  "account_status": "active",
+  "moderation_reason": null,
+  "moderated_at": null,
+  "completion_rate": 1,
+  "cancellation_rate": 0,
+  "lat": null,
+  "lng": null,
+  "driver_license_url": "licence.pdf",
+  "insurance_url": "insurance.pdf",
+  "verification_status": "incomplete",
+  "verification_notes": null,
+  "verification_items": [
+   "{\"key\":\"delivery_equipment_confirmed\",\"value\":\"true\"}"
+  ],
+  "verified_at": null,
+  "council_license_number": null,
+  "council_name": null,
+  "taxi_badge_number": null,
+  "taxi_license_expiry": null,
+  "stripe_connect_status": "connected",
+  "vehicle_check_status": "not_checked",
+  "mot_check_status": "not_checked",
+  "insurance_check_status": "manual_required",
+  "council_check_status": "manual_required",
+  "verification_blockers": [],
+  "manual_verification_notes": null,
+  "testing_approval_override": false,
+  "is_verified": false,
+  "rating": 0,
+  "driver_rating": 0,
+  "review_count": 0,
+  "account_closure_requested_at": null,
+  "account_closure_reason": null,
+  "avatar_url": null,
+  "charges_enabled": true,
+  "payouts_enabled": true,
+  "movabi_pay_card_preference": "virtual",
+  "movabi_pay_physical_card_status": "not_requested",
+  "movabi_pay_physical_card_received_at": null,
+  "compliance_status": "draft",
+  "accepted_terms_at": null,
+  "accepted_privacy_at": null,
+  "accepted_driver_agreement_at": "2026-11-13T13:08:16.138694+00:00",
+  "date_of_birth": "1990-01-01",
+  "current_address": "Unit 1, 1 High Street, Bolton, BL1 1AA",
+  "address_line1": null,
+  "home_address": null,
+  "email_verified": false,
+  "email_confirmed_at": null,
+  "phone_verified": false,
+  "phone_verified_at": null,
+  "phone_verification_supported": false,
+  "profile_photo_status": "missing",
+  "live_selfie_url": null,
+  "live_selfie_status": "missing",
+  "driver_license_status": "missing",
+  "driver_license_expiry": "2030-01-01",
+  "insurance_status": "missing",
+  "insurance_expiry": "2030-01-01",
+  "right_to_work_url": "rtw.pdf",
+  "right_to_work_share_code": null,
+  "right_to_work_status": "missing",
+  "private_hire_driver_license_url": null,
+  "private_hire_driver_license_status": "missing",
+  "private_hire_vehicle_license_url": null,
+  "private_hire_vehicle_license_status": "missing",
+  "private_hire_insurance_url": null,
+  "private_hire_insurance_status": "missing",
+  "council_license_authority": null,
+  "council_license_expiry": null,
+  "vehicle_license_url": null,
+  "vehicle_license_status": "missing",
+  "vehicle_license_expiry": null,
+  "mot_url": null,
+  "mot_status": "missing",
+  "mot_expiry": null,
+  "background_check_status": "missing",
+  "operator_compliance_status": "missing",
+  "courier_insurance_url": null,
+  "courier_insurance_status": "missing",
+  "courier_insurance_expiry": null,
+  "goods_in_transit_insurance_url": null,
+  "goods_in_transit_insurance_status": "missing",
+  "goods_in_transit_insurance_expiry": null,
+  "public_liability_insurance_url": null,
+  "public_liability_insurance_status": "missing",
+  "public_liability_insurance_expiry": null,
+  "moving_insurance_url": null,
+  "moving_insurance_status": "missing",
+  "moving_insurance_expiry": null,
+  "helper_labour_declaration": false,
+  "driver_review_status": "incomplete",
+  "driver_review_notes": null,
+  "driver_review_blockers": null,
+  "driver_review_sent_at": null,
+  "driver_review_sent_by": null,
+  "driver_review_history": null,
+  "closure_requested_at": null,
+  "closed_at": null,
+  "closure_reason": null,
+  "closure_notes": null,
+  "reinstated_at": null,
+  "reinstated_by": null,
+  "reinstatement_notes": null,
+  "registration_activated_at": null,
+  "registration_country_code": "GB",
+  "registration_market_city": null,
+  "moderated_by": null,
+  "inspection_market_code": null,
+  "goods_in_transit_url": null
+ },
+ "canonicalProfile": {
+  "id": "5b9ee4d3-c5d6-430b-921d-96b047284fe9",
+  "fullName": "Ada Driver",
+  "phone": "07000000000",
+  "dateOfBirth": "1990-01-01",
+  "residentialAddress": "Unit 1, 1 High Street, Bolton, BL1 1AA",
+  "emailConfirmed": true,
+  "verificationStatus": "incomplete"
+ },
+ "passengerLicence": {
+  "councilName": null,
+  "licenceNumber": null,
+  "badgeNumber": null,
+  "expiryDate": null,
+  "status": "incomplete",
+  "complete": false
+ },
+ "vehicle": {
+  "id": "5b9ee4d3-c5d6-430b-921d-96b047284fe9",
+  "userId": "5b9ee4d3-c5d6-430b-921d-96b047284fe9",
+  "type": "car",
+  "subtype": null,
+  "make": "Ford",
+  "model": "Focus",
+  "colour": "Red",
+  "year": 2020,
+  "registrationNumber": "AB12 CDE",
+  "capacity": "standard",
+  "serviceEligibility": [
+   "delivery"
+  ],
+  "status": "saved"
+ },
+ "outstandingRequests": [],
+ "adminMessages": [],
+ "automaticRequirements": [
+  {
+   "code": "profile.full_name",
+   "label": "Legal name",
+   "category": "basic",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Add your full legal name.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": null,
+   "expiringSoon": false
+  },
+  {
+   "code": "profile.phone",
+   "label": "Phone",
+   "category": "basic",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Add your contact number.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": null,
+   "expiringSoon": false
+  },
+  {
+   "code": "profile.address",
+   "label": "Residential address",
+   "category": "basic",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Add your current residential address.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": null,
+   "expiringSoon": false
+  },
+  {
+   "code": "profile.email_verification",
+   "label": "Email verified",
+   "category": "basic",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Confirm your sign-in email address.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": null,
+   "expiringSoon": false
+  },
+  {
+   "code": "profile.date_of_birth",
+   "label": "Date of birth",
+   "category": "basic",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Date of birth confirmed.",
+   "services": []
+  },
+  {
+   "code": "service.selection",
+   "label": "Selected services",
+   "category": "services",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Select at least one service.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": null,
+   "expiringSoon": false
+  },
+  {
+   "code": "agreement.driver_terms",
+   "label": "Driver agreement",
+   "category": "agreement",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Review and accept the Driver Agreement.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": null,
+   "expiringSoon": false
+  },
+  {
+   "code": "work.right_to_work",
+   "label": "Right to work",
+   "category": "documents",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Provide right-to-work evidence.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": null,
+   "expiringSoon": false
+  },
+  {
+   "code": "vehicle.operating_method",
+   "label": "Operating method",
+   "category": "vehicle",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Choose how you will provide the selected services.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": null,
+   "expiringSoon": false
+  },
+  {
+   "code": "vehicle.make",
+   "label": "Vehicle make",
+   "category": "vehicle",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Add the vehicle make.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": null,
+   "expiringSoon": false
+  },
+  {
+   "code": "vehicle.model",
+   "label": "Vehicle model",
+   "category": "vehicle",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Add the vehicle model.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": null,
+   "expiringSoon": false
+  },
+  {
+   "code": "vehicle.colour",
+   "label": "Vehicle colour",
+   "category": "vehicle",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Add the vehicle colour.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": null,
+   "expiringSoon": false
+  },
+  {
+   "code": "vehicle.year",
+   "label": "Vehicle year",
+   "category": "vehicle",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Add a valid vehicle year.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": null,
+   "expiringSoon": false
+  },
+  {
+   "code": "vehicle.registration",
+   "label": "Vehicle registration",
+   "category": "vehicle",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Add the registration number.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": null,
+   "expiringSoon": false
+  },
+  {
+   "code": "document.driving_licence",
+   "label": "Driving licence",
+   "category": "documents",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Upload the appropriate driving licence.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": "2030-01-01",
+   "expiringSoon": false
+  },
+  {
+   "code": "document.insurance",
+   "label": "Vehicle insurance",
+   "category": "documents",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Insurance covering your vehicle for the services you accept.",
+   "services": [
+    "delivery"
+   ],
+   "expiryDate": "2030-01-01",
+   "expiringSoon": false
+  },
+  {
+   "code": "vehicle.inspection_photos",
+   "label": "Inspection photos",
+   "category": "inspection",
+   "status": "missing",
+   "required": true,
+   "completed": false,
+   "blockingForSubmission": true,
+   "blockingForOnline": true,
+   "needsAdminReview": false,
+   "reason": "Missing photos: front, rear, dashboard, seats interior, left side, right side (0 of 6 uploaded).",
+   "services": [
+    "delivery"
+   ]
+  },
+  {
+   "code": "vehicle.inspection_review",
+   "label": "Inspection review",
+   "category": "inspection",
+   "status": "missing",
+   "required": true,
+   "completed": false,
+   "blockingForSubmission": true,
+   "blockingForOnline": true,
+   "needsAdminReview": false,
+   "reason": "Admin review starts once every required photo is uploaded.",
+   "services": [
+    "delivery"
+   ]
+  },
+  {
+   "code": "payout.payment_account",
+   "label": "Payment account",
+   "category": "documents",
+   "status": "completed",
+   "required": true,
+   "completed": true,
+   "blockingForSubmission": false,
+   "blockingForOnline": false,
+   "needsAdminReview": false,
+   "reason": "Payment account destination verified with the provider record.",
+   "services": [
+    "delivery"
+   ]
+  }
+ ],
+ "adminRequests": [],
+ "warnings": [],
+ "identityEditability": {
+  "dateOfBirthEditable": true,
+  "fullNameEditable": true,
+  "countryCodeEditable": true,
+  "reason": null,
+  "fullNameReason": null,
+  "countryCodeReason": null
+ },
+ "sectionStatus": {
+  "basicDetails": {
+   "applicable": true,
+   "status": "complete"
+  },
+  "services": {
+   "applicable": true,
+   "status": "complete"
+  },
+  "operatingMethod": {
+   "applicable": true,
+   "status": "complete"
+  },
+  "vehicle": {
+   "applicable": true,
+   "status": "complete"
+  },
+  "inspection": {
+   "applicable": true,
+   "status": "incomplete"
+  },
+  "documents": {
+   "applicable": true,
+   "status": "complete"
+  },
+  "serviceLicensing": {
+   "applicable": false,
+   "status": "not_applicable"
+  },
+  "agreement": {
+   "applicable": true,
+   "status": "complete"
+  },
+  "review": {
+   "applicable": true,
+   "status": "incomplete"
+  }
+ },
+ "progress": {
+  "completed": 6,
+  "total": 8,
+  "percentage": 75
+ },
+ "onlineEligibility": {
+  "allowed": false,
+  "reasons": [
+   "Missing photos: front, rear, dashboard, seats interior, left side, right side (0 of 6 uploaded).",
+   "Admin review starts once every required photo is uploaded.",
+   "Driver onboarding is not approved."
+  ]
+ },
+ "selectedServices": [
+  "delivery"
+ ],
+ "vehicleType": "car",
+ "age": {
+  "eligible": true,
+  "years": 36,
+  "minimum": 18,
+  "state": "completed",
+  "reason": null
+ },
+ "submissionHistory": [],
+ "stripeStatus": "connected",
+ "updatedAt": "2026-11-13T13:08:16.138694+00:00"
+}
