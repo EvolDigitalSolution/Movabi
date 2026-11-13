@@ -75,7 +75,7 @@ test. They are not deployment content, and the runbook does not apply them.
 - **Not authorised:** enabling GB/GBP (or any) cash rides, the API cash flag, other markets/cohorts,
   production, packaging for go-live.
 
-### Develop release `3c91991` (authorised 2026-11-12 for DEVELOP; prepared, not yet executed)
+### Develop release `3c91991` (authorised 2026-11-12 for DEVELOP; database applied 2026-11-13, API/web pending)
 
 The user authorised deploying the completed, integrated roadmap changes to shared develop, and enabling
 features whose approved policies and prerequisites are met. Production and go-live stay gated.
@@ -93,8 +93,8 @@ contains its content.
 | Live-schema rehearsal | `bash scripts/release/rehearse-live-upgrade.sh .tmp-release/live_public_schema.sql <reconcile-dir>` on postgres:15.1: **26/26** (`docs/roadmap-evidence/rehearse-live-3c91991.log`) |
 | Route rehearsal on live + release | current source: pass; **running f6e8c00 API** as a separate process: pass (migration-first is safe). Env: `VAYDU_REHEARSAL_SCHEMA/PG_IMAGE/CHAIN/SEED` (+ `VAYDU_EXTRACTED_API_ROOT`). |
 | Full unit/route suite at the release source | **3,473 passed, 1 failed; 2 files fail** (`docs/roadmap-evidence/full-suite-failures-release-3c91991.txt`). Both are environment items, not code. `bike-assignment-trigger-pg` needs local container `vaydu-pg-fresh`; its bike-only guards are exercised by the route rehearsal on live + release, which passed. `wallet-minimal-overlay` checks a one-off October patch script that is not in the repository. Fixed since the triage: lineage (batch 1E versioned), manifest drift (guards the release SQL) and the 17 payout tests (now run on the shipped worker). |
-| Real-data rehearsal | runbook step 4 (restore drill of the fresh backup into a throwaway container on the host): **pending host execution** |
-| Deployed | ✗ (pending host execution) |
+| Real-data rehearsal | **PASSED before migration** ([host record](roadmap-evidence/develop-release-3c91991-host.md)). Backup restored (0 errors, 181 tables equal); PREREQ, release, VERIFY and exact rollback passed on real data. The first drill and the first 4b run failed on fixture collisions with real data (auth trigger, market rows, service-type slugs). After the fix, the 4b rerun passed all 7 suites (140 checks). Backup restore drill (9b): **done**. |
+| Deployed | **Database: applied 2026-11-13 09:46:47 UTC** (one transaction, VERIFY OK, 0 cash markets, 0 fee policies). API/web: pending (runbook steps 7–8). |
 | Enabled by this release | **nothing new.** Every feature still off depends on an unresolved decision (below). Already on and kept: GB Stripe driver top-ups (sandbox scope), Mapbox/TomTom search and routing. |
 
 
