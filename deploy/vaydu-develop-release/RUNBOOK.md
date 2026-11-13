@@ -234,3 +234,33 @@ acceptance journeys below.
 | Cancellation fee absent while no policy is enabled; customer cancel shows "no fee" | customer test booking | |
 | Driver inspection / submission (canonical checks) | test driver application | |
 | Completion PIN | **not enabled** (D5) | n/a |
+
+## Follow-up release `c972037` (API only, 2026-11-13)
+
+Two fixes, decided by the user, both for gaps that predate 3c91991:
+- **D15:** the inspection market is auto-assigned from the registration market.
+- **Payment-account status without the setup module:** GB drivers get their Stripe status instead of a
+  503; every setup action stays 503.
+
+The release has no database change. The web is byte-identical to 3c91991, so it is not redeployed.
+
+| | Value |
+|---|---|
+| Package | `release/vaydu-develop-c972037-release-linux.tar.gz`, sha256 `ad9a90019579f7ae34357351abf6e77287d99b5c6e94afe290b9d943952fb3f5` |
+| vs running API 3c91991 | 2 files CHANGED: `server/routes/driver-payment-account-develop.routes.ts`, `server/routes/verification.routes.ts` |
+| vs running web | 0 files |
+| Rollback record | the new `$PRE` from `host-predeploy.sh`; the image to return to is `movabi-api:release-3c91991` |
+
+```
+sha256sum -c vaydu-develop-c972037-release-linux.tar.gz.sha256
+bash host-predeploy.sh vaydu-develop-c972037-release-linux.tar.gz
+PRE2=$(ls -td ~/vaydu-topup-fix-predeploy-* | head -1); cat "$PRE2/running-source-sha.txt"; cat "$PRE2/api-changes.txt"; wc -l < "$PRE2/web-changes.txt"
+export ARCHIVE=vaydu-develop-c972037-release-linux.tar.gz BUNDLE_DIR=vaydu-develop-c972037-release-linux EXPECTED_SOURCE_SHA=c972037
+API_TAG=release-c972037 WEB_TAG=release-3c91991-linux bash rollout-develop-52097ef.sh --deploy-api-only
+```
+
+Expected: running `3c91991`; exactly the 2 API files above; `0` web changes; `VERIFY OK`; then
+`movabi-api:release-c972037` running.
+
+On failure: `bash host-rollback.sh "$PRE2" api` returns to `movabi-api:release-3c91991`. No database change
+is involved.
