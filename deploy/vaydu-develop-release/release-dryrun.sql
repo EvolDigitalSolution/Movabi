@@ -802,4 +802,6 @@ END $_$;
 
 -- ===== END 20261269000000_merge_cash_pilot_with_roadmap_cash.sql =====
 
+-- Tell PostgREST to reload its schema cache (delivered at COMMIT only).
+NOTIFY pgrst, 'reload schema';
 ROLLBACK;

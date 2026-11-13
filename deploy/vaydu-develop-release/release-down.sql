@@ -497,4 +497,6 @@ BEGIN
  RETURN v_id;
 END $$;
 
+-- Tell PostgREST to reload its schema cache (delivered at COMMIT only).
+NOTIFY pgrst, 'reload schema';
 COMMIT;

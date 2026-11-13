@@ -152,6 +152,20 @@ bash "$REL/host-db-release.sh" "$REL" apply
 If it fails, PostgreSQL rolls the whole release back; rerun `prereq` to confirm, then STOP. The
 running f6e8c00 API works with the migrated schema (proven), so there is no hurry to deploy the API.
 
+## 6b) Reload the PostgREST schema cache
+
+This step was missed in the 3c91991 run; `release-up.sql` has included it since.
+
+```
+docker exec -i movabi-develop-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -U supabase_admin -d movabi_develop -c "NOTIFY pgrst, '\''reload schema'\''"'
+sleep 3; docker logs --since 1m movabi-develop-rest 2>&1 | tail -5
+```
+
+Without it, PostgREST keeps its pre-migration schema cache. Every RPC the release adds
+(`cancel_job_with_actor`, `cancellation_fee_quote`, `driver_offer_metrics_v2` and the rest) then fails
+with "not in the schema cache". If no reload line appears, run `docker restart movabi-develop-rest`
+(it is stateless).
+
 ## 7) API (wallet override and every other compose override preserved)
 
 ```

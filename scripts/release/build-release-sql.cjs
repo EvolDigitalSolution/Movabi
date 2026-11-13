@@ -83,7 +83,10 @@ function build(list,end,title,extra=''){
   for(const p of parts)s+=`-- source ${p.rel} sha256 ${p.sha} (outer BEGIN/COMMIT removed: ${p.stripped===2?'yes':'none present'})\n`;
   s+=`\\set ON_ERROR_STOP on\nBEGIN;\nSET LOCAL lock_timeout = '10s';\nSET LOCAL statement_timeout = '5min';\n`;
   for(const p of parts)s+=`\n-- ===== BEGIN ${path.basename(p.rel)} =====\n${p.text}\n-- ===== END ${path.basename(p.rel)} =====\n`;
-  s+=`${extra}\n${end}\n`;return {s,parts};
+  // PostgREST caches the schema: without this, RPCs the release creates are "not in the schema cache"
+  // until it reloads (found on develop 2026-11-13). NOTIFY is transactional: delivered only on COMMIT,
+  // so the dry run (ROLLBACK) and a failed release never trigger a reload.
+  s+=`${extra}\n-- Tell PostgREST to reload its schema cache (delivered at COMMIT only).\nNOTIFY pgrst, 'reload schema';\n${end}\n`;return {s,parts};
 }
 fs.mkdirSync(out,{recursive:true});
 const up=build(UP,'COMMIT;','Vaydu develop release: 7 pending migrations (cash chain, D9 attribution, fee quote, merge)');
