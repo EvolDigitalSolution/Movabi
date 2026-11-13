@@ -113,7 +113,8 @@ check "behaviour suites left the schema unchanged" "$(diff -q "$tmp/after.sql" <
 q postgres -c "CREATE DATABASE realish TEMPLATE rel;"
 q realish -c "CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();"
 q realish -c "INSERT INTO public.market_availability(country_code,market_city,supported_currency,launch_status,enabled,quote_enabled,booking_enabled,payment_enabled,timezone) VALUES ('GB','London','GBP','live',true,true,true,true,'Europe/London'),('GB',NULL,'GBP','live',true,true,true,true,'Europe/London'),('NG',NULL,'NGN','live',true,true,true,true,'Africa/Lagos');"
-with_preamble(){ awk -v pre="$rel/drill-preamble.sql" 'BEGIN{done=0} { print } !done && $0 ~ /^BEGIN;[ 	]*$/ { while ((getline l < pre) > 0) print l; done=1 }' "$1"; }
+q realish -c "INSERT INTO public.service_types(id,slug,name) VALUES ('5e5e5e5e-0000-4000-8000-000000000001','ride','Ride'),('5e5e5e5e-0000-4000-8000-000000000002','delivery','Delivery'),('5e5e5e5e-0000-4000-8000-000000000003','errand','Errand') ON CONFLICT DO NOTHING;"
+with_preamble(){ awk -v pre="$rel/drill-preamble.sql" 'BEGIN{done=0} { print } !done && $0 ~ /^BEGIN;[ \t\r]*$/ { while ((getline l < pre) > 0) print l; done=1 }' "$1"; }
 raw_fail=0
 for t in "$root"/deploy/vaydu-cash-ride-market-pilot/realdb-*-test.sql "$root"/scripts/migration-merge/realdb-merge-test.sql "$root"/scripts/driver-metrics/realdb-driver-metrics-test.sql "$root"/scripts/cancellation-fee/realdb-cancellation-fee-test.sql; do
   out="$(q realish -F ' | ' < "$t" 2>&1)" && [ "$(echo "$out" | tail -1 | cut -d' ' -f1)" = 0 ] || raw_fail=$((raw_fail+1))
