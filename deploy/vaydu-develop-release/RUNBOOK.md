@@ -366,3 +366,106 @@ diff <(grep -v '^== taken at\|^== images\|movabi-develop\|source sha' live-confi
 - hash-compares the live web with the bundle;
 - checks the readiness report for GB and NG;
 - walks your Driver Setup review (inspection "Missing photos", then upload, then admin approval).
+
+## Next release: API + web + **DATABASE release 2** (bundle cut after the decision table is reviewed)
+
+This release **has a database step**, so the "no database step" instructions of `be0c761` and
+`39fc5ce` do **not** apply. It includes everything in `be0c761`, plus:
+- **Area 3:** per-driver completion PIN control. The policy is frozen onto the job at assignment.
+  - Admin control in the driver modal: tenant-scoped, a reason is required, and changes are audited.
+  - The booking market's policy comes from the tenant setting, for that market only.
+- **D12:** develop's out-of-band inspection objects are captured in a migration. Nothing is dropped.
+
+The bundle is cut with `RELEASE_DIR=deploy/vaydu-develop-release-2`, so its `release-*.sql`, `PREREQ.sql`,
+`VERIFY.sql`, `ORDER.txt` and drill suites are release 2's. Release 1 stays applied and unchanged.
+
+### Exact migration order (one transaction, `release-up.sql`)
+
+| # | Migration | Effect on develop |
+|---|---|---|
+| — | release 1 (applied 2026-11-13 09:46:47 UTC) | PREREQ requires its 15 functions to be exact |
+| 1 | `20261270000000_capture_develop_inspection_drift.sql` | **No change.** The column and the 6-argument function already exist and are only created when absent. A fingerprint check aborts the transaction if develop's copy differs. |
+| 2 | `20261270100000_completion_pin_effective.sql` | Adds `completion_pin_market_policy(jsonb)`, `stamp_completion_pin_policy()` and `mint_completion_pin_on_assignment()`, plus triggers `zz_stamp_completion_pin_policy` (BEFORE) and `zz_mint_completion_pin_on_assignment` (AFTER) on `jobs`. No client role can execute these functions. |
+| — | `NOTIFY pgrst, 'reload schema'` | Delivered at COMMIT only |
+
+### Evidence before it reaches develop (local, 2026-11-13)
+
+`scripts/release/rehearse-release-2.sh` (log: `docs/roadmap-evidence/rehearse-release-2.log`) ran on PostgreSQL 15.1 with
+develop's live schema plus release 1, seeded with inspection photos in every status (approved, rejected with reason,
+under review, replaced, uploaded, plus the develop-only `reason` value) and an inspection storage policy:
+- **Gates:** PREREQ accepts develop's state and VERIFY refuses it.
+- **Atomicity:** an injected failure and the dry run leave the schema byte-identical; the release applies as one transaction.
+- **D12 on develop:**
+  - every pre-existing function is unchanged;
+  - the columns, **every photo row** (statuses, approvals, reviewers, reasons) and the table grants, RLS and policies are unchanged;
+  - the **storage policies** and `storage.objects` grants are unchanged;
+  - both `register_driver_inspection_photo` grants are unchanged;
+  - the release SQL contains no `storage.` reference.
+- **Fresh database** (no drift): it installs the column and the 6-argument function with develop's exact fingerprint
+  (`f180b0b8…`, CR removed; develop's raw `65e2f700…` includes CRLF bytes) and develop's grants. Existing photo rows are
+  kept, and a second apply is a no-op.
+- **Suites with release 2 in place:** VERIFY 2 passes; release 1 VERIFY still passes; the PIN real-DB suite passes
+  17/17; all 7 release-1 suites pass (140 checks).
+- **Rollback:** release-down restores the **exact** pre-release-2 schema, and re-apply passes VERIFY.
+
+`bike-authenticated-routes.integration.spec.ts` (real GoTrue, PostgREST and routers) passes with release 2:
+- **Admin PIN routes:**
+  - a driver gets 403;
+  - no reason or an unknown policy gets 400;
+  - another tenant's driver, or a body tenant that isn't the driver's, gets 404 and nothing is written;
+  - set and read back are stored for the driver's own tenant.
+- **Real admin assignment** (`assign_driver_to_job`, every trigger on) freezes `disabled|driver`. Clearing the override
+  leaves the assigned job unchanged.
+- **`/api/jobs/complete`:**
+  - the frozen disabled job asks for no PIN and no PIN is minted;
+  - a new assignment follows the market (required) and a PIN is minted;
+  - the customer gets 403; a missing PIN is refused; a wrong PIN is refused and counted (`attempts 1`);
+  - the correct PIN passes and is recorded once.
+- **Audit:** `audit_logs` rows `admin_pin_policy_changed` and `admin_pin_policy_cleared`, each with the admin and the reason.
+
+### Host steps (stop at the first failure)
+
+```
+sha256sum -c <bundle>.tar.gz.sha256 && tar xzf <bundle>.tar.gz && B=~/<bundle-dir>
+(cd "$B" && bash host-live-config.sh) > live-config-before-r2.txt 2>&1
+bash "$B/host-db-release.sh" "$B" backup                 # BACKUP_OK <dump> (+ globals, exact row counts, sha256)
+bash "$B/host-db-release.sh" "$B" drill <dump>           # restore into a throwaway container: counts equal, PREREQ,
+                                                         # release-up, VERIFY, 8 suites, release-down = exact schema
+bash "$B/host-db-release.sh" "$B" prereq                 # PREREQ OK: release 1 exact, release 2 not applied
+bash "$B/host-db-release.sh" "$B" dryrun                 # DRYRUN_OK, develop unchanged
+bash host-predeploy.sh <bundle>.tar.gz; PRE5=$(ls -td ~/vaydu-topup-fix-predeploy-* | head -1)
+bash "$B/host-db-release.sh" "$B" apply                  # PREREQ -> release-up (one transaction) -> VERIFY OK
+docker logs --since 2m movabi-develop-rest 2>&1 | tail -3 # schema cache reloaded
+# then the API and web steps exactly as in the be0c761 section, with this bundle's names and SHA
+(cd "$B" && bash host-live-config.sh) > live-config-after-r2.txt 2>&1
+```
+
+### Compatibility
+
+- **Order: database first, then API.** The rollout runs this bundle's VERIFY (release 2) before building
+  anything, so it refuses to deploy the API before the migration.
+- **Running API (be0c761 or earlier) on the release-2 schema** (reasoned from the code, not executed):
+  - it keeps writing `completion_pin_required`, which the trigger reads as the market policy;
+  - it reads `effective_completion_pin_policy` (unchanged) at completion and gets the same override the trigger used;
+  - its driver and customer apps read `completion_pin_required`, which the trigger sets to the frozen policy.
+- **New API on the old schema** (not supported; prevented by VERIFY): no stamping, so a driver override of
+  "required" in a market that disables the PIN would have no minted PIN.
+- **Jobs already accepted when a policy changes:**
+  - after release 2, the policy is frozen at assignment; later override or market changes apply from that
+    driver's next assignment, and a reassignment re-resolves for the new driver;
+  - jobs assigned **before** release 2 carry no stamp, so the server reads the driver's current override at
+    completion (as before release 2).
+
+### Rollback limits
+
+- **`host-db-release.sh "$B" rollback`** (release-down, one transaction):
+  - drops the two triggers and three functions;
+  - **keeps** every frozen job metadata value and every minted PIN, because customers may already have seen them;
+  - keeps both D12 objects, by instruction.
+
+  After that, PREREQ must pass again.
+- **Application rollback:** `bash host-rollback.sh "$PRE5" api|web|both`. The previous API runs on the release-2 schema
+  (see Compatibility), so the database can stay.
+- **Not undone by any rollback:** admin overrides set after apply, `audit_logs` rows, PIN attempts and verifications.
+- **Restoring the backup** loses every write made after it. It is a last resort and a separate decision: restore into a
+  **new** database, never over `movabi_develop` in place.

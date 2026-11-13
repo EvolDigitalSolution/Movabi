@@ -1,0 +1,43 @@
+NOTICE:  VERIFY OK: release schema present (15 functions), no cash-ride market enabled
+PASS: template = develop today (live schema + release 1, VERIFY 1 OK)
+seeded evidence: dashboard=under_review,front=approved,left_side=replaced,rear=approved,right_side=uploaded,seats_interior=rejected
+PASS: develop's 6-argument function fingerprint in the live schema (CR removed; raw 65e2f700... in the host inventory)
+PASS: PREREQ (release 2) accepts develop's current state
+PASS: VERIFY (release 2) refuses the pre-release state
+PASS: injected failure aborted release 2
+PASS: after an aborted release the schema is unchanged
+PASS: dry run completed
+PASS: dry run leaves the schema unchanged
+PASS: release-up.sql (release 2) applied as one transaction
+PASS: D12 on develop: every pre-existing function unchanged
+PASS: D12 on develop: inspection photo columns unchanged
+PASS: D12 on develop: every inspection photo row (statuses, approvals, reviewers, reasons) unchanged
+PASS: D12 on develop: photo table grants, RLS and policies unchanged
+PASS: D12 on develop: storage policies and storage.objects grants unchanged
+PASS: D12 on develop: both register_driver_inspection_photo grants unchanged
+PASS: release 2 SQL never touches the storage schema
+new functions (for VERIFY):
+  public.completion_pin_market_policy(p_metadata jsonb)	b06d13b95ba16eb69185edb935c81ebf
+  public.mint_completion_pin_on_assignment()	c0765f72f8cf3197b11fecd92e3cbb8e
+  public.stamp_completion_pin_policy()	ac5497c01a83276b5c9a869f308cecc4
+PASS: VERIFY (release 2) after apply
+PASS: release 1 VERIFY still passes
+PASS: completion PIN real-DB suite (0 | 17/17)
+PASS: release 1 suite with release 2: realdb-market-pilot-test.sql (0 | 15)
+PASS: release 1 suite with release 2: realdb-cash-booking-acquisition-test.sql (0 | 16)
+PASS: release 1 suite with release 2: realdb-cash-booking-chain-test.sql (0 | 13)
+PASS: release 1 suite with release 2: realdb-cash-ride-lifecycle-test.sql (0 | 15)
+PASS: release 1 suite with release 2: realdb-merge-test.sql (0 | 21)
+PASS: release 1 suite with release 2: realdb-driver-metrics-test.sql (0 | 38)
+PASS: release 1 suite with release 2: realdb-cancellation-fee-test.sql (0 | 22)
+PASS: release-down.sql applied
+PASS: rollback restores the exact pre-release-2 schema
+PASS: re-apply after rollback
+PASS: VERIFY after re-apply
+PASS: release 2 on an environment without the drift
+PASS: captured 6-argument function = develop's fingerprint
+PASS: captured column = develop's column
+PASS: fresh install keeps existing photo rows (the dropped reason column comes back empty)
+PASS: captured function grants = develop's (service_role only)
+PASS: release 2 is idempotent (second apply)
+REHEARSAL 2 PASSED

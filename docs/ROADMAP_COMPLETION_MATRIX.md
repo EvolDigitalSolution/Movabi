@@ -145,75 +145,87 @@ Scope of each, so neither is read as the other:
 - Correction to an earlier note: `requireAdmin`'s unguarded `getUser` is not a crash defect. Express
   5.2.1 forwards async rejections to the error handler (`server/index.ts:218`), so the client gets a 500.
 
-## Develop enablement status (2026-11-13)
+## Develop enablement status (2026-11-13, evening)
 
-The four states are reported separately:
+Four separate states:
 - **Implemented**: code and migrations exist in the release line.
-- **Deployed**: observed on develop (API image, web and DB objects).
+- **Deployed**: observed on develop.
 - **Enabled**: its switch is on for the develop test scope.
 - **Verified on develop**: a real journey on develop was observed.
 
-Mock tests and readiness reports never count as Verified on develop.
+Mock tests, local rehearsals and readiness reports never count as Verified on develop.
 
-**Live state must be read before any activation.** The baseline is the 2026-11-12 host inventory plus
-step 9 on 2026-11-13. It is a baseline, not proof of current state:
-`deploy/vaydu-develop-release/host-live-config.sh` (read-only, with `live-config.sql`) reads every switch below.
-Its SQL ran without errors on develop's live schema.
+**Enabled after this work: nothing new.** Activation permission is in place (your instruction), but the agent has
+no host access, and every switch still off is blocked by a policy value below or a technical dependency. The live
+state must be read with `host-live-config.sh` before any activation. Its output has not been received yet; the
+baseline is the 2026-11-12 inventory plus step 9 on 2026-11-13.
 
-**Nothing was switched on by this change.** No feature below has all of its dependencies and approved
-policies satisfied while still off: each one that is off waits on a decision, on Africa's deferral, or
-on a host step.
-
-### Already on (no switch left to turn on)
-
-| Feature | Implemented | Deployed | Enabled | Verified on develop | What is still needed |
+| Feature | Implemented | Deployed | Enabled | Verified on develop | What stands in the way |
 |---|---|---|---|---|---|
-| 5a Driver card top-up (GB/GBP, Stripe test) | ✓ | ✓ 3c91991 | ✓ `VAYDU_DRIVER_TOPUP_API=true`, provider stripe (baseline) | ✗ | A real sandbox top-up on develop, then the ledger check (one credit). |
-| 1a Acceptance/cancellation metrics | ✓ | ✓ 3c91991 + PostgREST reload | ✓ (no switch) | ✗ | A test driver accepts, then cancels, one job; the driver card and the admin modal show it. |
-| 4a Traffic indicators | ✓ | ✓ | ✓ `VAYDU_TOMTOM_ROUTING_V23=true` (baseline) | ✗ | Seen in a customer quote on develop. |
-| 2a Vehicle inspection in readiness and enforcement, plus the separate review layout | ✓ | **in progress**: you started the `39fc5ce` deploy, outcome not reported | enforced once deployed | ✗ | The deploy result, then your review screen ("Missing photos 0 of 6") and the admin approval flow. |
-| 1c Customer "no driver" text = server reason | ✓ browser 5/5; handoff no longer shows the driver's own words | ~ (reasons since 3c91991; handoff fix in the next bundle) | ✓ (no switch) | ✗ | Next bundle; one no-driver booking on develop. |
-| 8 Readiness: collection / payout / cash ride as separate states | ✓ 10/10, tenant-scoped, fails closed | ✗ next bundle | n/a (report only) | ✗ | Next bundle; `GET /api/admin/market-readiness` for GB and NG on develop. A report never completes area 8 on its own. |
-| Driver Setup responsive layout (320–412 px) | ✓ browser 3/3: no sideways scroll; "VEHICLE" no longer breaks; the count sits on the status line | ✗ next bundle | n/a | ✗ | Next bundle; check on a phone. |
+| 5a Driver card top-up (GB, Stripe test) | ✓ | ✓ 3c91991 | ✓ (baseline) | ✗ | A real sandbox top-up journey on develop |
+| 1a Acceptance/cancellation metrics | ✓ | ✓ | ✓ no switch | ✗ | A real accept/cancel journey on develop |
+| 4a Traffic indicators | ✓ | ✓ | ✓ `VAYDU_TOMTOM_ROUTING_V23` (baseline) | ✗ | Seen in a quote on develop |
+| 2a Inspection readiness + separate layout | ✓ | ✗ (39fc5ce/be0c761 not reported deployed) | enforced on deploy | ✗ | Deploy; your review screen + admin approval |
+| 1c "No driver" message = server reason | ✓ | ✗ (next bundle) | ✓ no switch | ✗ | Deploy |
+| 8 Readiness: separate states | ✓ | ✗ (next bundle) | n/a | ✗ | Deploy; GB/NG reports |
+| Driver Setup narrow phones | ✓ | ✗ (next bundle) | n/a | ✗ | Deploy |
+| **3 Per-driver completion PIN** | ✓ **2026-11-13**: precedence driver > market > required, frozen at assignment; admin control (tenant-scoped, reason, audited); real-PG 17/17; real routes incl. `/api/jobs/complete` and `audit_logs` | ✗ (release 2) | ✓ no switch once deployed (default stays **required** until P6) | ✗ | Release 2 on develop; then set and clear an override on a test driver and complete a job |
+| **D12 develop-only inspection schema** | ✓ captured (`20261270000000`), never dropped; preserves rows, grants, RLS and storage policies; fresh install matches develop | ✗ (release 2) | n/a | ✗ | Release 2 on develop (no change there by design) |
+| 1b Reliability ranking | ✓ | ✓ | ✗ `VAYDU_DRIVER_RANKING_V23` unset, weights 0 | ✗ | **P7** |
+| 3 Market default PIN | ✓ setting `completion_pin_policy` `{default, markets:{GB:…}}` | ✗ (release 2) | ✗ unset = required | ✗ | **P6** |
+| 4b Surge / traffic pricing | ~ | ? | ✗ `maxSurge` 1 | ✗ | **P8** |
+| 4c Map style | ✓ current MapTiler streets-v2 | ✓ | ✓ (as-is) | ✗ | **P9** (confirm) |
+| 5b Cash rides (GB) | ✓ | ✓ | ✗ (`VAYDU_CASH_RIDE_BOOKING` unset, 0 markets) | ✗ | **P1** only (the hold = the larger of the no-show fee and the cancellation cap, per the agreed plan); then **T2**. Terms `fare-split-v1` and approval already exist. |
+| 6a Cancellation fees | ✓ | ✓ | ✗ 0 policies | ✗ | **P1**, **P12** |
+| 6b Compensation 80/20 | ✓ | ✓ | follows 6a | ✗ | **P1**, **P13** |
+| 6c Customer debt | ✓ | ✓ | ~ live; nothing can arise yet | ✗ | **P3**; depends on 6a |
+| 7a First-booking promo 5% | ✓ | ✓ | ✗ | ✗ | **P4** |
+| 7b Referrals | ✓ | ✓ | ✗ | ✗ | **P5** |
+| 7c Driver bonuses | ~ | ✗ | ✗ | ✗ | **P11**, then **T4** |
+| 2b Account-sharing protection | ~ | ✓ suspension | ✗ | ✗ | **P10**, then **T3** |
+| 9a Ops alerts | ~ | ? | ✗ | ✗ | **P14**, then **T5** |
+| 9b Backup restore | ✓ `host-db-release.sh backup` + `drill` | ✓ | n/a | ✗ | **T1**: the release-2 host steps run it |
+| NG payouts / bank account | ~ | ~ | ✗ | ✗ | **D-AF** deferred |
 
-### Off: exact switch, scope, approved policy, missing decision, verification
+### Technical dependencies (not business decisions)
 
-| Feature | Exact switch | Scope available in code | Approved policy already available | Missing (decision) | Verification required before marking complete |
-|---|---|---|---|---|---|
-| 5b Cash rides | `VAYDU_CASH_RIDE_BOOKING=true` (API env) **and** `driver_cash_credit_config_v1e` global on **and** a `driver_cash_credit_markets_v1e` row GB/GBP `enabled` (DB owner only) | per market + currency; rides only (courier off, D10) | Hold at booking, immediate-only, fixed fare (`CASH-BOOKING-PLAN.md`) | **D8**: GB test driver id, tenant id, accepted cash-terms version; approval to flip the three switches for GB/GBP only | Real-PG suites on develop's drill; a browser cash booking; book → complete → driver ledger; `enabled_cash_markets 1` (GB only); NG unaffected |
-| 6a Cancellation fees | a `cancellation_policies` row for tenant + market, published then enabled by an admin (audited) | per tenant + market; the currency must equal the booking currency (fails closed) | 80/20 compensation on collection; debt threshold 50% of the minimum fare; grace counted from acceptance | **D6**: `fee_minor`, `fee_cap_minor`, `grace_seconds` for GB/GBP; **D13** exemptions | Customer cancel after grace on develop: preview = charge; Stripe test capture; receivable when nothing can be captured |
-| 6b Driver compensation | follows 6a (no separate switch) | as 6a | 80/20 on collection | 6a values; **D14** fee above the cash hold | A captured fee settles 80/20 once (webhook replay too) on develop |
-| 6c Customer debt + repayment | live; a receivable only arises from 6a fees | per tenant + market | threshold 50% of the minimum fare | **D6**: overdue-debt terms | A receivable from a 6a cancel, then a Stripe test repayment on develop |
-| 7a First-booking promotion | a `campaigns` row `kind=customer_discount`, `enabled`, not paused | per tenant + market + currency + service | 5% | **D6**: `max_discount_minor`, `min_qualifying_fare_minor`, `budget_minor`. Blank means *uncapped and unlimited*, so it is not enabled with blanks | First booking on develop shows and charges the discount; a second booking does not; budget guard |
-| 7b Referrals | a `campaigns` row `kind=referral` (`referral_reward_bps` 500) | per tenant + market + currency | Customer 5% (90-day credit, ≤5/month); driver 5% × 20 jobs/30 days (≤3/month, 7-day review) | **D6**: `reward_cap_minor`, `qualifying_fare_minor`, `budget_minor` | Referee's qualifying job on develop earns once; reversal on refund |
-| 3 Completion PIN | `marketplace_settings.completion_pin_policy` (per tenant); per-driver `driver_pin_policies` | **per tenant**, not per market: a market-level default (D5's options) needs a code change | none for the default | **D5**: default for GB. Note: **without a setting, the code requires the PIN**, so it may already be on; the live check shows which | Booking on develop: PIN shown to the customer, required at completion (or not, per D5) |
-| 1b Reliability ranking | `VAYDU_DRIVER_RANKING_V23=true` (API env) + `smart_matching` weights (per tenant) | per tenant | none | **D3**: weights or confirm 0; review-score ranking on/off; road ETA `VAYDU_TOMTOM_MATRIX_V23` (TomTom cost) | A dispatch on develop with two drivers ranked as configured |
-| 4b Surge / traffic pricing | `marketplace_settings.dynamic_pricing` (`maxSurge`/`maxMultiplier`, per tenant) | per tenant | none (`maxSurge` 1 = off) | **D1** | A quote on develop under the configured trigger |
-| 4c Map style | client style config | per platform | none | **D2** | Rendered style on web and Android |
-| 7c Driver bonuses | not built (~) | — | none | **D7** | Build, then test |
-| 2b Account sharing | only suspension/revocation exists | per tenant | none | **D4** | Depends on D4 |
-| 9a Ops alerts | `report-unresolved-payment-ops.cjs` exists; no schedule | platform | none | **D16**: alert destination and frequency | One alert received from develop |
-| 9b Backup restore | host step | develop | n/a | none (your host step) | Restore the step-2 backup into an isolated database; row counts match |
-| NG payouts / bank account | `driver_payout_markets` NG + `VAYDU_DRIVER_PAYOUT_SANDBOX` | NG/NGN only (DB check) | — | **D-AF** deferred | — |
-| Develop-only drift | — | — | — | **D12** | — |
+| ID | Dependency | Unblocks |
+|---|---|---|
+| T1 | Host steps by you (no agent SSH): the release-2 bundle (backup, drill, apply, API, web) and `host-live-config.sh` before and after | everything marked "Deployed ✗"; 9b |
+| T2 | GB cash cohort: one GB test driver and their tenant, read from the `live-config` output (no decision needed), and that driver's in-app cash-credit consent. **Reused, not asked again:** cash terms `fare-split-v1` (`cash_credit_terms_v1e`, percentage mode); the cash plan agreed on 2026-11-12; your activation authorisation. | 5b |
+| T3 | Account-sharing detection: not built yet; built after P10 | 2b |
+| T4 | Driver bonus engine: not built yet; built after P11 | 7c |
+| T5 | Scheduled ops report + alert sender: not built yet; built after P14 | 9a |
+| T6 | Admin screen for the market PIN setting: none yet (the setting is written by SQL or the settings API) | P6 convenience only |
 
-### Consolidated decisions (one table; nothing is filled in on your behalf)
+### Policy values still needed (proposals are suggestions for approval, not approved values)
 
-| ID | Unblocks | Exact value(s) needed (develop: GB/GBP) | Options |
-|---|---|---|---|
-| D1 | 4b | Surge cap; trigger rule; whether traffic changes the fare | (a) display-only traffic, `maxSurge` 1 · (b) supply the values · (c) out of launch |
-| D2 | 4c | Map provider + style id per platform | (a) keep the current MapLibre/MapTiler style · (b) supply one |
-| D3 | 1b | Acceptance-rate weight, cancellation-rate weight, new-driver exposure (km); review-score ranking on/off; road-ETA ranking on/off (TomTom matrix cost) | (a) confirm 0 / off · (b) supply the weights |
-| D4 | 2b | Which signals count as account sharing; the action taken | (a) detect and report only · (b) signals + action |
-| D5 | 3 | Default PIN for the GB tenant | (a) off · (b) rides only · (c) all services. (b) and per-market needs a small code change. |
-| D6 | 6a 6b 6c 7a 7b | Cancellation: fee, cap, grace seconds. Promo: max discount, minimum fare, budget. Referral: reward cap, qualifying fare, budget. Overdue debt: terms | (a) supply GB/GBP values for develop · (b) keep off |
-| D7 | 7c | Bonus rules and amounts | (a) supply them · (b) out of launch |
-| D8 | 5b | GB cash test driver id, tenant id, accepted cash-terms version; approval to flip the three cash switches for GB/GBP only | (a) supply them and approve · (b) keep off |
-| D12 | drift | `driver_vehicle_inspection_photos.reason` and the 6-argument RPC exist only on develop | (a) capture in a migration · (b) drop later · (c) leave |
-| D13 | 6a | Structured exemption reasons the customer can pick | (a) supply the list · (b) no exemptions |
-| D14 | 6b | Fee higher than the cash-ride hold | (a) build partial-collection compensation · (b) keep manual review |
-| D16 | 9a | Alert destination (email, Slack or other) and how often the report runs | (a) supply both · (b) keep it manual |
-| D-AF | NG payouts | Africa providers | Deferred, as instructed. |
+Approved values already in use are not repeated:
+- top-up fee 5%;
+- promo 5%;
+- referrals 5% with their limits and windows;
+- compensation 80/20 on collection;
+- debt threshold 50% of the minimum fare;
+- cash plan: hold, immediate-only, fixed fare;
+- Africa deferred;
+- courier cash off;
+- D9 counting.
+
+| ID | Value needed (develop: GB/GBP) | **Proposal (for approval)** |
+|---|---|---|
+| P1 | Cancellation fee, cap, grace | fee **£3.00**, cap **£3.00**, grace **120 s** after the driver accepts |
+| P3 | Overdue customer debt terms | Booking blocked while open debt ≥ the approved threshold; reminder after **24 h**; admin review after **30 days**; no interest or late fee |
+| P4 | First-booking promo limits | max discount **£5.00**, minimum fare **£8.00**, develop budget **£500** |
+| P5 | Referral limits | reward cap **£5.00**, qualifying fare **£8.00**, develop budget **£500** |
+| P6 | Default completion PIN, GB | **Required for all services** (today's behaviour) |
+| P7 | Matching weights | acceptance **0.5**, cancellation **1.0**, new-driver exposure **0.15 km** (the code's maximum); review-score ranking **on**; road-ETA ranking **off** (TomTom matrix cost) |
+| P8 | Surge | dynamic pricing **on** for GB with `maxSurge` **1.5**, demand/supply **on**, traffic multiplier **1.0** (traffic stays display-only), every other multiplier **1.0** |
+| P9 | Map style | **MapTiler streets-v2** (current) on web and Android |
+| P10 | Account sharing | Signals: sign-ins from **2 countries within 1 h**, **> 2 devices** active within 24 h, or a driver location jump **> 200 km in 10 min**. Action: **flag for admin review**, no automatic suspension |
+| P11 | Driver bonus | **£20** after **25** completed GB rides Monday–Sunday, platform-funded, develop budget **£200/week** |
+| P12 | Cancellation exemptions the customer can pick | **Driver over 10 min late**, **driver not moving for 5 min**, **wrong vehicle**, **safety concern** |
+| P13 | Fee above the cash hold | **Manual review** now (current behaviour); partial-collection compensation as a later build |
+| P14 | Ops alerts | Report every **15 min**; destination: **an email address you choose** (the address is the one value with no proposal) |
 
 ## 0. Unfinished work started first
 
@@ -234,7 +246,7 @@ on a host step.
 | 1c | Availability messages = server decision | ✓ | ✓ | ✓ 2026-11-13: `e2e/customer-no-driver-reason.spec.ts` 5/5 (the real tracking page renders the three dispatch reasons and the handoff reason verbatim, with a generic fallback when there is none); `no-driver-reason-customer-text.spec.ts` 3/3 (fails on the old code) | ~ (handoff fix pending the next bundle) | n/a | **Fixed:** `/driver-unable` wrote the driver's own free text into the customer-visible reason. It is now fixed server text; the driver's text stays in `metadata.driver_handoff_history`. |
 | 2a | Vehicle inspection (6 slots for motor vehicles, 3 for bikes) **in readiness, submission, approval and eligibility** | ✓ | ✓ | ✓ local (2026-11-13), on a **real backend** and the **real review screen**; see below | ✗ (develop still runs 3c91991, which shows "Complete" with no photos) | n/a | **NOT complete until deployed to develop and your own application is re-checked there.** On-device upload still unverified. |
 | 2b | Account-sharing protections | ~ | ✓ | ✓ suspension revokes the same token + refresh (rehearsal, both checks) | ? | n/a | Only suspension/revocation exists; the sharing policy itself is undefined (D4). |
-| 3 | Backend per-driver completion PIN policy | ✓ | ✓ | ~ migration applies (rehearsal); PIN flow prior (7/7) | ✓ schema + code | **?** the code requires the PIN unless the tenant `completion_pin_policy` disables it; live value unread | Needs D5; the default is per tenant, not per market. |
+| 3 | Backend per-driver completion PIN policy | ✓ | ✓ | ✓ 2026-11-13: real-PG `realdb-completion-pin-test.sql` 17/17 (release-2 rehearsal); real routes (admin PIN routes, real `assign_driver_to_job`, `/api/jobs/complete`, `audit_logs`); unit 21 | ✗ (release 2 pending) | ✓ no switch once deployed; market default unset = required (P6) | Frozen at assignment; reassignment re-resolves; pre-release-2 jobs read the current override at completion. |
 | 4a | Traffic indicators | ✓ | ✓ | prior (`traffic-route.spec.ts`) | ? | ? | Live TomTom key unverified. |
 | 4b | Traffic-aware pricing + surge | ~ | ~ | prior | ? | ✗ | `maxSurge` default 1 (off). Needs D1. |
 | 4c | Approved map styling | ? | ? | ✗ | ? | ✗ | Needs D2. |
@@ -356,7 +368,7 @@ a value on your behalf: where a value is needed, the option names it.
 | D6 | Promotions, referrals, campaigns, cancellation fees, overdue debt (6a/6c/7a/7b) | The rates are approved (5% promo, referrals, 80/20, debt threshold 50% of the minimum fare). Missing per market+currency: promo cap and minimum fare; referral caps and minimum fare; campaign budgets; cancellation fee amount, cap and grace period; overdue-debt terms. (a) Supply values for GB/GBP develop only. (b) Keep off. |
 | D7 | Driver bonuses (7c) | (a) Bonus rules and amounts (you supply). (b) Keep out of launch. |
 | D8 | GB develop cash-ride cohort (5b) | Supply the test driver id, the tenant id and the accepted cash terms version, plus separate approval to enable. (b) Keep off. |
-| D12 | Develop-only schema drift | `driver_vehicle_inspection_photos.reason` and a 6-argument `register_driver_inspection_photo` exist only on develop, applied outside the migrations. The code uses neither. (a) Capture them in a migration so all environments match. (b) Drop them in a later release. (c) Leave as is. |
+| ~~D12~~ | **Resolved 2026-11-13 (user: capture, do not drop):** `20261270000000` captures both objects; no-op on develop; proven to preserve rows, grants, RLS and storage policies; fresh install matches develop. |
 | D13 | Cancellation-fee `exempt_reasons` (6a) | (a) Structured reasons the customer picks (e.g. driver late, wrong pickup), list supplied by you. (b) No exemptions (current behaviour). Matching free text is not offered: anyone could avoid the fee. |
 | D14 | Fee larger than the cash-ride hold disclosed at booking (6b) | (a) Build a partial-collection receivable model so the hold part is compensated automatically. (b) Keep the current manual review (`requires_review`). |
 | D-AF | Africa payment providers | Deferred, as instructed. |

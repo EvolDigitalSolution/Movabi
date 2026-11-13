@@ -1222,6 +1222,24 @@ export class AdminService {
     return body as DriverOfferMetricsView;
   }
 
+  /** Area 3: the driver's completion PIN override (tenant-scoped on the server). */
+  async driverPinPolicy(driverId: string): Promise<{ override: { policy: 'required' | 'optional' | 'disabled'; set_at: string; reason: string | null } | null }> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/drivers/${encodeURIComponent(driverId)}/pin-policy`, { headers, signal: AbortSignal.timeout(15000) });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Could not load the PIN setting.');
+    return { override: body.override ?? null };
+  }
+
+  /** Set (required/optional/disabled) or clear the override; a reason is required for the audit record. */
+  async setDriverPinPolicy(driverId: string, policy: 'required' | 'optional' | 'disabled' | 'clear', reason: string): Promise<void> {
+    const headers = { ...(await this.getAuthenticatedApiHeaders()), 'Content-Type': 'application/json' };
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/drivers/${encodeURIComponent(driverId)}/pin-policy`,
+      { method: 'POST', headers, body: JSON.stringify({ policy, reason }), signal: AbortSignal.timeout(15000) });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Could not save the PIN setting.');
+  }
+
   async campaignAudit(): Promise<any[]> {
     const headers = await this.getAuthenticatedApiHeaders();
     const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/campaigns/audit`, { headers, signal: AbortSignal.timeout(15000) });

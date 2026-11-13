@@ -1,1 +1,2 @@
 deploy/vaydu-develop-release/release-up.sql
+deploy/vaydu-develop-release-2/release-up.sql

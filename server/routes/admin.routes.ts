@@ -1717,30 +1717,63 @@ router.get('/drivers/:driverId/offer-metrics', requireAdmin, async (req: Request
     }
 });
 
-/** Read/set a driver's completion PIN policy (audited; beats market setting). */
+/** Read/set a driver's completion PIN policy (audited). Area 3: the override is stored for the
+ *  DRIVER'S OWN tenant only, a tenant admin can only see or change drivers of their tenant
+ *  (anything else is 404, no existence leak), and `clear` removes the override so the booking
+ *  market's policy applies again. Changes apply from the driver's next assignment: the policy
+ *  in force is frozen onto each job when the driver is assigned. */
+async function pinPolicyDriver(req: Request, res: Response): Promise<{ id: string; tenant_id: string } | null> {
+    const scope = await adminTenant(req);
+    if (scope.error) { res.status(500).json({ error: scope.error }); return null; }
+    const { data: driver, error } = await supabaseAdmin.from('profiles').select('id,role,tenant_id').eq('id', req.params.driverId).maybeSingle();
+    if (error) { res.status(500).json({ error: 'Could not read the driver.' }); return null; }
+    if (!driver || (driver as any).role !== 'driver' || !(driver as any).tenant_id
+        || (scope.tenant !== null && (driver as any).tenant_id !== scope.tenant)) {
+        res.status(404).json({ error: 'Driver not found.', code: 'DRIVER_NOT_FOUND' }); return null;
+    }
+    return { id: String((driver as any).id), tenant_id: String((driver as any).tenant_id) };
+}
+
 router.get('/drivers/:driverId/pin-policy', requireAdmin, async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const driver = await pinPolicyDriver(req, res);
+    if (!driver) return;
     const { data, error } = await supabaseAdmin
         .from('driver_pin_policies')
         .select('policy,set_by,set_at,reason')
-        .eq('driver_id', req.params.driverId)
-        .order('set_at', { ascending: false });
+        .eq('driver_id', driver.id)
+        .eq('tenant_id', driver.tenant_id)
+        .maybeSingle();
     if (error) return res.status(500).json({ error: 'Could not read the PIN policy.' });
-    return res.json({ policies: data || [] });
+    return res.json({ driverId: driver.id, tenantId: driver.tenant_id, override: data || null,
+        policies: data ? [data] : [], appliesFrom: 'next_assignment' });
 });
 
 router.post('/drivers/:driverId/pin-policy', requireAdmin, async (req: Request, res: Response) => {
     const adminId = (req as any).adminId || (req as any).adminUserId || (req as any).user?.id;
     const { policy, tenantId, reason } = req.body || {};
-    if (!['required', 'optional', 'disabled'].includes(String(policy))) return res.status(400).json({ error: 'policy must be required, optional or disabled' });
-    if (!tenantId) return res.status(400).json({ error: 'tenantId is required' });
+    const clear = policy === 'clear' || policy === null;
+    if (!clear && !['required', 'optional', 'disabled'].includes(String(policy))) return res.status(400).json({ error: 'policy must be required, optional, disabled or clear' });
+    const reasonText = typeof reason === 'string' ? reason.trim().slice(0, 500) : '';
+    if (!reasonText) return res.status(400).json({ error: 'A reason is required for the audit record.' });
+    const driver = await pinPolicyDriver(req, res);
+    if (!driver) return;
+    // A tenant id in the body must be the driver's own (older clients send it); never another tenant.
+    if (tenantId && String(tenantId) !== driver.tenant_id) return res.status(404).json({ error: 'Driver not found.', code: 'DRIVER_NOT_FOUND' });
+    if (clear) {
+        const { error } = await supabaseAdmin.from('driver_pin_policies').delete().eq('driver_id', driver.id).eq('tenant_id', driver.tenant_id);
+        if (error) return res.status(500).json({ error: 'Could not clear the PIN policy.' });
+        await AuditService.logAdminAction(adminId, 'pin_policy_cleared', 'driver', driver.id, { tenantId: driver.tenant_id, reason: reasonText });
+        return res.json({ success: true, policy: null, appliesFrom: 'next_assignment' });
+    }
     const { data, error } = await supabaseAdmin
         .from('driver_pin_policies')
-        .upsert({ driver_id: req.params.driverId, tenant_id: tenantId, policy, set_by: adminId, set_at: new Date().toISOString(), reason: reason || null }, { onConflict: 'driver_id,tenant_id' })
+        .upsert({ driver_id: driver.id, tenant_id: driver.tenant_id, policy, set_by: adminId, set_at: new Date().toISOString(), reason: reasonText }, { onConflict: 'driver_id,tenant_id' })
         .select('driver_id,tenant_id,policy')
         .single();
     if (error) return res.status(500).json({ error: 'Could not save the PIN policy.' });
-    await AuditService.logAdminAction(adminId, 'pin_policy_changed', 'driver', String(req.params.driverId), { policy: String(policy), tenantId: String(tenantId), reason: reason ? String(reason) : null });
-    return res.json({ success: true, policy: data });
+    await AuditService.logAdminAction(adminId, 'pin_policy_changed', 'driver', driver.id, { policy: String(policy), tenantId: driver.tenant_id, reason: reasonText });
+    return res.json({ success: true, policy: data, appliesFrom: 'next_assignment' });
 });
 
 /** List + resolve customer receivables (waive/mark-paid/write-off after verification). */

@@ -14,6 +14,8 @@ function setup(options:any={}) {
   if(name.includes('stripe.service'))return {stripe};if(name.includes('supabase.service'))return {supabaseAdmin:db};
   if(name.includes('fare-split.service'))return {HistoricalFareReconciliationRequired,FareSplitService:{fromSnapshot:()=>{if(options.badSnapshot)throw new HistoricalFareReconciliationRequired('Missing snapshot');return fare;},toMinor:(v:number)=>Math.round(v*100)}};
   if(name.includes('audit.service'))return {AuditService:{logBooking:async()=>{}}};
+  // Area 3: the real (pure) completion PIN policy module, not a stub.
+  if(name.includes('completion-pin-policy')){const m:any={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync('server/services/completion-pin-policy.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:m.exports});return m.exports;}
   if(name.includes('payment-authority'))return {PaymentAuthorityService:{resolve:async()=>({serviceFareMajor:10,totalAuthorisationMajor:10}),assertFrozenServiceFare:()=>{},isErrand:()=>false}};
   return {};
  }};

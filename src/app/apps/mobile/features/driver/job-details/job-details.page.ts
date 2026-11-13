@@ -1266,12 +1266,19 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             : ' Confirm completion to finish the job and start payment processing.';
     }
 
-    private requiresCompletionPin(): boolean {
-        // Release closure: the flag is driver-visible; the PIN value is NOT (it
-        // lives in the customer-only job_completion_secrets table). The legacy
-        // metadata-PIN check remains for in-flight jobs created before the store.
+    /** Area 3: the policy frozen when this driver was assigned (driver override, else the booking
+     *  market's policy). The PIN value itself is never driver-visible (customer-only secret table).
+     *  Jobs without the stamp keep the earlier flag; legacy metadata PINs still count as required. */
+    private completionPinMode(): 'required' | 'optional' | 'disabled' {
         const metadata = this.jobMetadata();
-        return metadata['completion_pin_required'] === true || this.completionPin().length >= 4;
+        const stamped = metadata['completion_pin_effective'];
+        if ((stamped === 'required' || stamped === 'optional' || stamped === 'disabled')
+            && metadata['completion_pin_driver_id'] === (this.job() as any)?.driver_id) return stamped;
+        return metadata['completion_pin_required'] === true || this.completionPin().length >= 4 ? 'required' : 'disabled';
+    }
+
+    private requiresCompletionPin(): boolean {
+        return this.completionPinMode() === 'required';
     }
 
     private normalizeCompletionPin(value: unknown): string {
@@ -2135,13 +2142,15 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             header: 'Complete Request',
             message: this.requiresCompletionPin()
                 ? 'Ask the customer for their Vaydu completion PIN. Payment settlement will only continue after the correct PIN is entered.'
-                : 'Confirm this request is fully completed. Payment settlement will only continue after completion.',
-            inputs: this.requiresCompletionPin()
+                : this.completionPinMode() === 'optional'
+                    ? 'Confirm this request is fully completed. If the customer gives you their completion PIN, enter it (optional).'
+                    : 'Confirm this request is fully completed. Payment settlement will only continue after completion.',
+            inputs: this.completionPinMode() !== 'disabled'
                 ? [
                     {
                         name: 'completionPin',
                         type: 'tel',
-                        placeholder: '4-digit customer PIN',
+                        placeholder: this.requiresCompletionPin() ? '4-digit customer PIN' : '4-digit customer PIN (optional)',
                         attributes: {
                             inputmode: 'numeric',
                             maxlength: 6,

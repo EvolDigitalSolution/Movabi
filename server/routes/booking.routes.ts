@@ -1,3 +1,4 @@
+import { bookingPinMetadata, marketPinPolicy } from '../services/completion-pin-policy';
 import { assertInspectionApproved } from '../services/driver-inspection-evidence';
 import {DriverPaymentAccountService,sandboxDestinationProvider} from '../services/driver-payment-account.service';
 import { cashRideAcquisitionApproved, mapCashCreditError, isCashRide } from '../services/driver-cash-credit';
@@ -794,16 +795,20 @@ router.post('/create', bookingCreateLimiter, async (req: Request, res: Response)
             } catch (cashError) { return cashFailure(res, cashError); }
         }
         // Snapshot server policy; client metadata cannot disable verification.
-        const pinPolicy = await MarketplaceConfigService.getRawSetting('completion_pin_policy',
+        // The booking market's policy only (area 3): a per-driver override is applied when a
+        // driver is assigned (trigger stamp_completion_pin_policy), never here.
+        const pinSetting = await MarketplaceConfigService.getRawSetting('completion_pin_policy',
             typeof insertPayload.tenant_id === 'string' ? insertPayload.tenant_id : null);
-        const pinRequired = !(pinPolicy && typeof pinPolicy === 'object' &&
-            'enabled' in pinPolicy && pinPolicy.enabled === false);
+        const marketPin = marketPinPolicy(pinSetting, String(insertPayload.country_code || ''));
+        const pinRequired = marketPin !== 'disabled';
         const safeMetadata = { ...(insertPayload.metadata as Record<string, unknown> || {}) };
         delete safeMetadata.completion_pin;
         delete safeMetadata.service_completion_pin;
         delete safeMetadata.delivery_pin;
-        insertPayload.metadata = { ...safeMetadata, completion_pin_required: pinRequired,
-            completion_pin_policy_version: 'backend-v1' };
+        delete safeMetadata.completion_pin_effective;
+        delete safeMetadata.completion_pin_driver_id;
+        delete safeMetadata.completion_pin_source;
+        insertPayload.metadata = { ...safeMetadata, ...bookingPinMetadata(marketPin) };
         // Reward-credit claim rides INSIDE the job insert via metadata —
         // the reserve_job_reward_credit trigger calls apply_reward_credit in
         // the same transaction, so a failed reservation rolls back the

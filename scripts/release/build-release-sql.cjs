@@ -12,8 +12,11 @@
 'use strict';
 const fs=require('fs'),path=require('path'),crypto=require('crypto');
 const root=path.resolve(__dirname,'../..');
-const out=process.env.VAYDU_RELEASE_OUT?path.resolve(process.env.VAYDU_RELEASE_OUT):path.join(root,'deploy/vaydu-develop-release');
-const UP=[
+// A later release passes VAYDU_RELEASE_CONFIG=<json>: {out, up[], down[], restore[], title}. Without it,
+// release 1 (below) is rebuilt byte-identically.
+const CFG=process.env.VAYDU_RELEASE_CONFIG?JSON.parse(fs.readFileSync(path.resolve(process.env.VAYDU_RELEASE_CONFIG),'utf8')):null;
+const out=process.env.VAYDU_RELEASE_OUT?path.resolve(process.env.VAYDU_RELEASE_OUT):path.join(root,CFG?CFG.out:'deploy/vaydu-develop-release');
+const UP=CFG?CFG.up:[
  'supabase/migrations/20261266000000_driver_cash_credit_market_pilot.sql',
  'supabase/migrations/20261266100000_cash_ride_booking_fee_hold.sql',
  'supabase/migrations/20261266200000_cash_ride_activation.sql',
@@ -22,7 +25,7 @@ const UP=[
  'supabase/migrations/20261268000000_cancellation_fee_quote.sql',
  'supabase/migrations/20261269000000_merge_cash_pilot_with_roadmap_cash.sql',
 ];
-const DOWN=[
+const DOWN=CFG?CFG.down:[
  'scripts/migration-merge/20261269000000_merge_cash_pilot_with_roadmap_cash.down.sql',
  'scripts/cancellation-fee/20261268000000_cancellation_fee_quote.down.sql',
  'scripts/driver-metrics/20261267000000_driver_cancellation_attribution.down.sql',
@@ -51,7 +54,7 @@ function body(rel){
 // release-changes.tsv). The older rollback files restore pre-roadmap bodies, so release-down.sql ends
 // by restoring these from the committed live baseline (CR bytes inside bodies kept as they are).
 const LIVE_BASELINE='supabase/baseline/develop_live_public_schema_20261112.sql';
-const RESTORE=[
+const RESTORE=CFG?(CFG.restore||[]):[
  'public.driver_cash_credit_status_v1f(p_driver_id uuid)',
  'public.enforce_job_payment_eligibility()',
  'public.enforce_ride_cash_credit_v1e()',
@@ -72,6 +75,7 @@ function liveDefinition(dump,signature){
   return 'CREATE OR REPLACE FUNCTION'+dump.slice(start+'CREATE FUNCTION'.length,end+close.length);
 }
 function restoreSection(){
+  if(!RESTORE.length)return '';
   const raw=fs.readFileSync(path.join(root,LIVE_BASELINE));const dump=raw.toString('utf8');
   let s=`\n-- ===== Restore develop's exact pre-release definitions (${LIVE_BASELINE}, sha256 ${sha(raw)}) =====\n`;
   for(const sig of RESTORE)s+=`-- ${sig}\n${liveDefinition(dump,sig)}\n`;
@@ -89,9 +93,10 @@ function build(list,end,title,extra=''){
   s+=`${extra}\n-- Tell PostgREST to reload its schema cache (delivered at COMMIT only).\nNOTIFY pgrst, 'reload schema';\n${end}\n`;return {s,parts};
 }
 fs.mkdirSync(out,{recursive:true});
-const up=build(UP,'COMMIT;','Vaydu develop release: 7 pending migrations (cash chain, D9 attribution, fee quote, merge)');
+const T=CFG?CFG.title:'Vaydu develop release: 7 pending migrations (cash chain, D9 attribution, fee quote, merge)';
+const up=build(UP,'COMMIT;',T);
 const dry=build(UP,'ROLLBACK;','DRY RUN of release-up.sql against real data: ends in ROLLBACK, changes nothing');
-const down=build(DOWN,'COMMIT;',"Vaydu develop release ROLLBACK: the 7 rollbacks, newest first, then develop's exact pre-release function definitions",restoreSection());
+const down=build(DOWN,'COMMIT;',CFG?`${T}: ROLLBACK, newest first`:"Vaydu develop release ROLLBACK: the 7 rollbacks, newest first, then develop's exact pre-release function definitions",restoreSection());
 fs.writeFileSync(path.join(out,'release-up.sql'),up.s);
 fs.writeFileSync(path.join(out,'release-dryrun.sql'),dry.s);
 fs.writeFileSync(path.join(out,'release-down.sql'),down.s);

@@ -431,6 +431,28 @@ type AdminDriver = DriverProfile & {
               } @else { <p class="text-sm text-slate-500">Loading…</p> }
             </div>
 
+            <div class="detail-card" data-testid="admin-driver-pin-policy">
+              <p class="detail-label">Completion PIN</p>
+              @if (pinPolicyError()) { <p role="alert" class="text-sm text-rose-600">{{ pinPolicyError() }}</p> }
+              @if (pinPolicyLoaded()) {
+                <p class="text-sm mt-1" data-testid="admin-driver-pin-current">{{ pinPolicyCurrent() ? 'Driver setting: ' + pinPolicyLabel(pinPolicyCurrent()!) : 'Follows the booking market' }}</p>
+                <div class="grid gap-2 mt-2">
+                  <label class="text-xs font-semibold" for="pin-policy-select">Change</label>
+                  <select id="pin-policy-select" class="border rounded-lg p-2 text-sm" [value]="pinPolicyDraft()" (change)="pinPolicyDraft.set($any($event.target).value)">
+                    <option value="clear">Follow the booking market</option>
+                    <option value="required">Required</option>
+                    <option value="optional">Optional</option>
+                    <option value="disabled">Not used</option>
+                  </select>
+                  <label class="text-xs font-semibold" for="pin-policy-reason">Reason (kept in the audit log)</label>
+                  <input id="pin-policy-reason" class="border rounded-lg p-2 text-sm" maxlength="500" [value]="pinPolicyReason()" (input)="pinPolicyReason.set($any($event.target).value)" />
+                  <button type="button" class="rounded-lg bg-slate-900 text-white text-sm font-semibold p-2 disabled:opacity-50"
+                    [disabled]="pinPolicySaving() || !pinPolicyReason().trim()" (click)="savePinPolicy()">Save PIN setting</button>
+                  <p class="text-xs text-slate-400">Applies from the driver's next assigned job; jobs already assigned keep their setting.</p>
+                </div>
+              } @else if (!pinPolicyError()) { <p class="text-sm text-slate-500">Loading…</p> }
+            </div>
+
             <div class="detail-card">
               <p class="detail-label">Documents</p>
               <section class="my-3 space-y-2">
@@ -1563,6 +1585,43 @@ export class DriverListComponent implements OnInit {
         }
     }
 
+    readonly pinPolicyCurrent = signal<'required' | 'optional' | 'disabled' | null>(null);
+    readonly pinPolicyLoaded = signal(false);
+    readonly pinPolicyError = signal('');
+    readonly pinPolicyDraft = signal<'required' | 'optional' | 'disabled' | 'clear'>('clear');
+    readonly pinPolicyReason = signal('');
+    readonly pinPolicySaving = signal(false);
+    private pinPolicyRequest = 0;
+    pinPolicyLabel(p: 'required' | 'optional' | 'disabled') { return p === 'required' ? 'required' : p === 'optional' ? 'optional' : 'not used'; }
+
+    async loadPinPolicy() {
+        const id = this.selectedDriver()?.id;
+        if (!id) return;
+        const request = ++this.pinPolicyRequest;
+        this.pinPolicyLoaded.set(false); this.pinPolicyError.set(''); this.pinPolicyReason.set('');
+        try {
+            const { override } = await this.adminService.driverPinPolicy(id);
+            if (request !== this.pinPolicyRequest || this.selectedDriver()?.id !== id) return;
+            this.pinPolicyCurrent.set(override?.policy ?? null);
+            this.pinPolicyDraft.set(override?.policy ?? 'clear');
+            this.pinPolicyLoaded.set(true);
+        } catch (error) {
+            if (request === this.pinPolicyRequest && this.selectedDriver()?.id === id) this.pinPolicyError.set(error instanceof Error ? error.message : 'Could not load the PIN setting.');
+        }
+    }
+
+    async savePinPolicy() {
+        const id = this.selectedDriver()?.id;
+        if (!id || this.pinPolicySaving()) return;
+        this.pinPolicySaving.set(true); this.pinPolicyError.set('');
+        try {
+            await this.adminService.setDriverPinPolicy(id, this.pinPolicyDraft(), this.pinPolicyReason().trim());
+            if (this.selectedDriver()?.id === id) await this.loadPinPolicy();
+        } catch (error) {
+            if (this.selectedDriver()?.id === id) this.pinPolicyError.set(error instanceof Error ? error.message : 'Could not save the PIN setting.');
+        } finally { this.pinPolicySaving.set(false); }
+    }
+
     async reviewInspection(id:string,status:'approved'|'rejected',reason?:string) {
         const driverId = this.selectedDriver()?.id;
         try {
@@ -1585,11 +1644,15 @@ export class DriverListComponent implements OnInit {
         this.selectedDriver.set(driver);
         void this.loadInspectionPhotos();
         void this.loadOfferMetrics();
+        void this.loadPinPolicy();
     }
 
     closeDriverModal() {
         ++this.inspectionRequest;
         ++this.offerMetricsRequest;
+        ++this.pinPolicyRequest;
+        this.pinPolicyLoaded.set(false);
+        this.pinPolicyError.set('');
         this.offerMetrics.set(null);
         this.offerMetricsError.set('');
         this.inspection.set(null);

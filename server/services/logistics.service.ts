@@ -1,3 +1,4 @@
+import { effectivePinPolicy, isPinPolicy } from './completion-pin-policy';
 import { cashRideBooking } from './payments/cash-ride-booking.instance';
 import {DriverPaymentAccountService,sandboxPayoutProvider} from './driver-payment-account.service';
 import { JobPayoutService } from './job-payout.service';
@@ -442,16 +443,19 @@ export class LogisticsService {
       expectedPin = this.getCompletionPin(metadata);
     }
 
-    // Effective policy: per-driver override beats market setting.
-    let policyRow: unknown = null;
-    try {
-      const { data } = await supabaseAdmin.rpc('effective_completion_pin_policy', {
-        p_driver: job.driver_id, p_tenant: job.tenant_id,
-        p_market_enabled: metadata.completion_pin_required !== false
-      });
-      policyRow = data;
-    } catch { /* fall back to the market setting below */ }
-    const effectivePolicy = String((policyRow as any) || (metadata.completion_pin_required !== false ? 'required' : 'disabled'));
+    // Effective policy (area 3): the value frozen when this driver was assigned; for older jobs
+    // the driver's override read now, then the booking market's policy. An override that cannot
+    // be read never relaxes the check (fails closed to required).
+    let override: unknown = null;
+    let overrideReadFailed = false;
+    if (!(isPinPolicy(metadata.completion_pin_effective) && metadata.completion_pin_driver_id === job.driver_id)) {
+      try {
+        const { data, error } = await supabaseAdmin.from('driver_pin_policies').select('policy')
+          .eq('driver_id', job.driver_id).eq('tenant_id', job.tenant_id).maybeSingle();
+        if (error) overrideReadFailed = true; else override = (data as any)?.policy ?? null;
+      } catch { overrideReadFailed = true; }
+    }
+    const effectivePolicy = effectivePinPolicy({ driver_id: job.driver_id, metadata }, override, overrideReadFailed);
 
     if (effectivePolicy === 'disabled') return metadata;
 

@@ -221,6 +221,9 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
       '20261266200000_cash_ride_activation.sql',
       '20261266300000_cash_ride_completion.sql',
       '20261269000000_merge_cash_pilot_with_roadmap_cash.sql',
+      // Release 2: D12 capture (no-op where present) + per-driver completion PIN frozen at assignment.
+      '20261270000000_capture_develop_inspection_drift.sql',
+      '20261270100000_completion_pin_effective.sql',
     ]) {
       const source = migration.startsWith('candidate/')
         ? join(process.cwd(), 'supabase', 'baseline', migration)
@@ -564,6 +567,25 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
             ('${bikeFour.user.id}','${tenantId}','driver','GB','London','approved',true);`);
     sql(`INSERT INTO public.vehicles(id,user_id,type,vehicle_subtype,make,model,color,year,license_plate,is_verified,vehicle_verified,service_eligibility)
       VALUES('${bikeFour.user.id}','${bikeFour.user.id}','bike','pedal_bicycle','Vaydu','City','black','2022','BIKE 004',true,true,'["delivery"]'::jsonb);`); approveInspections();
+    // Area 3: per-driver completion PIN through the real admin router, then frozen onto the job by
+    // the REAL admin assignment below (assign_driver_to_job over PostgREST, every jobs trigger on).
+    const pinOther = await signup(`pin-other-${suffix}@example.test`);
+    sql(`INSERT INTO public.profiles(id,tenant_id,role,country_code,verification_status) VALUES('${pinOther.user.id}','${tenantB}','driver','GB','approved');`);
+    const pinRoute = (token: string, driver: string, body?: any) => fetch(base + `/api/admin/drivers/${driver}/pin-policy`, body === undefined
+      ? { headers: { Authorization: 'Bearer ' + token } }
+      : { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(body) });
+    expect((await pinRoute(bikeFour.access_token, bikeFour.user.id, { policy: 'disabled', reason: 'x' })).status, 'a driver cannot set PIN policy').toBe(403);
+    expect((await pinRoute(adminUser.access_token, bikeFour.user.id, { policy: 'disabled' })).status, 'a reason is required').toBe(400);
+    expect((await pinRoute(adminUser.access_token, bikeFour.user.id, { policy: 'sometimes', reason: 'x' })).status, 'unknown policy refused').toBe(400);
+    expect((await pinRoute(adminUser.access_token, pinOther.user.id, { policy: 'disabled', reason: 'x' })).status, 'driver of another tenant: not found').toBe(404);
+    expect((await pinRoute(adminUser.access_token, pinOther.user.id)).status, "reading another tenant's driver: not found").toBe(404);
+    expect((await pinRoute(adminUser.access_token, bikeFour.user.id, { policy: 'disabled', reason: 'x', tenantId: tenantB })).status, "a body tenant other than the driver's is refused").toBe(404);
+    expect(sql(`SELECT count(*) FROM public.driver_pin_policies WHERE driver_id IN ('${bikeFour.user.id}','${pinOther.user.id}');`), 'refused requests wrote nothing').toBe('0');
+    const pinSet = await pinRoute(adminUser.access_token, bikeFour.user.id, { policy: 'disabled', reason: 'Trusted courier pilot' });
+    expect(pinSet.status, 'admin sets the driver override: ' + JSON.stringify(await pinSet.clone().json())).toBe(200);
+    const pinRead: any = await (await pinRoute(adminUser.access_token, bikeFour.user.id)).json();
+    expect(pinRead.override?.policy, 'admin reads the override back').toBe('disabled');
+    expect(sql(`SELECT tenant_id::text||'|'||policy FROM public.driver_pin_policies WHERE driver_id='${bikeFour.user.id}';`), "stored for the driver's own tenant").toBe(`${tenantId}|disabled`);
     const adminJob = '77777777-7777-7777-7777-777777777777';
     sql(`INSERT INTO public.jobs(id,tenant_id,customer_id,country_code,driver_id,accepted_driver_id,status,payment_status,pickup_address,dropoff_address,scheduled_time,metadata,fulfilment_category,fulfilment_snapshot)
       VALUES('${adminJob}','${tenantId}','${customer.user.id}','GB',NULL,NULL,'searching','authorized','13 A Street','14 B Road',now(),'{"service_vehicle_class":"bike","service_slug":"ride"}'::jsonb,'bike','{"category":"bike","allowedSubtypes":["pedal_bicycle"]}');`);
@@ -581,6 +603,12 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     expect(adminBody).toBe(true);
     expect(sql(`SELECT coalesce(driver_id::text,'')||'|'||coalesce(accepted_driver_id::text,'')||'|'||status FROM public.jobs WHERE id='${adminJob}';`))
       .toBe(`${bikeFour.user.id}||assigned`);
+    expect(sql(`SELECT metadata->>'completion_pin_effective'||'|'||(metadata->>'completion_pin_source')||'|'||(metadata->>'completion_pin_required')||'|'||(metadata->>'completion_pin_driver_id') FROM public.jobs WHERE id='${adminJob}';`),
+      'area 3: the driver override (disabled) is frozen onto the job at the real admin assignment').toBe(`disabled|driver|false|${bikeFour.user.id}`);
+    const pinClear = await pinRoute(adminUser.access_token, bikeFour.user.id, { policy: 'clear', reason: 'Pilot ended' });
+    expect(pinClear.status, 'admin clears the override').toBe(200);
+    expect(sql(`SELECT count(*) FROM public.driver_pin_policies WHERE driver_id='${bikeFour.user.id}';`), 'override removed').toBe('0');
+    expect(sql(`SELECT metadata->>'completion_pin_effective' FROM public.jobs WHERE id='${adminJob}';`), 'an assigned job keeps the policy it was assigned with').toBe('disabled');
     const adminWrongTenant = await rpcAssign(adminUser.access_token, wrongTenantJob, bikeFour.user.id);
     expect(adminWrongTenant.status, 'admin assignment must respect tenant scope').toBeGreaterThanOrEqual(400);
     expect(sql(`SELECT coalesce(driver_id::text,'')||'|'||status FROM public.jobs WHERE id='${wrongTenantJob}';`))
@@ -1139,6 +1167,39 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     expect((await debtsFor(otherUser.access_token)).status, 'other user still accesses').toBe(200);
     const refreshOk = await refresh(otherUser.refresh_token);
     expect(refreshOk.status, 'other user still refreshes: ' + refreshOk.status).toBe(200);
+
+    // Area 3: the server's completion check over the real /api/jobs/complete route and a real database.
+    const completeAs = (token: string, job: string, pin?: string) => fetch(base + '/api/jobs/complete', {
+      method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ jobId: job, ...(pin === undefined ? {} : { completionPin: pin }) }) });
+    // (a) adminJob was assigned while bikeFour's override was 'disabled': no PIN is asked for (the
+    //     request then stops at a later, non-PIN step: this fixture job is not in progress).
+    const disabledRes = await completeAs(bikeFour.access_token, adminJob);
+    const disabledBody: any = await disabledRes.json();
+    expect(String(disabledBody.error || ''), 'frozen disabled policy: completion is not stopped for a PIN').not.toMatch(/pin/i);
+    expect(sql(`SELECT count(*) FROM public.job_completion_secrets WHERE job_id='${adminJob}';`), 'no PIN was minted for a disabled job').toBe('0');
+    // (b) after the override was cleared, a NEW assignment follows the booking market (required here):
+    //     a PIN is minted at assignment, the check requires it, a wrong PIN is counted, the right one passes.
+    sql(`SET session_replication_role = replica; UPDATE public.jobs SET status='completed' WHERE id='${adminJob}';`);
+    const pinJob = '78787878-7878-4878-8878-787878787878';
+    sql(`INSERT INTO public.jobs(id,tenant_id,customer_id,country_code,driver_id,accepted_driver_id,status,payment_status,pickup_address,dropoff_address,scheduled_time,metadata,fulfilment_category,fulfilment_snapshot)
+      VALUES('${pinJob}','${tenantId}','${customer.user.id}','GB',NULL,NULL,'searching','authorized','15 A Street','16 B Road',now(),'{"service_vehicle_class":"bike","service_slug":"ride","completion_pin_market_policy":"required","completion_pin_required":true}'::jsonb,'bike','{"category":"bike","allowedSubtypes":["pedal_bicycle"]}');`);
+    expect((await rpcAssign(adminUser.access_token, pinJob, bikeFour.user.id)).status, 'real admin assignment of the PIN job').toBe(200);
+    expect(sql(`SELECT metadata->>'completion_pin_effective'||'|'||(metadata->>'completion_pin_source') FROM public.jobs WHERE id='${pinJob}';`), 'no override: market policy').toBe('required|market');
+    const pinValue = sql(`SELECT completion_pin FROM public.job_completion_secrets WHERE job_id='${pinJob}';`);
+    expect(pinValue, 'a 4-digit PIN was minted at assignment').toMatch(/^[1-9][0-9]{3}$/);
+    expect((await completeAs(customer.access_token, pinJob, pinValue)).status, 'only the assigned driver can complete').toBe(403);
+    const noPin = await completeAs(bikeFour.access_token, pinJob);
+    expect(String(((await noPin.json()) as any).error), 'missing PIN refused').toMatch(/PIN is required/i);
+    const wrongPin = await completeAs(bikeFour.access_token, pinJob, pinValue === '1000' ? '1001' : '1000');
+    expect(String(((await wrongPin.json()) as any).error), 'wrong PIN refused').toMatch(/incorrect/i);
+    expect(sql(`SELECT attempts::text||'|'||(verified_at IS NULL)::text FROM public.job_completion_secrets WHERE job_id='${pinJob}';`), 'wrong attempt counted, not verified').toBe('1|true');
+    const rightPin: any = await (await completeAs(bikeFour.access_token, pinJob, pinValue)).json();
+    expect(String(rightPin.error || ''), 'correct PIN passes the PIN check').not.toMatch(/pin|incorrect/i);
+    expect(sql(`SELECT (verified_at IS NOT NULL)::text FROM public.job_completion_secrets WHERE job_id='${pinJob}';`), 'correct PIN recorded once (replay-safe)').toBe('true');
+    // Audit: both admin changes were recorded with the admin, the driver and the reason.
+    expect(sql(`SELECT string_agg(action||'|'||(metadata->>'reason'),',' ORDER BY created_at) FROM public.audit_logs WHERE entity_id='${bikeFour.user.id}' AND action LIKE 'admin_pin_policy_%' AND user_id='${adminUser.user.id}';`),
+      'audit records for set and clear').toBe('admin_pin_policy_changed|Trusted courier pilot,admin_pin_policy_cleared|Pilot ended');
 
   } finally {
     server?.close(); server?.closeAllConnections();
