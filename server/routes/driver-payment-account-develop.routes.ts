@@ -6,11 +6,13 @@ import {confirmedDevelopCollectionScope,developCollectionProvider} from '../serv
 import {driverPaymentAccountRouter as setupRouter} from '../payment-account-closure/router';
 import {SetupService} from '../payment-account-closure/service';
 import {resolve as resolvePath} from 'node:path';
+import {verifiedPaymentAccount} from '../services/driver-payment-account-status';
 import {Router} from 'express';
 
 /** Same object for auth, scope, reads and durable claims. No second createClient or DB transport. */
 export function developDriverPaymentAccountRouter(db:any=supabaseAdmin,env:NodeJS.ProcessEnv=process.env,
- loader?:Parameters<typeof developCollectionProvider>[2],request?:typeof fetch){
+ loader?:Parameters<typeof developCollectionProvider>[2],request?:typeof fetch,
+ statusOf?:(driverId:string)=>Promise<Record<string,unknown>>){
  if(env.VAYDU_PAYMENT_ACCOUNT_SETUP!==undefined){
   try{
    const target=new URL(db.supabaseUrl||'').href;
@@ -28,6 +30,19 @@ export function developDriverPaymentAccountRouter(db:any=supabaseAdmin,env:NodeJ
    const code=(e as Error)?.message||'unknown';
    console.error('[driver-payment-account-setup] integration unavailable:', code);
    const unavailable=Router();
+   // Status stays answerable (user decision 2026-11-13): the same verified state the requirement
+   // evaluator already uses without this module, i.e. the existing Stripe authority for GB drivers and
+   // 'unavailable' elsewhere. Every setup action (banks/resolve/setup/reconcile) remains a 503.
+   unavailable.get('/status',async(req,res)=>{
+    try{
+     const token=String(req.get('authorization')||'').match(/^Bearer\s+(\S+)$/i)?.[1];
+     if(!token)return res.status(401).json({error:'Sign in required.'});
+     const {data,error}=await db.auth.getUser(token);
+     if(error||!data?.user)return res.status(401).json({error:'Sign in required.'});
+     const status:Record<string,unknown>=await (statusOf||verifiedPaymentAccount)(data.user.id) as any;
+     return res.json({...status,setupAvailable:false});
+    }catch{return res.status(503).json({error:'Payment account status is temporarily unavailable.',code:'PAYMENT_ACCOUNT_STATUS_UNAVAILABLE'});}
+   });
    unavailable.use((_req,res)=>{res.status(503).json({error:'Payment account setup is temporarily unavailable.',code:'PAYMENT_ACCOUNT_SETUP_UNAVAILABLE'});});
    return unavailable;
   }

@@ -145,6 +145,30 @@ async function inspectionVehicle(driverId: string) {
   return data.length === 1 ? data[0] : null;
 }
 
+/**
+ * D15 (user, 2026-11-13: "Auto-assign from registration"). A driver's inspection market is server-managed
+ * (protect_inspection_tenant stops clients setting it), and until now nothing ever assigned it, so every
+ * new driver was stuck at the inspection step. Assign it once, from the driver's registration market (the
+ * same precedence as the payout market checks: registration_country_code, then country_code). Only when:
+ * the profile is a driver, already has a tenant (set at sign-up), has no inspection market yet, and the
+ * market is an enabled row of market_availability. Never overwrites an existing market.
+ */
+export async function ensureInspectionMarket(db: any, driverId: string): Promise<void> {
+  const {data:p,error} = await db.from('profiles')
+    .select('id,role,tenant_id,inspection_market_code,registration_country_code,country_code').eq('id',driverId).maybeSingle();
+  if (error) throw error;
+  if (!p || p.role !== 'driver' || p.inspection_market_code || !p.tenant_id) return;
+  const market = String(p.registration_country_code || p.country_code || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(market)) return;
+  const {data:configured,error:marketError} = await db.from('market_availability')
+    .select('country_code').eq('enabled',true).eq('country_code',market).limit(1);
+  if (marketError) throw marketError;
+  if (!configured?.length) return;
+  const {error:updateError} = await db.from('profiles').update({inspection_market_code:market})
+    .eq('id',driverId).eq('role','driver').is('inspection_market_code',null);
+  if (updateError) throw updateError;
+}
+
 async function inspectionRows(driverId: string, tenant: string, vehicle: {id:string;inspection_revision:string}) {
   const {data,error} = await supabase.from('driver_vehicle_inspection_photos').select('id,slot,status,rejection_reason,storage_path')
     .eq('driver_id',driverId).eq('tenant_id',tenant).eq('vehicle_id',vehicle.id)
@@ -162,6 +186,7 @@ router.post('/inspection-requirements-preview', async (req,res) => {
         || (category === 'bike' && !['','pedal_bicycle','e_bike','motorcycle','moped'].includes(subtype))
         || !Array.isArray(services) || services.length > 4
         || services.some(service => !['ride','delivery','errand','van'].includes(service))) return res.sendStatus(400);
+    await ensureInspectionMarket(supabase, actor.id);
     const {data:profile,error} = await supabase.from('profiles').select('*').eq('id',actor.id).single();
     if (error) throw error;
     if (!profile.inspection_market_code) return res.status(422).json({error:'Your driver account has no inspection market assigned.'});
@@ -281,6 +306,7 @@ router.post('/driver-submission', async (req, res) => {
     if (!token) return res.status(401).json({ error: 'Sign in to submit your application.' });
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ error: 'Sign in to submit your application.' });
+    await ensureInspectionMarket(supabase, user.id);
     const [profileResult, vehicleResult] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', user.id).single(),
       supabase.from('vehicles').select('*').eq('user_id', user.id)

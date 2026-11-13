@@ -30,6 +30,11 @@ PASS: real-data conditions + drill preamble: realdb-merge-test.sql (0 | 21)
 PASS: real-data conditions + drill preamble: realdb-driver-metrics-test.sql (0 | 38)
 PASS: real-data conditions + drill preamble: realdb-cancellation-fee-test.sql (0 | 22)
 PASS: without the preamble the suites fail under real-data conditions (reproduces the host drill)
+  d15: {"sub":"d15d15d1-0000-4000-8000-0000000000d1","role":"authenticated"}
+  d15: NOTICE:  D15 driver self-assign: REFUSED
+  d15: D15 market after service_role update: GB
+PASS: D15: a driver cannot assign their own inspection market
+PASS: D15: the API (service_role) assigns it
 PASS: release-down.sql applied as one transaction
 PASS: rollback restores the exact pre-release schema
 RE-APPLIED release-up.sql

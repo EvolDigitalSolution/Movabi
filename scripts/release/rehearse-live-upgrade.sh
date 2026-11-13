@@ -122,6 +122,31 @@ for t in "$root"/deploy/vaydu-cash-ride-market-pilot/realdb-*-test.sql "$root"/s
 done
 check "without the preamble the suites fail under real-data conditions (reproduces the host drill)" "$([ "$raw_fail" -ge 6 ] && echo yes || echo "no ($raw_fail)")" yes
 
+# D15: the API (service_role) may assign a driver's inspection market; the driver (authenticated) may not.
+d15="$(q realish <<'SQL' 2>&1
+BEGIN;
+INSERT INTO public.tenants(id,name,slug) VALUES ('d15d15d1-0000-4000-8000-000000000001','D15','d15-test');
+ALTER TABLE auth.users DISABLE TRIGGER on_auth_user_created;
+INSERT INTO auth.users(id,email) VALUES ('d15d15d1-0000-4000-8000-0000000000d1','d15@x.test');
+INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code) VALUES ('d15d15d1-0000-4000-8000-0000000000d1','d15d15d1-0000-4000-8000-000000000001','driver','GB','GB');
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claims','{"sub":"d15d15d1-0000-4000-8000-0000000000d1","role":"authenticated"}',true);
+DO $$ BEGIN
+  BEGIN UPDATE public.profiles SET inspection_market_code='GB' WHERE id='d15d15d1-0000-4000-8000-0000000000d1'; RAISE NOTICE 'D15 driver self-assign: ALLOWED';
+  EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'D15 driver self-assign: REFUSED'; END;
+END $$;
+RESET ROLE;
+SET LOCAL ROLE service_role;
+UPDATE public.profiles SET inspection_market_code='GB' WHERE id='d15d15d1-0000-4000-8000-0000000000d1' AND role='driver' AND inspection_market_code IS NULL;
+RESET ROLE;
+SELECT 'D15 market after service_role update: '||coalesce(inspection_market_code,'null') FROM public.profiles WHERE id='d15d15d1-0000-4000-8000-0000000000d1';
+ROLLBACK;
+SQL
+)" || true
+echo "$d15" | grep -iE "error|D15" | sed 's/^/  d15: /'
+check "D15: a driver cannot assign their own inspection market" "$(echo "$d15" | grep -o 'driver self-assign: [A-Z]*' | head -1)" "driver self-assign: REFUSED"
+check "D15: the API (service_role) assigns it" "$(echo "$d15" | grep -o 'service_role update: [A-Z]*' | head -1)" "service_role update: GB"
+
 # Recovery: the rollback restores the exact pre-release schema; re-applying restores the release.
 if q rel < "$rel/release-down.sql" > "$tmp/down.log" 2>&1; then echo "PASS: release-down.sql applied as one transaction"; else echo "FAIL: release-down.sql"; grep -v NOTICE "$tmp/down.log" | tail -8; fail=1; fi
 check "rollback restores the exact pre-release schema" "$(diff -q "$tmp/before.sql" <(dump rel) >/dev/null && echo same || echo differs)" same
