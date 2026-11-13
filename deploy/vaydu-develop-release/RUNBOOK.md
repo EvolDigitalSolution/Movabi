@@ -264,3 +264,57 @@ Expected: running `3c91991`; exactly the 2 API files above; `0` web changes; `VE
 
 On failure: `bash host-rollback.sh "$PRE2" api` returns to `movabi-api:release-3c91991`. No database change
 is involved.
+
+## Follow-up release `39fc5ce` (API + web, 2026-11-13)
+
+**Vehicle inspection in readiness and enforcement.** The review screen shows "Vehicle details" and
+"Vehicle inspection" as separate sections. Inspection reads "Missing photos" until every required slot
+has a saved upload, and admin approval is tracked separately. The backend now requires the applicable
+inspection at submission, admin approval, go-online and job acceptance:
+- bicycles: front, rear and side;
+- other vehicles: 6 slots.
+
+It also carries `c972037` (D15 and payment-account status) if that release was not deployed.
+
+The release has no database change: it uses the existing inspection tables and RPCs.
+
+**Behaviour change on develop:** a driver who is already approved but has no admin-approved photos for
+the current vehicle revision can no longer go online or accept jobs. They see "Upload and get approval
+for all required vehicle inspection photos before accepting work." This is the intended enforcement.
+Test drivers need their photos uploaded and approved in admin.
+
+| | Value |
+|---|---|
+| Package | `release/vaydu-develop-39fc5ce-release-linux.tar.gz`, sha256 `af0c6a6958c859c03ef02389a9bb20ed0f4ea75006ad71a0567e13e4d3d9e39b` (web built on Linux from 39fc5ce) |
+| vs c972037 API | 7 files: `server/routes/{booking,driver-onboarding,market-availability,verification}.routes.ts`, `server/services/driver-requirement.service.ts`, new `server/services/driver-inspection-{evidence,progress}.ts` (plus `driver-payment-account-develop.routes.ts` if the host still runs 3c91991) |
+| Release SQL | byte-identical to 3c91991/c972037 (no database step) |
+| Running before | `c972037` (or `3c91991` if c972037 was not deployed) |
+| Rollback record | the new `$PRE3` from `host-predeploy.sh`; the images to return to are the ones it records |
+
+```
+sha256sum -c vaydu-develop-39fc5ce-release-linux.tar.gz.sha256
+bash host-predeploy.sh vaydu-develop-39fc5ce-release-linux.tar.gz
+PRE3=$(ls -td ~/vaydu-topup-fix-predeploy-* | head -1); cat "$PRE3/running-source-sha.txt"; cat "$PRE3/api-changes.txt"; wc -l < "$PRE3/web-changes.txt"
+export ARCHIVE=vaydu-develop-39fc5ce-release-linux.tar.gz BUNDLE_DIR=vaydu-develop-39fc5ce-release-linux EXPECTED_SOURCE_SHA=39fc5ce
+API_TAG=release-39fc5ce WEB_TAG=release-3c91991-linux bash rollout-develop-52097ef.sh --deploy-api-only
+docker exec movabi-develop-api cat /app/SOURCE_SHA; curl -s https://movabi-api-develop.apps.evolsolution.com/health
+API_TAG=release-39fc5ce WEB_TAG=release-39fc5ce-linux bash rollout-develop-52097ef.sh --deploy-web-only
+docker ps --filter label=com.docker.compose.service=web --filter label=com.docker.compose.project=movabi-develop --format '{{.Image}} {{.Status}}'
+```
+
+**Expected:**
+- the running SHA is printed;
+- the API changes are the files listed below;
+- the web changes count is non-zero;
+- `VERIFY OK`;
+- `39fc5ce` and `{"status":"ok"}`;
+- `movabi-web:release-39fc5ce-linux Up …`.
+
+**On failure:** `bash host-rollback.sh "$PRE3" api` (or `web` / `both`). No database change is involved.
+
+**Acceptance:** the agent hash-compares the live web assets with the bundle. Then, on your own driver
+application:
+- the review screen shows "Vehicle inspection — Missing photos" with the right count;
+- uploading all slots changes it to "Under review";
+- admin approves each photo in the admin app;
+- the section shows "Complete", and submission and going online are allowed.
