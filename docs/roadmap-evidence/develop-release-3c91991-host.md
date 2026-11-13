@@ -178,3 +178,23 @@ unavailable on develop, as it was before this release, and stays so under the Af
 `VERIFY OK`, then `movabi-web:release-3c91991-linux` (image `sha256:1aaef84a…`) built and recreated
 alone; API, wallet override and Supabase kept. Agent check at 11:16:06 UTC over HTTPS: all 12 entry
 assets and `index.html` are byte-identical to the 3c91991 bundle (5/12 differ from f6e8c00).
+
+## Acceptance: real search through the deployed API (2026-11-13)
+
+`scripts/verify-server-place-search.cjs` (sha256 `8f65d687…cb78`), run inside `movabi-develop-api` (3c91991)
+with develop's own provider configuration: **`RESULT: all checks passed`**. Credentials appear only as REDACTED.
+
+```
+PASS  address / postcode / street+origin / GB-only isolation / GB+NG configured countries
+landmark "Manchester Airport Terminal 2" -> TomTom poiSearch: Manchester Airport Terminal 2 | Terminal 2 | Terminal 2 Short Stay  [all GB/poi]
+PASS  landmark search is fulfilled · results are GB POIs, not roads or areas · exact Terminal 2, no other terminal
+business "Tesco Extra" -> Mapbox (no town match) then TomTom poiSearch: Tesco Extra ×3 [GB/poi]
+PASS  business search is fulfilled · GB POIs named Tesco Extra (no streets)
+category "restaurant" -> TomTom categorySearch radius=10000: Indali Kitchen | La Vita Italian Takeaway | Chinese Chef …
+PASS  category search is fulfilled · restaurant category data (no "Restaurant Terrace") · all within 10 km (0.2–0.8 km)
+PASS  TomTom answers when Mapbox is unavailable · reverse geocoding resolves GB
+PASS  Mapbox geocoding was exercised (7) · every request sent permanent=false · none asked for permanent geocoding
+```
+
+On 2026-11-12, against the f6e8c00 adapter, the same queries returned roads/neighbourhoods, a street and
+"Restaurant Terrace". They are fixed on develop.
