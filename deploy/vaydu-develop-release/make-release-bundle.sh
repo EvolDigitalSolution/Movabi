@@ -18,7 +18,8 @@ WEB="release/linux-build-${WEB_BUILD_SHA}/out/browser"
 [ -z "$(git status --porcelain -- "${PATHS[@]}" "$REL")" ] || { echo "FATAL: uncommitted changes in shipped paths"; git status --short -- "${PATHS[@]}" "$REL"; exit 1; }
 # 2. The web build must come from a commit whose web inputs equal HEAD's.
 [ -f "$WEB/index.html" ] || { echo "FATAL: $WEB missing; run scripts/release/build-web-linux.sh"; exit 1; }
-git diff --quiet "$WEB_BUILD_SHA" HEAD -- src angular.json package.json package-lock.json tsconfig.json tsconfig.app.json capacitor.config.ts ionic.config.json \
+# src/testing is never part of the web build.
+git diff --quiet "$WEB_BUILD_SHA" HEAD -- src ':(exclude)src/testing' angular.json package.json package-lock.json tsconfig.json tsconfig.app.json capacitor.config.ts ionic.config.json \
   || { echo "FATAL: web inputs changed between $WEB_BUILD_SHA and HEAD; rebuild the web"; git diff --stat "$WEB_BUILD_SHA" HEAD -- src angular.json package.json package-lock.json; exit 1; }
 # 3. Release SQL must be the generator's output and match its checksums.
 (cd "$REL" && sha256sum -c --quiet RELEASE-MIGRATIONS.sha256) || { echo "FATAL: release SQL checksum mismatch"; exit 1; }
