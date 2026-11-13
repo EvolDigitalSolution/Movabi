@@ -136,3 +136,45 @@ enabled_cancellation_policies 0
 
 External check by the agent at 10:15 UTC: `GET /health` 200 ×3 (`{"status":"ok"}`). The old f6e8c00 API
 was serving on the migrated schema.
+
+## Step 6b: old API on the migrated schema (before the API deploy)
+
+```
+status=running restarts=0 started=2026-11-11T22:30:48Z image=movabi-api:release-f6e8c00-topup
+db status=running restarts=0
+API error-like lines 09:00-09:46: 0     since 09:46: 0     DB ERROR lines since 09:46: 0
+API requests since 09:46: 0   <- this API does not log requests, so this count shows nothing either way
+NOTICE:  VERIFY OK …  enabled_cash_markets 0  enabled_cancellation_policies 0
+```
+
+## Step 7: API (2026-11-13 11:12:41 UTC)
+
+The rollout re-validated the archive and every bundle file, and ran VERIFY.sql (`VERIFY OK`) before
+building. It then built `movabi-api:release-3c91991` (image `sha256:344fe061…`) and recreated only the API,
+with every compose override kept (same chain as the inventory, including the wallet override).
+The preflight's `Archive: … (2cfe6205…)` is a constant hard-coded in rollout-develop-52097ef.sh (line 36)
+and is only printed; the real check is `sha256sum -c ${ARCHIVE}.sha256` (OK).
+
+```
+movabi-api:release-3c91991 running restarts=0 started=2026-11-13T11:12:41Z
+3c91991
+/health immediately after start: 502 (ts-node still compiling); agent recheck 11:13:38 UTC: 200 {"status":"ok"} ×5
+error-like lines since start: 0      DB ERROR lines since API start: 0
+VAYDU_PAYMENT_ACCOUNT_SETUP=true  VAYDU_MAPBOX_GEOCODING_V23=true  VAYDU_DRIVER_TOPUP_API=true  (no VAYDU_CASH_RIDE_BOOKING)
+[driver-payment-account-setup] integration unavailable: Cannot find module '/app/deploy/vaydu-payment-account-setup/api/runtime.cjs'
+Server running on port 3001
+```
+
+The `integration unavailable` line is not caused by this release:
+- the loader route is unchanged since f6e8c00;
+- the running f6e8c00 container also had no `deploy/` files (inventory: 0 of 253);
+- the route returns a controlled 503 by design.
+
+GB drivers use the Stripe path and are unaffected. The NG payment-account setup (Flutterwave/Paystack) is
+unavailable on develop, as it was before this release, and stays so under the Africa deferral.
+
+## Step 8: web (2026-11-13 ~11:15 UTC)
+
+`VERIFY OK`, then `movabi-web:release-3c91991-linux` (image `sha256:1aaef84a…`) built and recreated
+alone; API, wallet override and Supabase kept. Agent check at 11:16:06 UTC over HTTPS: all 12 entry
+assets and `index.html` are byte-identical to the 3c91991 bundle (5/12 differ from f6e8c00).
