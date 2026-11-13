@@ -239,6 +239,16 @@ no inspection images.
   - `verify-merge.sh` was silently extracting an **empty** chain since the spec edit; fixed, with a guard.
 - **Full suite:** 3,507 passed; only the 2 known environment items fail. Server and app typecheck.
 
+**Develop trace of the reporting driver's own application (2026-11-13, read-only `trace-driver-inspection.sql`):**
+- **Profile:** role driver, NG registration market, `verification_status` draft.
+  - `inspection_market_code` is **empty**: D15 has not assigned it yet.
+- **Vehicle:** one car (`capacity` standard), so 6 slots are required.
+- **Saved inspection photos:** **0 rows** in any status, revision or vehicle. All 6 slots are `missing`.
+- **Confirmed:** develop's "Complete" was a false positive. With `39fc5ce`, the same data gives "Vehicle
+  inspection — Missing photos (0 of 6 uploaded)" and blocks submission and going online.
+- **Release for develop:** `release/vaydu-develop-39fc5ce-release-linux.tar.gz`, sha256
+  `af0c6a6958c859c03ef02389a9bb20ed0f4ea75006ad71a0567e13e4d3d9e39b`. Steps are in RUNBOOK.md. **Not yet deployed.**
+
 **Your own application on develop:** run `deploy/vaydu-develop-release/trace-driver-inspection.sql`, which is
 read-only and takes your email as a parameter. It shows the saved photos per slot and revision, and what the
 new readiness logic will report. The develop review screen will still show the old wording until this
