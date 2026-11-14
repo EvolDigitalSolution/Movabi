@@ -39,6 +39,10 @@ cp -r "$WEB" "$OUT/mobile/browser"
 # Read-only host checks (live switches; one driver's inspection evidence) travel with every bundle.
 for f in VERIFY.sql PREREQ.sql ORDER.txt release-up.sql release-dryrun.sql release-down.sql RELEASE-MIGRATIONS.sha256 host-db-release.sh; do git -c core.autocrlf=false cat-file -p "HEAD:$REL/$f" > "$OUT/$f"; done
 for f in host-live-config.sh live-config.sql trace-driver-inspection.sql; do git -c core.autocrlf=false cat-file -p "HEAD:$TOOLS/$f" > "$OUT/$f"; done
+# Develop activation scripts (approved GB values) travel with the bundle; nothing runs them automatically.
+ACT=deploy/vaydu-develop-activation
+if git cat-file -e "HEAD:$ACT/README.md" 2>/dev/null; then mkdir -p "$OUT/activation"
+  for f in $(git ls-tree --name-only HEAD "$ACT/"); do git -c core.autocrlf=false cat-file -p "HEAD:$f" > "$OUT/activation/$(basename "$f")"; done; fi
 EXTRA_TESTS=(); if git cat-file -e "HEAD:$REL/TESTS.txt" 2>/dev/null; then mapfile -t EXTRA_TESTS < <(git cat-file -p "HEAD:$REL/TESTS.txt" | grep -v '^#' | grep .); fi
 for t in deploy/vaydu-cash-ride-market-pilot/realdb-market-pilot-test.sql deploy/vaydu-cash-ride-market-pilot/realdb-cash-booking-acquisition-test.sql \
          deploy/vaydu-cash-ride-market-pilot/realdb-cash-booking-chain-test.sql deploy/vaydu-cash-ride-market-pilot/realdb-cash-ride-lifecycle-test.sql \

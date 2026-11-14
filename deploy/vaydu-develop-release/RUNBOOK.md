@@ -396,6 +396,7 @@ The bundle is cut with `RELEASE_DIR=deploy/vaydu-develop-release-2`, so its `rel
 | — | release 1 (applied 2026-11-13 09:46:47 UTC) | PREREQ requires its 15 functions to be exact |
 | 1 | `20261270000000_capture_develop_inspection_drift.sql` | **No change.** The column and the 6-argument function already exist and are only created when absent. A fingerprint check aborts the transaction if develop's copy differs. |
 | 2 | `20261270100000_completion_pin_effective.sql` | Adds `completion_pin_market_policy(jsonb)`, `stamp_completion_pin_policy()` and `mint_completion_pin_on_assignment()`, plus triggers `zz_stamp_completion_pin_policy` (BEFORE) and `zz_mint_completion_pin_on_assignment` (AFTER) on `jobs`. No client role can execute these functions. |
+| 3 | `20261270200000_referral_fare_minor_units.sql` | Replaces `earn_referral`. It is develop's live body with two changes: fares are converted from major to minor units with the currency exponent, and a job outside the campaign's market or currency is refused. PREREQ requires develop's live body (`98e50e33…`); VERIFY requires the fixed body (`114759b0…`). |
 | — | `NOTIFY pgrst, 'reload schema'` | Delivered at COMMIT only |
 
 ### Evidence before it reaches develop (local, 2026-11-13)
@@ -478,7 +479,13 @@ bash "$B/host-db-release.sh" "$B" verify
 itself. After step 3, use `bash host-rollback.sh "$PRE5" api|web|both`. Database rollback is only for the
 limits listed below.
 
-**5. Post-deploy journeys on develop** (these are what move areas to Verified):
+**5. Activate the approved GB values.** See `activation/README.md` in the bundle:
+- `activate-gb.sql` sets P1, P4, P5 and P6;
+- `activate-gb-cash.sql` and `VAYDU_CASH_RIDE_BOOKING=true` turn on 5b for one GB test driver.
+
+Run the live-config check before and after. Undo with `deactivate-gb*.sql`.
+
+**6. Post-deploy journeys on develop** (these are what move areas to Verified):
 1. **Web check:** the agent hash-compares the live web assets with `mobile/browser`.
 2. **Area 2a, your driver account:** Driver Setup review shows **Vehicle details** and **Vehicle inspection — Missing photos (0 of 6 uploaded)**.
    Then a GB test driver uploads the 6 photos, sees **Under review**, an admin approves them in Admin → Drivers, and the driver sees **Complete**.
@@ -514,6 +521,7 @@ limits listed below.
 
 ### Rollback limits
 
+- **Release-down also restores develop's exact live `earn_referral`.** Rewards earned while release 2 was applied stay as recorded.
 - **`host-db-release.sh "$B" rollback`** (release-down, one transaction):
   - drops the two triggers and three functions;
   - **keeps** every frozen job metadata value and every minted PIN, because customers may already have seen them;

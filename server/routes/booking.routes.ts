@@ -282,16 +282,39 @@ router.post('/referrals/redeem', async (req: Request, res: Response) => {
         if (referrerId === userId) return res.status(409).json({ error: 'You cannot refer yourself.', code: 'SELF_REFERRAL' });
         const { data: campaign } = await supabaseAdmin
             .from('campaigns')
-            .select('id,tenant_id,enabled,paused,kind,referral_reward_bps')
+            .select('id,tenant_id,enabled,paused,kind,referral_reward_bps,market_code,currency_code,qualification')
             .eq('code', code)
             .eq('kind', 'referral')
             .maybeSingle();
         if (!campaign || !campaign.enabled || campaign.paused) return res.status(404).json({ error: 'Referral code is not active.', code: 'CAMPAIGN_UNAVAILABLE' });
-        // Freeze the rate on the referral at link time so a later admin rate
-        // edit never retroactively changes this referral's reward.
+        // Market isolation (7b, 2026-11-14): referrer and referee belong to the campaign's tenant and market.
+        const { data: people } = await supabaseAdmin.from('profiles')
+            .select('id,role,tenant_id,registration_country_code,country_code').in('id', [userId, referrerId]);
+        const referee = (people || []).find((p: any) => p.id === userId);
+        const referrer = (people || []).find((p: any) => p.id === referrerId);
+        const marketOf = (p: any) => String(p?.registration_country_code || p?.country_code || '').toUpperCase();
+        const market = String(campaign.market_code || '').toUpperCase();
+        if (!referee || !referrer || String(referee.tenant_id) !== String(campaign.tenant_id) || String(referrer.tenant_id) !== String(campaign.tenant_id)
+            || marketOf(referee) !== market || marketOf(referrer) !== market) {
+            return res.status(404).json({ error: 'Referral code is not active.', code: 'CAMPAIGN_UNAVAILABLE' });
+        }
+        // Freeze the terms on the referral at link time so a later admin edit never retroactively changes
+        // this referral's reward: rate, cap and qualifying fare (minor units) from the campaign; a driver
+        // referee gets the approved driver terms (20 qualifying jobs within 30 days, 7-day review).
+        const qual = (campaign.qualification && typeof campaign.qualification === 'object') ? campaign.qualification as Record<string, unknown> : {};
+        const minorOrNull = (v: unknown) => (v == null || !Number.isInteger(Number(v)) || Number(v) < 0) ? null : Number(v);
+        const kind = referee.role === 'driver' ? 'driver' : 'customer';
+        const terms: Record<string, unknown> = {
+            referral_kind: kind,
+            reward_rate_bps: Number(campaign.referral_reward_bps ?? 500),
+            reward_cap_minor: minorOrNull(qual.reward_cap_minor),
+            ...(kind === 'customer'
+                ? { qualifying_fare_minor: minorOrNull(qual.min_qualifying_fare_minor) }
+                : { qualifying_jobs_required: 20, qualifying_window_days: 30, review_days: 7 }),
+        };
         const { data, error } = await supabaseAdmin
             .from('referrals')
-            .insert({ tenant_id: campaign.tenant_id, campaign_id: campaign.id, referrer_id: referrerId, referee_id: userId, status: 'pending', reward_rate_bps: Number(campaign.referral_reward_bps ?? 500) })
+            .insert({ tenant_id: campaign.tenant_id, campaign_id: campaign.id, referrer_id: referrerId, referee_id: userId, status: 'pending', ...terms })
             .select('id,status')
             .single();
         if (error) {
@@ -322,23 +345,34 @@ router.post('/campaigns/apply', async (req: Request, res: Response) => {
         // quote — never trust a browser amount for discounts or margins.
         const { data: q } = await supabaseAdmin
             .from('quote_market_adjustments')
-            .select('quote_reference,customer_id,protected_fare_snapshot')
+            .select('quote_reference,customer_id,protected_fare_snapshot,country_code,currency')
             .eq('quote_reference', quote)
             .eq('customer_id', userId)
             .maybeSingle();
-        const eligibleMinor = Number(q?.protected_fare_snapshot?.driverBase ?? 0);
-        if (!q || !Number.isFinite(eligibleMinor) || eligibleMinor <= 0) {
+        // 7a (2026-11-14): the snapshot's driverBase is in MAJOR units (e.g. 12.50 GBP); campaign
+        // thresholds, caps, budgets and discounts are MINOR units. Convert with the currency exponent.
+        const quoteCurrency = String(q?.currency || (q as any)?.protected_fare_snapshot?.currency || '').toUpperCase();
+        const eligibleMajor = Number(q?.protected_fare_snapshot?.driverBase ?? 0);
+        if (!q || !/^[A-Z]{3}$/.test(quoteCurrency) || !Number.isFinite(eligibleMajor) || eligibleMajor <= 0) {
             return res.status(404).json({ error: 'Quote not found.', code: 'QUOTE_NOT_FOUND' });
         }
+        const eligibleMinor = FareSplitService.toMinor(eligibleMajor, quoteCurrency);
         const { data: campaign } = await supabaseAdmin
             .from('campaigns')
-            .select('id,tenant_id,enabled,kind')
+            .select('id,tenant_id,enabled,kind,market_code,currency_code')
             .eq('code', code)
             .eq('kind', 'customer_discount')
             .maybeSingle();
         if (!campaign || !campaign.enabled) return res.status(404).json({ error: 'Discount code is not active.', code: 'CAMPAIGN_UNAVAILABLE' });
+        // Market isolation: a campaign applies only to quotes of its own tenant, market and currency.
+        const { data: customerProfile } = await supabaseAdmin.from('profiles').select('tenant_id').eq('id', userId).maybeSingle();
+        if (String(customerProfile?.tenant_id || '') !== String(campaign.tenant_id)
+            || String(q.country_code || '').toUpperCase() !== String(campaign.market_code || '').toUpperCase()
+            || quoteCurrency !== String(campaign.currency_code || '').toUpperCase()) {
+            return res.status(404).json({ error: 'Discount code is not active.', code: 'CAMPAIGN_UNAVAILABLE' });
+        }
         const { data: applied, error } = await supabaseAdmin.rpc('apply_campaign_discount', {
-            p_campaign: campaign.id, p_customer: userId, p_quote: quote, p_fare_minor: Math.round(eligibleMinor)
+            p_campaign: campaign.id, p_customer: userId, p_quote: quote, p_fare_minor: eligibleMinor
         });
         if (error) {
             const msg = String(error.message || '');

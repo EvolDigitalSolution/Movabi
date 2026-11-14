@@ -24,6 +24,10 @@ BEGIN
   SELECT md5(replace(pg_get_functiondef(p.oid),chr(13),'')) INTO v FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname||'.'||p.proname||'('||pg_get_function_identity_arguments(p.oid)||')' = r.sig;
   IF v IS DISTINCT FROM r.md5 THEN bad := bad || format(E'\n  release 1 %s: expected %s, found %s', r.sig, r.md5, coalesce(v,'MISSING')); END IF;
  END LOOP;
+ -- earn_referral must be develop's live body (it is replaced by 20261270200000 and restored by release-down).
+ SELECT md5(replace(pg_get_functiondef('public.earn_referral(uuid,uuid)'::regprocedure),chr(13),'')) INTO v;
+ IF v IS DISTINCT FROM '98e50e3328d7a29ba7f9f5c1a19751c4' THEN bad := bad || format(E'
+  earn_referral is not develop''s live body (found %s)', v); END IF;
  IF to_regprocedure('public.stamp_completion_pin_policy()') IS NOT NULL OR EXISTS (SELECT 1 FROM pg_trigger WHERE tgname IN ('zz_stamp_completion_pin_policy','zz_mint_completion_pin_on_assignment')) THEN
    bad := bad || E'\n  release 2 objects already present';
  END IF;

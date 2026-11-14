@@ -1,4 +1,5 @@
 Develop release 2 (apply after release 1 / 3c91991):
 1. 20261270000000_capture_develop_inspection_drift.sql  (D12: no-op on develop)
 2. 20261270100000_completion_pin_effective.sql          (area 3: per-driver completion PIN)
-Rollback (release-down.sql): 2 then 1 (1 keeps develop objects by design).
+3. 20261270200000_referral_fare_minor_units.sql       (7b: referral fares in minor units; market isolation)
+Rollback (release-down.sql): 2, then 1 (1 keeps develop objects by design), then develop's exact live earn_referral.

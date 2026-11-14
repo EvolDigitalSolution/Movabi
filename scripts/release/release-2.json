@@ -1,13 +1,16 @@
 {
   "out": "deploy/vaydu-develop-release-2",
-  "title": "Vaydu develop release 2: D12 inspection drift captured (no-op on develop) + per-driver completion PIN (area 3)",
+  "title": "Vaydu develop release 2: D12 inspection drift captured (no-op on develop) + per-driver completion PIN (area 3) + referral fare minor units (7b)",
   "up": [
     "supabase/migrations/20261270000000_capture_develop_inspection_drift.sql",
-    "supabase/migrations/20261270100000_completion_pin_effective.sql"
+    "supabase/migrations/20261270100000_completion_pin_effective.sql",
+    "supabase/migrations/20261270200000_referral_fare_minor_units.sql"
   ],
   "down": [
     "supabase/migrations/20261270100000_completion_pin_effective.down.sql",
     "supabase/migrations/20261270000000_capture_develop_inspection_drift.down.sql"
   ],
-  "restore": []
+  "restore": [
+    "public.earn_referral(p_referral uuid, p_job uuid)"
+  ]
 }

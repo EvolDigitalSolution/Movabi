@@ -26,6 +26,7 @@ BEGIN
   ('public.completion_pin_market_policy(p_metadata jsonb)','b06d13b95ba16eb69185edb935c81ebf'),
   ('public.mint_completion_pin_on_assignment()','c0765f72f8cf3197b11fecd92e3cbb8e'),
   ('public.stamp_completion_pin_policy()','ac5497c01a83276b5c9a869f308cecc4'),
+  ('public.earn_referral(p_referral uuid, p_job uuid)','114759b0db49eab9d05d5c982bd581fa'),
   ('public.register_driver_inspection_photo(p_driver uuid, p_tenant uuid, p_vehicle uuid, p_revision uuid, p_slot text, p_path text)','f180b0b86f587154270a0493786d9838')) t(sig,md5) LOOP
   SELECT md5(replace(pg_get_functiondef(p.oid),chr(13),'')) INTO v FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname||'.'||p.proname||'('||pg_get_function_identity_arguments(p.oid)||')' = r.sig;
   IF v IS DISTINCT FROM r.md5 THEN bad := bad || format(E'\n  %s: expected %s, found %s', r.sig, r.md5, coalesce(v,'MISSING')); END IF;
@@ -35,8 +36,9 @@ BEGIN
  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='driver_vehicle_inspection_photos' AND column_name='reason') THEN bad := bad || E'\n  D12 column missing'; END IF;
  IF to_regclass('public.driver_cash_credit_markets_v1e') IS NULL OR to_regclass('public.cash_ride_fee_holds_v1e') IS NULL THEN bad := bad || E'\n  cash release tables missing'; END IF;
  IF bad <> '' THEN RAISE EXCEPTION 'VERIFY FAILED (release 2 not applied exactly):%', bad; END IF;
- IF EXISTS (SELECT 1 FROM public.driver_cash_credit_markets_v1e WHERE enabled) THEN RAISE EXCEPTION 'VERIFY FAILED: a cash-ride market is enabled'; END IF;
- RAISE NOTICE 'VERIFY OK: release 1 + release 2 present (19 functions, 2 triggers), D12 captured, no cash-ride market enabled';
+ -- GB/GBP cash rides were approved on 2026-11-14 (develop cohort); any other market must stay off.
+ IF EXISTS (SELECT 1 FROM public.driver_cash_credit_markets_v1e WHERE enabled AND NOT (country_code='GB' AND currency_code='GBP')) THEN RAISE EXCEPTION 'VERIFY FAILED: a cash-ride market other than GB/GBP is enabled'; END IF;
+ RAISE NOTICE 'VERIFY OK: release 1 + release 2 present (20 functions, 2 triggers), D12 captured, no cash-ride market outside GB/GBP';
 END $verify$;
 SELECT 'public.confirm_wallet_topup_with_total(uuid,text,text,text,bigint,text)'::regprocedure AS confirm_fn,
        'public.mark_wallet_topup_failed(uuid,text)'::regprocedure AS mark_failed_fn;

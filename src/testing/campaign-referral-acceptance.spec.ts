@@ -4,13 +4,16 @@ import express from 'express';
 let insertedReferral: Record<string, unknown> | null = null;
 let campaignRow: Record<string, unknown> | null = null;
 let authUserId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const REFERRER = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+let people: Array<Record<string, unknown>> = [];
 
 vi.mock('../../server/services/supabase.service', () => ({
     supabaseAdmin: {
         auth: { getUser: async () => ({ data: { user: { id: authUserId } }, error: null }) },
         from: (table: string) => {
             if (table === 'profiles') return {
-                select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { account_status: 'active' }, error: null }) }) })
+                select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { account_status: 'active' }, error: null }) }),
+                    in: async (_c: string, ids: string[]) => ({ data: people.filter((p) => ids.includes(String(p.id))), error: null }) })
             };
             if (table === 'campaigns') return {
                 select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: campaignRow, error: null }) }) }) })
@@ -54,7 +57,39 @@ async function call(path: string, method = 'POST', body?: unknown): Promise<{ st
 describe('referral acceptance (real router)', () => {
     beforeEach(() => {
         insertedReferral = null;
-        campaignRow = { id: 'c1', tenant_id: 't1', enabled: true, paused: false, kind: 'referral', referral_reward_bps: 700 };
+        campaignRow = { id: 'c1', tenant_id: 't1', enabled: true, paused: false, kind: 'referral', referral_reward_bps: 700,
+            market_code: 'GB', currency_code: 'GBP', qualification: { reward_cap_minor: 500, min_qualifying_fare_minor: 800 } };
+        people = [{ id: authUserId, role: 'customer', tenant_id: 't1', registration_country_code: 'GB' },
+                  { id: REFERRER, role: 'customer', tenant_id: 't1', registration_country_code: 'GB' }];
+    });
+
+    it('customer referral freezes the cap and qualifying fare (minor units) from the campaign', async () => {
+        const r = await call('/referrals/redeem', 'POST', { code: 'REF', referrerId: REFERRER });
+        expect(r.status).toBe(201);
+        expect(insertedReferral).toMatchObject({ referral_kind: 'customer', reward_rate_bps: 700, reward_cap_minor: 500, qualifying_fare_minor: 800 });
+        expect(insertedReferral).not.toHaveProperty('qualifying_jobs_required');
+    });
+
+    it('driver referee gets the approved driver terms (20 jobs, 30 days, 7-day review) and the cap', async () => {
+        people[0] = { ...people[0], role: 'driver' };
+        const r = await call('/referrals/redeem', 'POST', { code: 'REF', referrerId: REFERRER });
+        expect(r.status).toBe(201);
+        expect(insertedReferral).toMatchObject({ referral_kind: 'driver', reward_cap_minor: 500, qualifying_jobs_required: 20, qualifying_window_days: 30, review_days: 7 });
+        expect(insertedReferral).not.toHaveProperty('qualifying_fare_minor');
+    });
+
+    it('market isolation: a referee in another market cannot use a GB referral code', async () => {
+        people[0] = { ...people[0], registration_country_code: 'NG' };
+        const r = await call('/referrals/redeem', 'POST', { code: 'REF', referrerId: REFERRER });
+        expect(r.status).toBe(404);
+        expect(insertedReferral).toBeNull();
+    });
+
+    it('tenant isolation: a referrer of another tenant is refused', async () => {
+        people[1] = { ...people[1], tenant_id: 't2' };
+        const r = await call('/referrals/redeem', 'POST', { code: 'REF', referrerId: REFERRER });
+        expect(r.status).toBe(404);
+        expect(insertedReferral).toBeNull();
     });
 
     it('new referral freezes the campaign referral_reward_bps at link time', async () => {

@@ -9,7 +9,8 @@ PASS: after an aborted release the schema is unchanged
 PASS: dry run completed
 PASS: dry run leaves the schema unchanged
 PASS: release-up.sql (release 2) applied as one transaction
-PASS: D12 on develop: every pre-existing function unchanged
+PASS: every pre-existing function unchanged except the intended earn_referral fix
+earn_referral before: 98e50e3328d7a29ba7f9f5c1a19751c4  after: 114759b0db49eab9d05d5c982bd581fa
 PASS: D12 on develop: inspection photo columns unchanged
 PASS: D12 on develop: every inspection photo row (statuses, approvals, reviewers, reasons) unchanged
 PASS: D12 on develop: photo table grants, RLS and policies unchanged
@@ -23,6 +24,7 @@ new functions (for VERIFY):
 PASS: VERIFY (release 2) after apply
 PASS: release 1 VERIFY still passes
 PASS: completion PIN real-DB suite (0 | 17/17)
+PASS: referral minor-units real-DB suite (0 | 8/8)
 PASS: release 1 suite with release 2: realdb-market-pilot-test.sql (0 | 15)
 PASS: release 1 suite with release 2: realdb-cash-booking-acquisition-test.sql (0 | 16)
 PASS: release 1 suite with release 2: realdb-cash-booking-chain-test.sql (0 | 13)
@@ -40,4 +42,30 @@ PASS: captured column = develop's column
 PASS: fresh install keeps existing photo rows (the dropped reason column comes back empty)
 PASS: captured function grants = develop's (service_role only)
 PASS: release 2 is idempotent (second apply)
+PASS: release 2 applied to the activation copy
+PASS: activate-gb.sql
+PASS: activate-gb.sql again (idempotent)
+  cancellation|5a5a5a5a-0000-4000-8000-000000000001|GB|1|true|300/300/120
+  cancellation|6b000000-0000-4000-8000-0000000000aa|GB|1|true|300/300/120
+  campaign|5a5a5a5a-0000-4000-8000-000000000001|FIRST5GB|GB/GBP|true|{"firstBookingOnly": true, "max_discount_minor": 500, "min_qualifying_fare_minor": 800}
+  campaign|5a5a5a5a-0000-4000-8000-000000000001|REFERGB|GB/GBP|true|{"reward_cap_minor": 500, "min_qualifying_fare_minor": 800}
+  campaign|6b000000-0000-4000-8000-0000000000aa|FIRST5GB|GB/GBP|true|{"firstBookingOnly": true, "max_discount_minor": 500, "min_qualifying_fare_minor": 800}
+  campaign|6b000000-0000-4000-8000-0000000000aa|REFERGB|GB/GBP|true|{"reward_cap_minor": 500, "min_qualifying_fare_minor": 800}
+  pin|6b000000-0000-4000-8000-0000000000bb|{"markets": {"NG": "optional"}}
+  pin|5a5a5a5a-0000-4000-8000-000000000001|{"markets": {"GB": "required"}}
+  pin|6b000000-0000-4000-8000-0000000000aa|{"markets": {"GB": "required"}}
+  non-GB rows enabled (must be 0)|0
+PASS: GB activation: approved values, GB only, money paths (0 | 12/12)
+PASS: deactivate-gb.sql
+PASS: GB deactivation: off, history kept, NG untouched (0 | 3/3)
+PASS: re-activation after deactivation
+PASS: cash activation refuses a non-GB / non-driver account
+PASS: refused cash activation changed nothing
+PASS: activate-gb-cash.sql for the GB test driver
+PASS: cash enabled exactly for GB/GBP
+PASS: enrolment uses the existing terms fare-split-v1
+PASS: VERIFY (release 2) accepts the approved GB/GBP cash market
+PASS: VERIFY (release 2) refuses a cash market outside GB/GBP
+PASS: deactivate-gb-cash.sql
+PASS: cash off everywhere after deactivation, enrolment kept
 REHEARSAL 2 PASSED

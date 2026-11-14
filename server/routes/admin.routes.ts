@@ -1975,7 +1975,7 @@ function campaignConfigFromBody(b: any, adminId: string): { row?: Record<string,
     if (usageLimit != null && (!Number.isInteger(usageLimit) || usageLimit <= 0)) return { error: 'invalid usage_limit' };
 
     const qualification = b?.qualification && typeof b.qualification === 'object' ? b.qualification : {};
-    for (const k of ['min_qualifying_fare_minor', 'max_discount_minor']) {
+    for (const k of ['min_qualifying_fare_minor', 'max_discount_minor', 'reward_cap_minor']) {
         if (qualification[k] != null && (!Number.isInteger(Number(qualification[k])) || Number(qualification[k]) < 0)) {
             return { error: `${k} must be a non-negative integer` };
         }

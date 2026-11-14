@@ -108,7 +108,8 @@ check "dry run leaves the schema unchanged" "$(diff -q "$tmp/before.sql" <(dump 
 
 if q rel < "$rel/release-up.sql" > "$tmp/up.log" 2>&1; then echo "PASS: release-up.sql (release 2) applied as one transaction"; else echo "FAIL: release-up.sql"; grep -v NOTICE "$tmp/up.log" | tail -8; exit 1; fi
 q rel -c "$FPQ" > "$tmp/fp-after.tsv"
-check "D12 on develop: every pre-existing function unchanged" "$(join -t "$(printf '\t')" -v1 <(sort "$tmp/fp-before.tsv") <(sort "$tmp/fp-after.tsv") | wc -l | tr -d ' ')" 0
+check "every pre-existing function unchanged except the intended earn_referral fix" "$(comm -23 <(sort "$tmp/fp-before.tsv") <(sort "$tmp/fp-after.tsv") | cut -f1)" "public.earn_referral(p_referral uuid, p_job uuid)"
+echo "earn_referral before: $(grep -F 'public.earn_referral(' "$tmp/fp-before.tsv" | cut -f2)  after: $(grep -F 'public.earn_referral(' "$tmp/fp-after.tsv" | cut -f2)"
 check "D12 on develop: inspection photo columns unchanged" "$(q rel -c "$COLQ")" "$(cat "$tmp/cols-before.txt")"
 check "D12 on develop: every inspection photo row (statuses, approvals, reviewers, reasons) unchanged" "$(q rel -c "$PHOTOQ")" "$(cat "$tmp/PHOTOQ.before")"
 check "D12 on develop: photo table grants, RLS and policies unchanged" "$(q rel -c "$ACLQ")" "$(cat "$tmp/ACLQ.before")"
@@ -119,6 +120,7 @@ echo "new functions (for VERIFY):"; join -t "$(printf '\t')" -v2 <(sort "$tmp/fp
 [ -f "$rel/VERIFY.sql" ] && { q rel < "$rel/VERIFY.sql" > "$tmp/v.log" 2>&1 && echo "PASS: VERIFY (release 2) after apply" || { echo "FAIL: VERIFY after apply"; tail -4 "$tmp/v.log"; fail=1; }; }
 q rel < "$r1/VERIFY.sql" > /dev/null 2>&1 && echo "PASS: release 1 VERIFY still passes" || { echo "FAIL: release 1 VERIFY after release 2"; fail=1; }
 run_test rel "$root/scripts/completion-pin/realdb-completion-pin-test.sql" "completion PIN real-DB suite"
+run_test rel "$root/scripts/referrals/realdb-referral-units-test.sql" "referral minor-units real-DB suite"
 # Release 1's behaviour suites still pass with release 2 in place (the PIN trigger fires on every assignment).
 for t in deploy/vaydu-cash-ride-market-pilot/realdb-market-pilot-test.sql deploy/vaydu-cash-ride-market-pilot/realdb-cash-booking-acquisition-test.sql          deploy/vaydu-cash-ride-market-pilot/realdb-cash-booking-chain-test.sql deploy/vaydu-cash-ride-market-pilot/realdb-cash-ride-lifecycle-test.sql          scripts/migration-merge/realdb-merge-test.sql scripts/driver-metrics/realdb-driver-metrics-test.sql scripts/cancellation-fee/realdb-cancellation-fee-test.sql; do
   run_test rel "$root/$t" "release 1 suite with release 2: $(basename "$t")"
@@ -136,4 +138,28 @@ check "captured column = develop's column" "$(q fresh -c "$COLQ")" "$(cat "$tmp/
 check "fresh install keeps existing photo rows (the dropped reason column comes back empty)" "$(q fresh -c "select count(*)||':'||count(*) filter (where reason is null)||':'||string_agg(slot||'='||status,',' order by slot) from public.driver_vehicle_inspection_photos")" "6:6:$(q rel -c "$APPROVEDQ")"
 check "captured function grants = develop's (service_role only)" "$(q fresh -c "select has_function_privilege('service_role','public.register_driver_inspection_photo(uuid,uuid,uuid,uuid,text,text)','EXECUTE')::text||has_function_privilege('authenticated','public.register_driver_inspection_photo(uuid,uuid,uuid,uuid,text,text)','EXECUTE')::text||has_function_privilege('anon','public.register_driver_inspection_photo(uuid,uuid,uuid,uuid,text,text)','EXECUTE')::text")" "$(q rel -c "select has_function_privilege('service_role','public.register_driver_inspection_photo(uuid,uuid,uuid,uuid,text,text)','EXECUTE')::text||has_function_privilege('authenticated','public.register_driver_inspection_photo(uuid,uuid,uuid,uuid,text,text)','EXECUTE')::text||has_function_privilege('anon','public.register_driver_inspection_photo(uuid,uuid,uuid,uuid,text,text)','EXECUTE')::text")"
 q fresh < "$rel/release-up.sql" > /dev/null 2>&1 && echo "PASS: release 2 is idempotent (second apply)" || { echo "FAIL: second apply"; fail=1; }
+# GB activation of the approved values (deploy/vaydu-develop-activation), on develop's state + release 2.
+q postgres -c "CREATE DATABASE movabi_develop TEMPLATE template_auth;"
+q movabi_develop < "$rel/release-up.sql" > /dev/null 2>&1 && echo "PASS: release 2 applied to the activation copy" || { echo "FAIL: release 2 on the activation copy"; fail=1; }
+q movabi_develop < "$root/scripts/activation/seed-gb-ng.sql" > /dev/null
+act="$root/deploy/vaydu-develop-activation"
+q movabi_develop < "$act/activate-gb.sql" > "$tmp/act1.log" 2>&1 && echo "PASS: activate-gb.sql" || { echo "FAIL: activate-gb.sql"; tail -5 "$tmp/act1.log"; fail=1; }
+q movabi_develop < "$act/activate-gb.sql" > "$tmp/act2.log" 2>&1 && echo "PASS: activate-gb.sql again (idempotent)" || { echo "FAIL: second activation"; tail -5 "$tmp/act2.log"; fail=1; }
+grep -E "^cancellation|^campaign|^pin|^non-GB" "$tmp/act2.log" | sed 's/^/  /'
+run_test movabi_develop "$root/scripts/activation/check-activated.sql" "GB activation: approved values, GB only, money paths"
+q movabi_develop < "$act/deactivate-gb.sql" > "$tmp/deact.log" 2>&1 && echo "PASS: deactivate-gb.sql" || { echo "FAIL: deactivate-gb.sql"; tail -5 "$tmp/deact.log"; fail=1; }
+run_test movabi_develop "$root/scripts/activation/check-deactivated.sql" "GB deactivation: off, history kept, NG untouched"
+q movabi_develop < "$act/activate-gb.sql" > /dev/null 2>&1 && echo "PASS: re-activation after deactivation" || { echo "FAIL: re-activation"; fail=1; }
+# Cash (5b): one GB test driver; refused for a non-GB user; only GB/GBP enabled; then off again.
+if q movabi_develop -v driver_email=ng-customer@act.test < "$act/activate-gb-cash.sql" > /dev/null 2>&1; then echo "FAIL: cash activation accepted a non-GB, non-driver account"; fail=1; else echo "PASS: cash activation refuses a non-GB / non-driver account"; fi
+check "refused cash activation changed nothing" "$(q movabi_develop -c "select count(*) from public.driver_cash_credit_markets_v1e where enabled")" 0
+q movabi_develop -v driver_email=gb-driver@act.test < "$act/activate-gb-cash.sql" > "$tmp/cash.log" 2>&1 && echo "PASS: activate-gb-cash.sql for the GB test driver" || { echo "FAIL: cash activation"; tail -5 "$tmp/cash.log"; fail=1; }
+check "cash enabled exactly for GB/GBP" "$(q movabi_develop -c "select string_agg(country_code||'='||public.driver_cash_credit_market_enabled_v1e(country_code,supported_currency)::text,',' order by country_code) from public.market_availability")" "GB=true,NG=false"
+check "enrolment uses the existing terms fare-split-v1" "$(q movabi_develop -c "select terms_version||'|'||enabled::text from public.driver_cash_credit_enrolments_v1e where driver_id='6d000000-0000-4000-8000-0000000000d1'")" "fare-split-v1|true"
+q movabi_develop < "$rel/VERIFY.sql" > /dev/null 2>&1 && echo "PASS: VERIFY (release 2) accepts the approved GB/GBP cash market" || { echo "FAIL: VERIFY with GB cash on"; fail=1; }
+q movabi_develop -c "INSERT INTO public.driver_cash_credit_markets_v1e(country_code,currency_code,enabled) VALUES ('NG','NGN',true);" >/dev/null
+if q movabi_develop < "$rel/VERIFY.sql" > /dev/null 2>&1; then echo "FAIL: VERIFY accepted an NG cash market"; fail=1; else echo "PASS: VERIFY (release 2) refuses a cash market outside GB/GBP"; fi
+q movabi_develop -c "DELETE FROM public.driver_cash_credit_markets_v1e WHERE country_code='NG';" >/dev/null
+q movabi_develop < "$act/deactivate-gb-cash.sql" > /dev/null 2>&1 && echo "PASS: deactivate-gb-cash.sql" || { echo "FAIL: cash deactivation"; fail=1; }
+check "cash off everywhere after deactivation, enrolment kept" "$(q movabi_develop -c "select (select count(*) from public.market_availability where public.driver_cash_credit_market_enabled_v1e(country_code,supported_currency))||'|'||(select count(*) from public.driver_cash_credit_enrolments_v1e)")" "0|1"
 [ "$fail" = 0 ] && echo "REHEARSAL 2 PASSED" || { echo "REHEARSAL 2 FAILED"; exit 1; }

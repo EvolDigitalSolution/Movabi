@@ -1,2 +1,3 @@
 # Extra real-DB suites the host drill runs for release 2.
 scripts/completion-pin/realdb-completion-pin-test.sql
+scripts/referrals/realdb-referral-units-test.sql
