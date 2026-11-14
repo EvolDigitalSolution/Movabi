@@ -3,7 +3,7 @@
 -- One transaction: any error rolls back every step (psql -v ON_ERROR_STOP=1).
 -- source supabase/migrations/20261270000000_capture_develop_inspection_drift.sql sha256 221b1cd77ca395e2a23122c19f4b0ff01a3031bdeb098240ea5d7afd846d7a15 (outer BEGIN/COMMIT removed: none present)
 -- source supabase/migrations/20261270100000_completion_pin_effective.sql sha256 66190d05d6ec8b73b4c71c61292512fdd07a92edb6eac1d953fd022c9d3a12da (outer BEGIN/COMMIT removed: none present)
--- source supabase/migrations/20261270200000_referral_fare_minor_units.sql sha256 a544fa362dc3bd53a3c21a5d47968c319aee64061fb05329b9135130e547c98f (outer BEGIN/COMMIT removed: none present)
+-- source supabase/migrations/20261270200000_referral_fare_minor_units.sql sha256 addf7e540570bfafdefff684a8c6e16bb0333546e71bc1e86cfad8c297958dab (outer BEGIN/COMMIT removed: none present)
 \set ON_ERROR_STOP on
 BEGIN;
 SET LOCAL lock_timeout = '10s';
@@ -193,7 +193,9 @@ END $c$;
 -- `coalesce(j.agreed_fare, j.total_price, j.price, 0)::bigint` turned 12.50 into 12 "minor", so a 5% reward
 -- became 0 and any minor-unit qualifying fare (e.g. 800 = 8.00 GBP) could never be met. Fixed by converting
 -- with the currency's minor exponent (public.wallet_currency_minor_exponent, as cancellation_fee_quote does).
--- Also refuses a job outside the campaign's market or currency (market isolation).
+-- The percentage is rounded DOWN to a whole minor unit with exact numeric arithmetic (same result as
+-- the previous integer division, now explicit). Also refuses a job outside the campaign's market or
+-- currency (market isolation).
 -- Base: develop's LIVE definition (baseline 20261112), changed only at the fare line and the two checks.
 -- Rewards already recorded are not recalculated. Rollback: release-down restores develop's exact live body.
 CREATE OR REPLACE FUNCTION public.earn_referral(p_referral uuid, p_job uuid) RETURNS public.referrals
@@ -201,7 +203,7 @@ CREATE OR REPLACE FUNCTION public.earn_referral(p_referral uuid, p_job uuid) RET
     SET search_path TO 'public'
     AS $$
 DECLARE r referrals; j jobs; c campaigns;
-        v_fare bigint; v_reward bigint; v_max int; v_progress int;
+        v_fare bigint; v_reward bigint; v_max int; v_progress int; v_exp int;
 BEGIN
   SELECT * INTO r FROM referrals WHERE id=p_referral FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'referral_missing'; END IF;
@@ -220,11 +222,15 @@ BEGIN
   IF upper(coalesce(j.currency_code,'')) <> upper(c.currency_code) THEN RAISE EXCEPTION 'referral_currency_mismatch'; END IF;
   IF upper(coalesce(j.country_code,'')) <> upper(c.market_code) THEN RAISE EXCEPTION 'referral_market_mismatch'; END IF;
   -- Fares on jobs are MAJOR units (e.g. 12.50 GBP); rewards, caps and budgets are MINOR units.
-  v_fare := round(coalesce(j.agreed_fare, j.total_price, j.price, 0)::numeric
-                  * power(10, public.wallet_currency_minor_exponent(j.currency_code)))::bigint;
+  -- Shared rule (as cancellation_fee_quote): exact NUMERIC arithmetic with the currency's minor
+  -- exponent from wallet_currency_minor_exponent; round() on numeric rounds half away from zero.
+  -- No floating point is involved. An unknown currency is refused.
+  v_exp := public.wallet_currency_minor_exponent(upper(j.currency_code));
+  IF v_exp IS NULL THEN RAISE EXCEPTION 'referral_currency_unknown'; END IF;
+  v_fare := round(coalesce(j.agreed_fare, j.total_price, j.price, 0)::numeric * power(10::numeric, v_exp))::bigint;
 
   IF r.referral_kind='customer' THEN
-    v_reward := (v_fare * coalesce(r.reward_rate_bps, 500) / 10000)::bigint;
+    v_reward := floor(v_fare::numeric * coalesce(r.reward_rate_bps, 500) / 10000)::bigint;  -- rounds down
     IF r.reward_cap_minor IS NOT NULL THEN v_reward := least(v_reward, r.reward_cap_minor); END IF;
     IF r.qualifying_fare_minor IS NOT NULL AND v_fare < r.qualifying_fare_minor THEN
       RAISE EXCEPTION 'qualifying_fare_below_minimum';
@@ -265,7 +271,7 @@ BEGIN
     RAISE EXCEPTION 'monthly_cap_reached';
   END IF;
   SELECT sum(fare_minor) INTO v_fare FROM referral_driver_progress WHERE referral_id=p_referral;
-  v_reward := (v_fare * coalesce(r.reward_rate_bps, 500) / 10000)::bigint;
+  v_reward := floor(v_fare::numeric * coalesce(r.reward_rate_bps, 500) / 10000)::bigint;  -- rounds down
   IF r.reward_cap_minor IS NOT NULL THEN v_reward := least(v_reward, r.reward_cap_minor); END IF;
   IF c.budget_minor>0 AND NOT campaign_spend(c.id, v_reward) THEN
     RAISE EXCEPTION 'campaign_budget_exhausted';

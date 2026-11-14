@@ -792,6 +792,11 @@ export class MarketplaceConfigService {
       demandSupplyEnabled: false
     });
 
+    return this.dynamicPricingFrom(raw);
+  }
+
+  /** Normalise a dynamic-pricing object (tenant-level value or one market entry); missing fields are off / 1. */
+  private static dynamicPricingFrom(raw: any): DynamicPricingSettings {
     const asAny = raw as any;
     const maxMultiplier = Number(asAny?.maxMultiplier ?? raw?.maxSurge ?? 1);
     return {
@@ -827,6 +832,24 @@ export class MarketplaceConfigService {
     tenantId: string | null = null
   ): Promise<EffectiveDynamicPricingSettings> {
     const raw = await this.getRawSetting('dynamic_pricing', tenantId);
+    // Area 4b / P8: a market with its own entry (dynamic_pricing.markets.<CC>) uses ONLY that entry over
+    // the safe defaults (everything off, every multiplier 1); the tenant-level values never leak into
+    // it. A market without an entry keeps the tenant-level setting exactly as before.
+    const marketEntry = this.dynamicPricingMarketEntry(raw, _market);
+    if (marketEntry) {
+      const m = this.dynamicPricingFrom(marketEntry);
+      const marketMax = this.numberFrom(marketEntry['maxMultiplier'] ?? m.maxSurge, m.maxSurge || 1);
+      return {
+        ...m,
+        maxSurge: marketMax,
+        maxMultiplier: marketMax,
+        minimumDemandRatio: this.numberFrom(marketEntry['minimumDemandRatio'] ?? marketEntry['minimum_demand_ratio']),
+        shortTripMaxMultiplier: this.numberFrom(marketEntry['shortTripMaxMultiplier'] ?? marketEntry['short_trip_max_multiplier'], 1),
+        shortTripMaxAmount: this.numberFrom(marketEntry['shortTripMaxAmount'] ?? marketEntry['short_trip_max_amount']),
+        source: 'marketplace_settings_market',
+        configVersion: this.settingVersion(raw)
+      };
+    }
     const settings = await this.getDynamicPricingSettings(tenantId);
     const asAny = this.isJsonObject(raw) ? raw : {};
     const maxMultiplier = this.numberFrom(asAny['maxMultiplier'] ?? settings.maxSurge, settings.maxSurge || 1);
@@ -841,6 +864,16 @@ export class MarketplaceConfigService {
       source: this.isJsonObject(raw) ? 'marketplace_settings' : 'safe_zero_default',
       configVersion: this.settingVersion(raw)
     };
+  }
+
+  /** The dynamic_pricing.markets entry for the quote's country, or null. */
+  private static dynamicPricingMarketEntry(raw: unknown, market: unknown): Record<string, any> | null {
+    if (!this.isJsonObject(raw)) return null;
+    const markets = (raw as any)['markets'];
+    const country = String((market as any)?.countryCode || (market as any)?.country_code || '').trim().toUpperCase();
+    if (!markets || typeof markets !== 'object' || Array.isArray(markets) || !/^[A-Z]{2}$/.test(country)) return null;
+    const entry = Object.prototype.hasOwnProperty.call(markets, country) ? markets[country] : null;
+    return entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : null;
   }
 
   static async getEffectiveWaitingConfig(

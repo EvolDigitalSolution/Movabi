@@ -352,11 +352,12 @@ router.post('/campaigns/apply', async (req: Request, res: Response) => {
         // 7a (2026-11-14): the snapshot's driverBase is in MAJOR units (e.g. 12.50 GBP); campaign
         // thresholds, caps, budgets and discounts are MINOR units. Convert with the currency exponent.
         const quoteCurrency = String(q?.currency || (q as any)?.protected_fare_snapshot?.currency || '').toUpperCase();
-        const eligibleMajor = Number(q?.protected_fare_snapshot?.driverBase ?? 0);
-        if (!q || !/^[A-Z]{3}$/.test(quoteCurrency) || !Number.isFinite(eligibleMajor) || eligibleMajor <= 0) {
+        // Exact integer conversion (FareSplitService.toMinorExact): no floating point, no silent rounding.
+        // An amount with more decimals than the currency allows is refused, not rounded.
+        const eligibleMinor = q ? FareSplitService.toMinorExact(q.protected_fare_snapshot?.driverBase as any, quoteCurrency) : null;
+        if (!q || eligibleMinor === null || eligibleMinor <= 0) {
             return res.status(404).json({ error: 'Quote not found.', code: 'QUOTE_NOT_FOUND' });
         }
-        const eligibleMinor = FareSplitService.toMinor(eligibleMajor, quoteCurrency);
         const { data: campaign } = await supabaseAdmin
             .from('campaigns')
             .select('id,tenant_id,enabled,kind,market_code,currency_code')

@@ -147,14 +147,73 @@ q movabi_develop < "$act/activate-gb.sql" > "$tmp/act1.log" 2>&1 && echo "PASS: 
 q movabi_develop < "$act/activate-gb.sql" > "$tmp/act2.log" 2>&1 && echo "PASS: activate-gb.sql again (idempotent)" || { echo "FAIL: second activation"; tail -5 "$tmp/act2.log"; fail=1; }
 grep -E "^cancellation|^campaign|^pin|^non-GB" "$tmp/act2.log" | sed 's/^/  /'
 run_test movabi_develop "$root/scripts/activation/check-activated.sql" "GB activation: approved values, GB only, money paths"
+q movabi_develop < "$root/scripts/activation/seed-obligations.sql" > "$tmp/obl.log" 2>&1 && echo "PASS: obligations created while the features are on (referral linked, reward earned, discount applied, debt recorded)" || { echo "FAIL: seed-obligations"; tail -5 "$tmp/obl.log"; fail=1; }
 q movabi_develop < "$act/deactivate-gb.sql" > "$tmp/deact.log" 2>&1 && echo "PASS: deactivate-gb.sql" || { echo "FAIL: deactivate-gb.sql"; tail -5 "$tmp/deact.log"; fail=1; }
-run_test movabi_develop "$root/scripts/activation/check-deactivated.sql" "GB deactivation: off, history kept, NG untouched"
+run_test movabi_develop "$root/scripts/activation/check-deactivated.sql" "GB deactivation: off, history kept, obligations valid, new business refused, NG untouched"
 q movabi_develop < "$act/activate-gb.sql" > /dev/null 2>&1 && echo "PASS: re-activation after deactivation" || { echo "FAIL: re-activation"; fail=1; }
+check "re-activation turns the GB policy and both campaigns back on (terms unchanged)" "$(q movabi_develop -c "select (select count(*) from public.cancellation_policies where tenant_id='6b000000-0000-4000-8000-0000000000aa' and market_code='GB' and enabled and fee_minor=300 and fee_cap_minor=300 and grace_seconds=120)||'|'||(select count(*) from public.campaigns where tenant_id='6b000000-0000-4000-8000-0000000000aa' and enabled and not paused and code in ('FIRST5GB','REFERGB'))")" "1|2"
+q movabi_develop -c "UPDATE public.campaigns SET budget_minor=1 WHERE code='FIRST5GB' AND tenant_id='5a5a5a5a-0000-4000-8000-000000000001';" >/dev/null
+if q movabi_develop < "$act/activate-gb.sql" > "$tmp/act-diff.log" 2>&1; then echo "FAIL: activation overwrote or accepted a campaign with other terms"; fail=1; else echo "PASS: a campaign with other terms stops the activation ($(grep -m1 -o 'terms other than the approved ones' "$tmp/act-diff.log"))"; fi
+q movabi_develop -c "UPDATE public.campaigns SET budget_minor=50000 WHERE code='FIRST5GB' AND tenant_id='5a5a5a5a-0000-4000-8000-000000000001';" >/dev/null
+# P8 guards: another GB surge cap or live GB AI pricing stops the activation and changes nothing.
+q movabi_develop -c "INSERT INTO public.market_pricing_strategies(id,country_code,service_type,currency,enabled,maximum_surge_multiplier) VALUES ('6f500000-0000-4000-8000-000000000001','GB','ride','GBP',true,2.0);" >/dev/null
+before="$(q movabi_develop -c "select md5(string_agg(key||value::text,'|' order by tenant_id,key)) from public.marketplace_settings")"
+if q movabi_develop < "$act/activate-gb.sql" > "$tmp/p8a.log" 2>&1; then echo "FAIL: activation accepted a GB strategy with surge cap 2.0"; fail=1; else echo "PASS: a GB strategy with another surge cap stops the activation"; fi
+check "the refused activation changed no setting" "$(q movabi_develop -c "select md5(string_agg(key||value::text,'|' order by tenant_id,key)) from public.marketplace_settings")" "$before"
+q movabi_develop -c "DELETE FROM public.market_pricing_strategies WHERE id='6f500000-0000-4000-8000-000000000001';" >/dev/null
+q movabi_develop -c "INSERT INTO public.pricing_markets(country_code,currency_code,timezone,distance_unit,ai_pricing_enabled,shadow_mode_enabled) VALUES ('GB','GBP','Europe/London','km',true,false);" >/dev/null
+if q movabi_develop < "$act/activate-gb.sql" > "$tmp/p8b.log" 2>&1; then echo "FAIL: activation accepted live GB AI pricing"; fail=1; else echo "PASS: live GB AI pricing (traffic could change fares) stops the activation"; fi
+q movabi_develop -c "DELETE FROM public.pricing_markets WHERE country_code='GB';" >/dev/null
+
+# Concurrency (real parallel sessions). Session A holds its transaction open (pg_sleep) while B (and C)
+# arrive: they wait on A's row lock and must then honour the cap, the budget and the idempotent replay.
+GBT=6b000000-0000-4000-8000-0000000000aa
+cust(){ echo "6c000000-0000-4000-8000-0000000000c$1"; }
+FIRST="$(q movabi_develop -c "select id from public.campaigns where tenant_id='$GBT' and code='FIRST5GB'")"
+REFER="$(q movabi_develop -c "select id from public.campaigns where tenant_id='$GBT' and code='REFERGB'")"
+q movabi_develop -c "INSERT INTO public.campaigns(id,tenant_id,code,kind,market_code,currency_code,service_slug,audience,enabled,budget_minor,qualification,per_user_cap,value_type,value) VALUES ('6f400000-0000-4000-8000-000000000001','$GBT','TESTBUDGET','customer_discount','GB','GBP','ride','customer',true,100,'{}',1,'percent',5);" >/dev/null
+TB=6f400000-0000-4000-8000-000000000001
+spent(){ q movabi_develop -c "select spent_minor from public.campaigns where id='$1'"; }
+apply_sql(){ echo "select discount_minor from public.apply_campaign_discount('$1','$(cust "$2")','$3',1250)"; }
+hold(){ ( q movabi_develop -c "BEGIN; $1; SELECT pg_sleep(1.5); COMMIT;" > "$2" 2>&1 || true ) & }
+late(){ ( q movabi_develop -c "$1" > "$2" 2>&1 || true ) & }
+
+s0="$(spent "$FIRST")"
+hold "$(apply_sql "$FIRST" 3 cq-1)" "$tmp/c1a.log"; sleep 0.5; late "$(apply_sql "$FIRST" 3 cq-2)" "$tmp/c1b.log"; wait || true
+check "concurrent redemptions, same customer, two quotes: exactly one discount" "$(q movabi_develop -c "select count(*) from public.campaign_discount_applications where campaign_id='$FIRST' and customer_id='$(cust 3)'")" 1
+check "the second concurrent redemption is refused by the per-customer cap" "$(grep -c 'campaign_cap_reached' "$tmp/c1b.log")" 1
+check "budget charged once for that customer (62)" "$(( $(spent "$FIRST") - s0 ))" 62
+
+s0="$(spent "$FIRST")"
+hold "$(apply_sql "$FIRST" 8 cq-r)" "$tmp/c2a.log"; sleep 0.5; late "$(apply_sql "$FIRST" 8 cq-r)" "$tmp/c2b.log"; late "$(apply_sql "$FIRST" 8 cq-r)" "$tmp/c2c.log"; wait || true
+check "retries of the same redemption (3 sessions): one application row" "$(q movabi_develop -c "select count(*) from public.campaign_discount_applications where campaign_id='$FIRST' and customer_id='$(cust 8)' and quote_reference='cq-r'")" 1
+check "each retry returns the same discount (62) with no error" "$(cat "$tmp/c2b.log" "$tmp/c2c.log" | tr -d ' \r' | tr '\n' ',')" "62,62,"
+check "retries charge the budget exactly once (62)" "$(( $(spent "$FIRST") - s0 ))" 62
+
+hold "$(apply_sql "$TB" 5 cq-b1)" "$tmp/c3a.log"; sleep 0.5; late "$(apply_sql "$TB" 6 cq-b2)" "$tmp/c3b.log"; wait || true
+check "budget exhaustion under concurrency (budget 100, two discounts of 62): one applied" "$(q movabi_develop -c "select count(*)||'|'||(select spent_minor from public.campaigns where id='$TB') from public.campaign_discount_applications where campaign_id='$TB'")" "1|62"
+check "the other is refused as budget exhausted, never over-spent" "$(grep -c 'campaign_budget_exhausted' "$tmp/c3b.log")" 1
+
+# Unordered burst: 8 sessions at once for one customer (4 quotes, each sent twice). Whatever the interleaving:
+s0="$(spent "$FIRST")"
+for i in 1 2 3 4 1 2 3 4; do late "$(apply_sql "$FIRST" 7 "burst-$i")" "$tmp/burst-$i-$RANDOM.log"; done; wait || true
+check "burst of 8 concurrent redemptions for one customer: one discount, budget charged once" "$(q movabi_develop -c "select count(*) from public.campaign_discount_applications where campaign_id='$FIRST' and customer_id='$(cust 7)'")|$(( $(spent "$FIRST") - s0 ))" "1|62"
+
+# Referral: the same qualifying ride reported by three sessions at once earns once.
+s0="$(spent "$REFER")"
+earn="select status from public.earn_referral('6f200000-0000-4000-8000-000000000002','6f100000-0000-4000-8000-000000000002')"
+hold "$earn" "$tmp/c4a.log"; sleep 0.5; late "$earn" "$tmp/c4b.log"; late "$earn" "$tmp/c4c.log"; wait || true
+check "concurrent referral earn (3 sessions): one reward credit of 75, referral earned once" "$(q movabi_develop -c "select (select count(*)||'/'||coalesce(sum(amount_minor),0) from public.reward_credits where source_id='6f200000-0000-4000-8000-000000000002')||'|'||(select status||'/'||reward_minor from public.referrals where id='6f200000-0000-4000-8000-000000000002')")" "1/75|earned/75"
+check "referral budget charged exactly once (75)" "$(( $(spent "$REFER") - s0 ))" 75
+check "the waiting sessions return the earned referral without error" "$(cat "$tmp/c4b.log" "$tmp/c4c.log" | tr -d ' \r' | tr '\n' ',')" "earned,earned,"
+# Budget can never be exceeded: every campaign's spend is within its budget after all of the above.
+check "no campaign spent more than its budget" "$(q movabi_develop -c "select count(*) from public.campaigns where budget_minor>0 and spent_minor>budget_minor")" 0
 # Cash (5b): one GB test driver; refused for a non-GB user; only GB/GBP enabled; then off again.
 if q movabi_develop -v driver_email=ng-customer@act.test < "$act/activate-gb-cash.sql" > /dev/null 2>&1; then echo "FAIL: cash activation accepted a non-GB, non-driver account"; fail=1; else echo "PASS: cash activation refuses a non-GB / non-driver account"; fi
 check "refused cash activation changed nothing" "$(q movabi_develop -c "select count(*) from public.driver_cash_credit_markets_v1e where enabled")" 0
 q movabi_develop -v driver_email=gb-driver@act.test < "$act/activate-gb-cash.sql" > "$tmp/cash.log" 2>&1 && echo "PASS: activate-gb-cash.sql for the GB test driver" || { echo "FAIL: cash activation"; tail -5 "$tmp/cash.log"; fail=1; }
 check "cash enabled exactly for GB/GBP" "$(q movabi_develop -c "select string_agg(country_code||'='||public.driver_cash_credit_market_enabled_v1e(country_code,supported_currency)::text,',' order by country_code) from public.market_availability")" "GB=true,NG=false"
+run_test movabi_develop "$root/scripts/activation/check-cash-activated.sql" "GB cash: only the selected driver; nobody blocked; deactivation keeps obligations"
 check "enrolment uses the existing terms fare-split-v1" "$(q movabi_develop -c "select terms_version||'|'||enabled::text from public.driver_cash_credit_enrolments_v1e where driver_id='6d000000-0000-4000-8000-0000000000d1'")" "fare-split-v1|true"
 q movabi_develop < "$rel/VERIFY.sql" > /dev/null 2>&1 && echo "PASS: VERIFY (release 2) accepts the approved GB/GBP cash market" || { echo "FAIL: VERIFY with GB cash on"; fail=1; }
 q movabi_develop -c "INSERT INTO public.driver_cash_credit_markets_v1e(country_code,currency_code,enabled) VALUES ('NG','NGN',true);" >/dev/null

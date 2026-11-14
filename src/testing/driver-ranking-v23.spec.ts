@@ -77,16 +77,16 @@ vi.mock('../../server/services/notification.service',()=>({NotificationService:{
 vi.mock('../../server/services/stripe.service',()=>({stripe:{}}));
 vi.mock('../../server/services/driver-service-eligibility',()=>({toCanonicalDriverService:()=> 'ride',isDriverEligibleForService:(profile:any)=>profile.allowed!==false}));
 vi.mock('../../server/services/payout-eligibility.service',()=>({SUPPORTED_PAYOUT_COUNTRIES:['GB']}));
-vi.mock('../../server/services/marketplace-config.service',()=>({MarketplaceConfigService:{getSmartMatchingSettings:async()=>smartSettings.current}}));
+vi.mock('../../server/services/marketplace-config.service',()=>({MarketplaceConfigService:{getSmartMatchingSettings:async()=>smartSettings.current,getRawSetting:async()=>smartSettings.current}}));
 vi.mock('../../server/services/driver-offer-metrics.service',()=>({reportDriverOfferMetrics:async(id:string)=>metricsById.current[id]||{acceptanceRate:null,cancellationRate:null}}));
 import {DispatchService} from '../../server/services/dispatch.service';
-function dispatchFixture(opts:{extraProfiles?:any[],scores?:any[],settings?:any,metrics?:Record<string,any>}={}){
+function dispatchFixture(opts:{extraProfiles?:any[],scores?:any[],settings?:any,metrics?:Record<string,any>,country?:string}={}){
   smartSettings.current=opts.settings??{acceptanceRateWeight:0,cancellationRateWeight:0,newDriverExposureKm:0};
   metricsById.current=opts.metrics??{};
   const profiles=[
-    {...driver('low'),allowed:true,registration_country_code:'GB',tenant_id:'t1'},
-    {...driver('high'),allowed:true,registration_country_code:'GB',tenant_id:'t1'},
-    {...driver('ineligible'),allowed:false,registration_country_code:'GB',tenant_id:'t1'},
+    {...driver('low'),allowed:true,registration_country_code:opts.country??'GB',tenant_id:'t1'},
+    {...driver('high'),allowed:true,registration_country_code:opts.country??'GB',tenant_id:'t1'},
+    {...driver('ineligible'),allowed:false,registration_country_code:opts.country??'GB',tenant_id:'t1'},
     ...(opts.extraProfiles??[])
   ];
   const scores=opts.scores??[{driver_id:'low',average_score:3,review_count:100},{driver_id:'high',average_score:5,review_count:100}];
@@ -95,8 +95,33 @@ function dispatchFixture(opts:{extraProfiles?:any[],scores?:any[],settings?:any,
     const q:any={select:()=>q,eq:()=>q,in:()=>q,limit:()=>q,or:()=>q,gte:()=>q,lte:()=>q,
       then:(resolve:any)=>resolve({data:table==='profiles'?profiles:profiles.map(p=>({user_id:p.id,vehicle_class:'car'})),error:null})};return q;
   }};
-  return {rpc,find:(strict=false)=>(new DispatchService() as any).findNearbyDrivers({pickup_lat:0,pickup_lng:0,service_slug:'ride',country_code:'GB',tenant_id:'t1'},null,null,strict)};
+  return {rpc,find:(strict=false)=>(new DispatchService() as any).findNearbyDrivers({pickup_lat:0,pickup_lng:0,service_slug:'ride',country_code:opts.country??'GB',tenant_id:'t1'},null,null,strict)};
 }
+describe('per-market ranking policy in dispatch (area 1b / P7)',()=>{
+  const GB_ENTRY={markets:{GB:{rankingEnabled:true,acceptanceRateWeight:0.5,cancellationRateWeight:1.0,newDriverExposureKm:0.15}}};
+  it('GB entry on, platform flag OFF: GB jobs are ranked',async()=>{
+    vi.stubEnv('VAYDU_DRIVER_RANKING_V23','false');const f=dispatchFixture({settings:GB_ENTRY});
+    expect((await f.find()).map((d:any)=>d.id)).toEqual(['high','low']);expect(f.rpc).toHaveBeenCalled();
+  });
+  it('GB entry on, platform flag OFF: an NG job of the same tenant keeps the previous order and reads no reviews',async()=>{
+    vi.stubEnv('VAYDU_DRIVER_RANKING_V23','false');const f=dispatchFixture({settings:GB_ENTRY,country:'NG'});
+    expect((await f.find()).map((d:any)=>d.id)).toEqual(['low','high']);expect(f.rpc).not.toHaveBeenCalled();
+  });
+  it('GB weights apply to GB only: high cancellation drops behind in GB, not in a market using the tenant weights (0)',async()=>{
+    vi.stubEnv('VAYDU_DRIVER_RANKING_V23','true');
+    const metrics={high:{acceptanceRate:null,cancellationRate:0.9},low:{acceptanceRate:null,cancellationRate:0}};
+    expect((await dispatchFixture({settings:GB_ENTRY,metrics}).find()).map((d:any)=>d.id)).toEqual(['low','high']);
+    expect((await dispatchFixture({settings:GB_ENTRY,metrics,country:'NG'}).find()).map((d:any)=>d.id)).toEqual(['high','low']);
+  });
+  it('a market entry with rankingEnabled false turns ranking off for that market even when the platform flag is on',async()=>{
+    vi.stubEnv('VAYDU_DRIVER_RANKING_V23','true');
+    const f=dispatchFixture({settings:{markets:{GB:{rankingEnabled:false}}}});
+    expect((await f.find()).map((d:any)=>d.id)).toEqual(['low','high']);expect(f.rpc).not.toHaveBeenCalled();
+  });
+  it('customer availability previews never rank, with or without a market entry',async()=>{
+    vi.stubEnv('VAYDU_DRIVER_RANKING_V23','false');const f=dispatchFixture({settings:GB_ENTRY});await f.find(true);expect(f.rpc).not.toHaveBeenCalled();
+  });
+});
 describe('actual dispatch invitation ranking integration',()=>{
   it('does not query reviews when ranking is disabled',async()=>{
     vi.stubEnv('VAYDU_DRIVER_RANKING_V23','false');const f=dispatchFixture();expect((await f.find()).map((d:any)=>d.id)).toEqual(['low','high']);expect(f.rpc).not.toHaveBeenCalled();

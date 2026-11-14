@@ -26,7 +26,7 @@ BEGIN
   ('public.completion_pin_market_policy(p_metadata jsonb)','b06d13b95ba16eb69185edb935c81ebf'),
   ('public.mint_completion_pin_on_assignment()','c0765f72f8cf3197b11fecd92e3cbb8e'),
   ('public.stamp_completion_pin_policy()','ac5497c01a83276b5c9a869f308cecc4'),
-  ('public.earn_referral(p_referral uuid, p_job uuid)','114759b0db49eab9d05d5c982bd581fa'),
+  ('public.earn_referral(p_referral uuid, p_job uuid)','bbc10e72010059230652fd175f56a712'),
   ('public.register_driver_inspection_photo(p_driver uuid, p_tenant uuid, p_vehicle uuid, p_revision uuid, p_slot text, p_path text)','f180b0b86f587154270a0493786d9838')) t(sig,md5) LOOP
   SELECT md5(replace(pg_get_functiondef(p.oid),chr(13),'')) INTO v FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname||'.'||p.proname||'('||pg_get_function_identity_arguments(p.oid)||')' = r.sig;
   IF v IS DISTINCT FROM r.md5 THEN bad := bad || format(E'\n  %s: expected %s, found %s', r.sig, r.md5, coalesce(v,'MISSING')); END IF;

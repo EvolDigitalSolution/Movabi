@@ -10,7 +10,7 @@ PASS: dry run completed
 PASS: dry run leaves the schema unchanged
 PASS: release-up.sql (release 2) applied as one transaction
 PASS: every pre-existing function unchanged except the intended earn_referral fix
-earn_referral before: 98e50e3328d7a29ba7f9f5c1a19751c4  after: 114759b0db49eab9d05d5c982bd581fa
+earn_referral before: 98e50e3328d7a29ba7f9f5c1a19751c4  after: bbc10e72010059230652fd175f56a712
 PASS: D12 on develop: inspection photo columns unchanged
 PASS: D12 on develop: every inspection photo row (statuses, approvals, reviewers, reasons) unchanged
 PASS: D12 on develop: photo table grants, RLS and policies unchanged
@@ -24,7 +24,7 @@ new functions (for VERIFY):
 PASS: VERIFY (release 2) after apply
 PASS: release 1 VERIFY still passes
 PASS: completion PIN real-DB suite (0 | 17/17)
-PASS: referral minor-units real-DB suite (0 | 8/8)
+PASS: referral minor-units real-DB suite (0 | 13/13)
 PASS: release 1 suite with release 2: realdb-market-pilot-test.sql (0 | 15)
 PASS: release 1 suite with release 2: realdb-cash-booking-acquisition-test.sql (0 | 16)
 PASS: release 1 suite with release 2: realdb-cash-booking-chain-test.sql (0 | 13)
@@ -45,24 +45,41 @@ PASS: release 2 is idempotent (second apply)
 PASS: release 2 applied to the activation copy
 PASS: activate-gb.sql
 PASS: activate-gb.sql again (idempotent)
-  cancellation|5a5a5a5a-0000-4000-8000-000000000001|GB|1|true|300/300/120
-  cancellation|6b000000-0000-4000-8000-0000000000aa|GB|1|true|300/300/120
+  cancellation|5a5a5a5a-0000-4000-8000-000000000001|GB|1|true|300/300/120/150
+  cancellation|6b000000-0000-4000-8000-0000000000aa|GB|1|true|300/300/120/150
   campaign|5a5a5a5a-0000-4000-8000-000000000001|FIRST5GB|GB/GBP|true|{"firstBookingOnly": true, "max_discount_minor": 500, "min_qualifying_fare_minor": 800}
   campaign|5a5a5a5a-0000-4000-8000-000000000001|REFERGB|GB/GBP|true|{"reward_cap_minor": 500, "min_qualifying_fare_minor": 800}
   campaign|6b000000-0000-4000-8000-0000000000aa|FIRST5GB|GB/GBP|true|{"firstBookingOnly": true, "max_discount_minor": 500, "min_qualifying_fare_minor": 800}
   campaign|6b000000-0000-4000-8000-0000000000aa|REFERGB|GB/GBP|true|{"reward_cap_minor": 500, "min_qualifying_fare_minor": 800}
-  pin|6b000000-0000-4000-8000-0000000000bb|{"markets": {"NG": "optional"}}
-  pin|5a5a5a5a-0000-4000-8000-000000000001|{"markets": {"GB": "required"}}
-  pin|6b000000-0000-4000-8000-0000000000aa|{"markets": {"GB": "required"}}
   non-GB rows enabled (must be 0)|0
-PASS: GB activation: approved values, GB only, money paths (0 | 12/12)
+PASS: GB activation: approved values, GB only, money paths (0 | 15/15)
+PASS: obligations created while the features are on (referral linked, reward earned, discount applied, debt recorded)
 PASS: deactivate-gb.sql
-PASS: GB deactivation: off, history kept, NG untouched (0 | 3/3)
+PASS: GB deactivation: off, history kept, obligations valid, new business refused, NG untouched (0 | 10/10)
 PASS: re-activation after deactivation
+PASS: re-activation turns the GB policy and both campaigns back on (terms unchanged)
+PASS: a campaign with other terms stops the activation (terms other than the approved ones)
+PASS: a GB strategy with another surge cap stops the activation
+PASS: the refused activation changed no setting
+PASS: live GB AI pricing (traffic could change fares) stops the activation
+PASS: concurrent redemptions, same customer, two quotes: exactly one discount
+PASS: the second concurrent redemption is refused by the per-customer cap
+PASS: budget charged once for that customer (62)
+PASS: retries of the same redemption (3 sessions): one application row
+PASS: each retry returns the same discount (62) with no error
+PASS: retries charge the budget exactly once (62)
+PASS: budget exhaustion under concurrency (budget 100, two discounts of 62): one applied
+PASS: the other is refused as budget exhausted, never over-spent
+PASS: burst of 8 concurrent redemptions for one customer: one discount, budget charged once
+PASS: concurrent referral earn (3 sessions): one reward credit of 75, referral earned once
+PASS: referral budget charged exactly once (75)
+PASS: the waiting sessions return the earned referral without error
+PASS: no campaign spent more than its budget
 PASS: cash activation refuses a non-GB / non-driver account
 PASS: refused cash activation changed nothing
 PASS: activate-gb-cash.sql for the GB test driver
 PASS: cash enabled exactly for GB/GBP
+PASS: GB cash: only the selected driver; nobody blocked; deactivation keeps obligations (0 | 19/19)
 PASS: enrolment uses the existing terms fare-split-v1
 PASS: VERIFY (release 2) accepts the approved GB/GBP cash market
 PASS: VERIFY (release 2) refuses a cash market outside GB/GBP

@@ -77,6 +77,18 @@ describe('first-booking promotion: minor units and market isolation', () => {
         expect((await apply()).status).toBe(404);
         expect(rpcArgs).toBeNull();
     });
+    it('an amount with more decimals than the currency allows is refused, not rounded', async () => {
+        quote = { ...quote, protected_fare_snapshot: { driverBase: 12.505, currency: 'GBP' } };
+        expect((await apply()).status).toBe(404);
+        expect(rpcArgs).toBeNull();
+    });
+    it('floating-point noise never reaches the database (0.1 + 0.2 is refused; 8.2 is exactly 820)', async () => {
+        quote = { ...quote, protected_fare_snapshot: { driverBase: 0.1 + 0.2, currency: 'GBP' } };
+        expect((await apply()).status).toBe(404);
+        quote = { ...quote, protected_fare_snapshot: { driverBase: 8.2, currency: 'GBP' } };
+        expect((await apply()).status).toBe(200);
+        expect(rpcArgs.p_fare_minor).toBe(820);
+    });
     it('a quote without a currency is refused (no guessing)', async () => {
         quote = { ...quote, currency: null, protected_fare_snapshot: { driverBase: 12.5 } };
         expect((await apply()).status).toBe(404);

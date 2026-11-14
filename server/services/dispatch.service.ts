@@ -1,6 +1,7 @@
 import { cashRideBooking } from './payments/cash-ride-booking.instance';
 import {driverMatchesJobMarket} from './driver-market-scope';
 import {orderDriversByRoadEta} from './driver-road-eta';
+import { marketRankingPolicy } from './market-matching-policy';
 import { rankEligibleDrivers, readDriverReviewScores, DriverReliability } from './driver-ranking';
 import { goodsVehicleMatches, isGoodsService } from '../../src/app/shared/utils/goods-vehicle-compatibility';
 import { getSupabaseAdmin } from './supabase.service';
@@ -829,15 +830,22 @@ export class DispatchService {
 
         // Only rank drivers after all existing compatibility and eligibility gates.
         // Preserve the legacy ordering if disabled, the schema is absent, or its read fails.
-        if (process.env.VAYDU_DRIVER_RANKING_V23 === 'true' && !strictRead) {
+        // Area 1b / P7: the ranking switch and the reliability weights are resolved for THIS job's
+        // market. A market with its own entry in smart_matching.markets uses only that entry; any
+        // other market keeps the platform switch and the tenant weights exactly as before. If the
+        // setting cannot be read, the market entry is unknown, so the previous behaviour applies.
+        const rawMatching = strictRead ? null
+            : await MarketplaceConfigService.getRawSetting('smart_matching', (job as any).tenant_id ?? null).catch(() => null);
+        const ranking = marketRankingPolicy(rawMatching, rawMatching as any, (job as any).country_code,
+            process.env.VAYDU_DRIVER_RANKING_V23 === 'true');
+        if (ranking.rankingEnabled && !strictRead) {
             const scores = await readDriverReviewScores(this.supabase, eligibleDrivers.map(driver => driver.id));
             if (scores !== null) {
                 const pickup = { lat: (job as any).pickup_lat, lng: (job as any).pickup_lng };
-                const settings = await MarketplaceConfigService.getSmartMatchingSettings((job as any).tenant_id ?? null).catch(() => null);
                 const weights = {
-                    acceptanceRateWeight: settings?.acceptanceRateWeight ?? 0,
-                    cancellationRateWeight: settings?.cancellationRateWeight ?? 0,
-                    newDriverExposureKm: settings?.newDriverExposureKm ?? 0
+                    acceptanceRateWeight: ranking.acceptanceRateWeight,
+                    cancellationRateWeight: ranking.cancellationRateWeight,
+                    newDriverExposureKm: ranking.newDriverExposureKm
                 };
                 // Reuse the canonical offer metrics only when a reliability weight
                 // is configured; zero weights preserve the existing behaviour (and

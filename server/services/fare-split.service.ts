@@ -87,6 +87,30 @@ export class FareSplitService {
     return Math.round(this.roundMoney(major, currency) * Math.pow(10, exp));
   }
 
+  /**
+   * EXACT major -> minor conversion for amounts that move money by rule (promotions, referrals).
+   * Integer arithmetic on the decimal digits only: no floating-point multiplication and no silent
+   * rounding. Returns null (the caller must refuse) when the amount is negative, not a plain
+   * decimal, has more decimal places than the currency allows, or is beyond the safe integer
+   * range. The exponent table is the shared one (currencyExponent), identical to the database's
+   * wallet_currency_minor_exponent (parity is tested).
+   */
+  static toMinorExact(major: number | string, currency: string): number | null {
+    const code = String(currency || '').trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(code)) return null;
+    const exp = this.currencyExponent(code);
+    const text = typeof major === 'string' ? major.trim()
+      : (typeof major === 'number' && Number.isFinite(major) ? String(major) : '');
+    const m = /^(\d+)(?:\.(\d+))?$/.exec(text);   // no sign, no exponent notation
+    if (!m) return null;
+    const fraction = (m[2] || '').replace(/0+$/, '');
+    if (fraction.length > exp) return null;         // more precision than the currency has
+    const whole = Number(m[1]);
+    const scale = Math.pow(10, exp);                 // 1, 100 or 1000: exact integers
+    const minor = whole * scale + Number((fraction + '000').slice(0, exp) || '0');
+    return Number.isSafeInteger(whole) && Number.isSafeInteger(minor) ? minor : null;
+  }
+
   /** Convert integer minor units back to major units. */
   static fromMinor(minor: number, currency = 'GBP'): number {
     const exp = this.currencyExponent(currency);

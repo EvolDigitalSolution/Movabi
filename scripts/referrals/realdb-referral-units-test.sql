@@ -62,6 +62,35 @@ INSERT INTO results SELECT 3,'driver: earned after 20 jobs, progress in minor un
 INSERT INTO results SELECT 3,'each progress row is the job fare in minor units (3000)',min(fare_minor)=3000 AND max(fare_minor)=3000 AND count(*)=20,min(fare_minor)||'/'||count(*)
   FROM public.referral_driver_progress WHERE referral_id='fe000000-0000-4000-8000-000000000003';
 
+-- 4. Shared minor-unit rules: exact numeric conversion per currency exponent; the percentage rounds DOWN.
+SET LOCAL session_replication_role = replica;
+INSERT INTO public.campaigns(id,tenant_id,code,kind,market_code,currency_code,service_slug,enabled,budget_minor,referral_reward_bps,qualification) VALUES
+ ('ca000000-0000-4000-8000-0000000000c2','11111111-1111-4111-8111-1111111111aa','REFJP','referral','JP','JPY','ride',true,0,500,'{}'),
+ ('ca000000-0000-4000-8000-0000000000c3','11111111-1111-4111-8111-1111111111aa','REFKW','referral','KW','KWD','ride',true,0,500,'{}'),
+ ('ca000000-0000-4000-8000-0000000000c4','11111111-1111-4111-8111-1111111111aa','REFGB2','referral','GB','GBP','ride',true,0,500,'{}');
+INSERT INTO auth.users(id) SELECT ('b3000000-0000-4000-8000-0000000000'||lpad(g::text,2,'0'))::uuid FROM generate_series(1,6) g;
+INSERT INTO public.profiles(id,tenant_id,role,country_code) SELECT ('b3000000-0000-4000-8000-0000000000'||lpad(g::text,2,'0'))::uuid,'11111111-1111-4111-8111-1111111111aa','customer','GB' FROM generate_series(1,6) g;
+INSERT INTO public.referrals(id,tenant_id,campaign_id,referrer_id,referee_id,status,referral_kind,reward_rate_bps) VALUES
+ ('fe000000-0000-4000-8000-000000000011','11111111-1111-4111-8111-1111111111aa','ca000000-0000-4000-8000-0000000000c2','b3000000-0000-4000-8000-000000000001','b3000000-0000-4000-8000-000000000002','pending','customer',500),
+ ('fe000000-0000-4000-8000-000000000012','11111111-1111-4111-8111-1111111111aa','ca000000-0000-4000-8000-0000000000c3','b3000000-0000-4000-8000-000000000003','b3000000-0000-4000-8000-000000000004','pending','customer',500),
+ ('fe000000-0000-4000-8000-000000000013','11111111-1111-4111-8111-1111111111aa','ca000000-0000-4000-8000-0000000000c4','b3000000-0000-4000-8000-000000000005','b3000000-0000-4000-8000-000000000006','pending','customer',500),
+ ('fe000000-0000-4000-8000-000000000014','11111111-1111-4111-8111-1111111111aa','ca000000-0000-4000-8000-0000000000c4','b3000000-0000-4000-8000-000000000006','b3000000-0000-4000-8000-000000000005','pending','customer',500);
+SELECT pg_temp.job('00000000-0000-4000-8000-0000000000a1','b3000000-0000-4000-8000-000000000002','JP','JPY',1999);
+SELECT pg_temp.job('00000000-0000-4000-8000-0000000000a2','b3000000-0000-4000-8000-000000000004','KW','KWD',1.234);
+SELECT pg_temp.job('00000000-0000-4000-8000-0000000000a3','b3000000-0000-4000-8000-000000000006','GB','GBP',12.59);
+SELECT pg_temp.job('00000000-0000-4000-8000-0000000000a4','b3000000-0000-4000-8000-000000000005','GB','GBP',0.29);
+SET LOCAL session_replication_role = origin;
+SELECT (public.earn_referral('fe000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-0000000000a1')).status AS s11 \gset
+INSERT INTO results SELECT 4,'JPY (0 decimals): 1999 yen stays 1999; 5% = 99.95 rounds DOWN to 99',qualifying_fare_minor=1999 AND reward_minor=99,qualifying_fare_minor||' '||reward_minor FROM public.referrals WHERE id='fe000000-0000-4000-8000-000000000011';
+SELECT (public.earn_referral('fe000000-0000-4000-8000-000000000012','00000000-0000-4000-8000-0000000000a2')).status AS s12 \gset
+INSERT INTO results SELECT 4,'KWD (3 decimals): 1.234 = 1234 fils; 5% = 61.7 rounds DOWN to 61',qualifying_fare_minor=1234 AND reward_minor=61,qualifying_fare_minor||' '||reward_minor FROM public.referrals WHERE id='fe000000-0000-4000-8000-000000000012';
+SELECT (public.earn_referral('fe000000-0000-4000-8000-000000000013','00000000-0000-4000-8000-0000000000a3')).status AS s13 \gset
+INSERT INTO results SELECT 4,'GBP 12.59 = 1259; 5% = 62.95 rounds DOWN to 62 (never over-pays)',qualifying_fare_minor=1259 AND reward_minor=62,qualifying_fare_minor||' '||reward_minor FROM public.referrals WHERE id='fe000000-0000-4000-8000-000000000013';
+SELECT (public.earn_referral('fe000000-0000-4000-8000-000000000014','00000000-0000-4000-8000-0000000000a4')).status AS s14 \gset
+INSERT INTO results SELECT 4,'GBP 0.29 = exactly 29 (0.29 x 100 is 28.999... in floating point); 5% of 29 = 1.45 rounds DOWN to 1',qualifying_fare_minor=29 AND reward_minor=1,qualifying_fare_minor||' '||reward_minor FROM public.referrals WHERE id='fe000000-0000-4000-8000-000000000014';
+INSERT INTO results SELECT 4,'the fare conversion is exact numeric, not floating point (function source)',
+  prosrc LIKE '%power(10::numeric, v_exp)%' AND prosrc NOT LIKE '%power(10, %' AND prosrc LIKE '%floor(v_fare::numeric%',NULL FROM pg_proc WHERE oid='public.earn_referral(uuid,uuid)'::regprocedure;
+
 SELECT n, CASE WHEN ok THEN 'ok' ELSE 'FAIL' END, name, coalesce(detail,'') FROM results ORDER BY n;
 SELECT count(*) FILTER (WHERE NOT ok) || ' | ' || count(*) FILTER (WHERE ok) || '/' || count(*) FROM results;
 ROLLBACK;

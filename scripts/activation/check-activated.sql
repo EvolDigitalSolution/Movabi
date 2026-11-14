@@ -21,6 +21,15 @@ INSERT INTO results SELECT 1,'nothing for NG: no policy, no campaign, NG PIN set
   AND (SELECT value FROM public.marketplace_settings WHERE tenant_id=:NG AND key='completion_pin_policy')='{"markets":{"NG":"optional"}}'::jsonb, NULL;
 INSERT INTO results SELECT 1,'GB tenant PIN setting: markets.GB = required',value='{"markets":{"GB":"required"}}'::jsonb,value::text
   FROM public.marketplace_settings WHERE tenant_id=:GB AND key='completion_pin_policy';
+INSERT INTO results SELECT 1,'GB matching key (P7): rankingEnabled, 0.5 / 1.0 / 0.15 km',
+  value #> '{markets,GB}'='{"rankingEnabled":true,"acceptanceRateWeight":0.5,"cancellationRateWeight":1.0,"newDriverExposureKm":0.15}'::jsonb,(value #> '{markets,GB}')::text
+  FROM public.marketplace_settings WHERE tenant_id=:GB AND key='smart_matching';
+INSERT INTO results SELECT 1,'GB surge key (P8): on, max 1.5, demand/supply on, traffic display-only',
+  (value #>> '{markets,GB,enabled}')='true' AND (value #>> '{markets,GB,maxSurge}')::numeric=1.5 AND (value #>> '{markets,GB,demandSupplyEnabled}')='true'
+  AND (value #>> '{markets,GB,trafficEnabled}')='false' AND (value #>> '{markets,GB,trafficMultiplier}')::numeric=1,(value #> '{markets,GB}')::text
+  FROM public.marketplace_settings WHERE tenant_id=:GB AND key='dynamic_pricing';
+INSERT INTO results SELECT 1,'the NG tenant has no matching or surge setting at all (untouched)',
+  NOT EXISTS (SELECT 1 FROM public.marketplace_settings WHERE tenant_id=:NG AND key IN ('smart_matching','dynamic_pricing')),NULL;
 INSERT INTO results SELECT 1,'audit rows for the publish and the activation',
   (SELECT count(*) FROM public.audit_logs a JOIN public.cancellation_policies p ON p.id=a.entity_id WHERE a.action='admin_policy_publish' AND a.metadata->>'source'='develop-activation-2026-11-14' AND p.tenant_id=:GB)=1
   AND (SELECT count(*) FROM public.audit_logs WHERE action='admin_develop_activation' AND metadata->>'tenant'=:GB)=2, NULL;
