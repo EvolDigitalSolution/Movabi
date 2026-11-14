@@ -43,6 +43,7 @@ echo "live schema loaded: $(S movabi_develop -c "select count(*) from pg_tables 
 S movabi_develop < "$root/deploy/vaydu-develop-release/release-up.sql" > "$tmp/r1.log" 2>&1 || { echo "FATAL: release 1 did not apply"; tail -5 "$tmp/r1.log"; exit 2; }
 S movabi_develop < "$root/deploy/vaydu-develop-release/VERIFY.sql" >/dev/null 2>&1 && echo "develop state: release 1 applied (VERIFY 1 OK)"
 S movabi_develop < "$root/scripts/release/develop-like-data.sql" > "$tmp/data.log" 2>&1 || { echo "FATAL: develop-like data"; tail -5 "$tmp/data.log"; exit 2; }
+for x in ${EXTRA_SQL:-}; do S movabi_develop < "$x" > "$tmp/extra.log" 2>&1 && echo "extra state applied: $(basename "$x")" || { echo "FATAL: $x"; tail -5 "$tmp/extra.log"; exit 2; }; done
 echo "develop-like data: $(S movabi_develop -c "select (select count(*) from public.jobs)||' jobs, '||(select count(*) from public.profiles)||' profiles, '||(select count(*) from public.market_availability)||' market rows, '||(select count(*) from public.service_types)||' service types'")"
 if [ "${DIAG_MERGE:-0}" = 1 ]; then
   # Separate the merge-suite causes: same restored-like data + release 2, merge suite with growing isolation.

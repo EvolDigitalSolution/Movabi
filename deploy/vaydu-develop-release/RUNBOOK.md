@@ -443,20 +443,37 @@ bash "$B/host-db-release.sh" "$B" prereq
 
 ```
 bash "$B/host-db-release.sh" "$B" backup
-DUMP=$(ls -t ~/vaydu-develop-backups/develop-before-release-e4a64c1-*.dump | head -1); echo "$DUMP"
-bash "$B/host-db-release.sh" "$B" drill "$DUMP"
+DUMP=$(ls -t ~/vaydu-develop-backups/develop-before-release-$(cat "$B/SOURCE_SHA")-*.dump | head -1); echo "$DUMP"
+bash "$B/host-db-release.sh" "$B" drill "$DUMP"; echo "DRILL_EXIT=$?"
 ```
 
 **Expected:**
-- `BACKUP_OK <dump>`, with table-data entries above 0.
-- The drill restores into a throwaway container with no network:
+- `BACKUP_OK <dump>`.
+- The drill uses a throwaway container with no network. Develop is never touched. It prints:
+  - `PASS: pg_restore reported no errors`;
   - `PASS: restored row counts equal the backup's`;
-  - PREREQ, release-up and VERIFY each `PASS`;
-  - **9 suites PASS**: the 7 release-1 suites, `realdb-completion-pin-test.sql` and `realdb-referral-units-test.sql`;
-  - `PASS: rollback restored the exact pre-release schema on real data`;
-  - `DRILL_DONE`.
+  - `PASS` for PREREQ, release-up and VERIFY;
+  - **`PASS` for each of the 9 suites listed in `tests/SUITES.txt`, then `suites passed: 9 of 9`**;
+  - `PASS: restored data byte-identical after the suites`;
+  - `PASS: preamble left nothing behind`;
+  - `PASS` for release-down, the exact schema, PREREQ again, and `restored data byte-identical to before the release`;
+  - `DRILL_OK: …`;
+  - `DRILL_EXIT=0`.
 
-**On failure:** stop. Nothing has changed.
+**Any** failure prints `FAIL: …`, then `DRILL_FAILED`, and **exits 1**. Stop there and paste the output.
+
+**Why the `e4a64c1` drill failed** (reconciled 2026-11-14):
+- **The fix never reached the shipped drill.** The earlier real-data fix (`drill-preamble.sql`) was applied only by the separate step-4b script
+  `host-drill-suites.sh`. It was never added to `host-db-release.sh drill`, and the bundle did not ship it.
+- **The drill failed open.** It also printed `DRILL_DONE` and exited 0 with failing suites.
+- **What changed:**
+  - the drill now applies `drill-preamble.sql` inside each suite's rolled-back transaction;
+  - it refuses a bundle whose suites differ from `tests/SUITES.txt`;
+  - it checks that restored data is unchanged, and fails closed.
+- **Evidence:** reproduced and verified locally on develop's exact image with develop-like data
+  (`docs/roadmap-evidence/host-drill-reproduction-2026-11-14.md`).
+- **The merge-suite failures** (23503, MB003, no reservation, CE006, CE002) all came from develop owning the
+  ride/delivery service-type slugs. The suite's fixture service types were skipped, and that cascaded through the merge suite.
 
 ### 3. Dry run on develop's real data (ends in ROLLBACK)
 
