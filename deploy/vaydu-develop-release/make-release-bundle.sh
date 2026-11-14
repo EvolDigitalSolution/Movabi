@@ -38,6 +38,8 @@ cp -r "$WEB" "$OUT/mobile/browser"
 # Database release + gates + host script (committed bytes), and the real-DB behaviour suites for the drill.
 # Read-only host checks (live switches; one driver's inspection evidence) travel with every bundle.
 for f in VERIFY.sql PREREQ.sql ORDER.txt release-up.sql release-dryrun.sql release-down.sql RELEASE-MIGRATIONS.sha256 host-db-release.sh; do git -c core.autocrlf=false cat-file -p "HEAD:$REL/$f" > "$OUT/$f"; done
+# The real-data drill preamble ships with the release whose drill uses it (host-db-release.sh drill).
+if git cat-file -e "HEAD:$REL/drill-preamble.sql" 2>/dev/null; then git -c core.autocrlf=false cat-file -p "HEAD:$REL/drill-preamble.sql" > "$OUT/drill-preamble.sql"; fi
 for f in host-live-config.sh live-config.sql trace-driver-inspection.sql; do git -c core.autocrlf=false cat-file -p "HEAD:$TOOLS/$f" > "$OUT/$f"; done
 # Develop activation scripts (approved GB values) travel with the bundle; nothing runs them automatically.
 ACT=deploy/vaydu-develop-activation
@@ -48,8 +50,10 @@ for t in deploy/vaydu-cash-ride-market-pilot/realdb-market-pilot-test.sql deploy
          deploy/vaydu-cash-ride-market-pilot/realdb-cash-booking-chain-test.sql deploy/vaydu-cash-ride-market-pilot/realdb-cash-ride-lifecycle-test.sql \
          scripts/migration-merge/realdb-merge-test.sql scripts/driver-metrics/realdb-driver-metrics-test.sql scripts/cancellation-fee/realdb-cancellation-fee-test.sql "${EXTRA_TESTS[@]}"; do
   git -c core.autocrlf=false cat-file -p "HEAD:$t" > "$OUT/tests/$(basename "$t")"; done
+# The exact suite set the drill must pass (it refuses a bundle whose tests/ differ from this list).
+{ echo "# Behaviour suites the restore drill must pass, all of them ($(ls "$OUT/tests" | grep -c '\.sql$'))."; (cd "$OUT/tests" && ls *.sql | sort); } > "$OUT/tests/SUITES.txt"
 echo "$SHA" > "$OUT/SOURCE_SHA"; echo "$WEB_BUILD_SHA" > "$OUT/WEB_BUILD_SHA"
-(cd "$OUT" && sha256sum VERIFY.sql PREREQ.sql ORDER.txt SOURCE_SHA release-up.sql release-down.sql release-dryrun.sql host-db-release.sh > SHA256SUMS \
+(cd "$OUT" && sha256sum VERIFY.sql PREREQ.sql ORDER.txt SOURCE_SHA release-up.sql release-down.sql release-dryrun.sql host-db-release.sh $( [ -f drill-preamble.sql ] && echo drill-preamble.sql ) tests/SUITES.txt > SHA256SUMS \
   && find . -type f ! -name SHA256SUMS ! -name ALL_SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > ALL_SHA256SUMS)
 (cd release && tar -czf "${NAME}.tar.gz" "$NAME" && sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256")
 echo "Bundle: release/${NAME}.tar.gz"; cat "release/${NAME}.tar.gz.sha256"; echo "SOURCE_SHA: $SHA  WEB_BUILD_SHA: $WEB_BUILD_SHA"
