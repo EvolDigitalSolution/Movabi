@@ -367,25 +367,28 @@ diff <(grep -v '^== taken at\|^== images\|movabi-develop\|source sha' live-confi
 - checks the readiness report for GB and NG;
 - walks your Driver Setup review (inspection "Missing photos", then upload, then admin approval).
 
-## Release 2: API + web + DATABASE (bundle `e4a64c1`, 2026-11-14)
+## Release 2: API + web + DATABASE (bundle `c5526f6`, 2026-11-14)
 
 **This release has a database step.** The "no database step" instructions of `be0c761`, `39fc5ce` and
 `c972037` do not apply. Earlier release-2 bundles `2381e96` and `4509243` were never deployed and are
-superseded. Stop at the first result that differs from **Expected**, and paste every output.
+superseded; `c5526f6`, never deployed, replaced `e4a64c1` after the restore drill failed on the host (see step 2). Stop at the first result that differs from **Expected**, and paste every output.
 
 ### What it is
 
 | | Value |
 |---|---|
-| Archive | `vaydu-develop-e4a64c1-release-linux.tar.gz` |
-| Archive sha256 | `faf0d54c8eba4e98703f1fa0bb3d779ce843c59162599cc84123745a47041eb9` |
-| Source | `e4a64c1` (API source byte-identical to the commit; web built on Linux from `d9fea62`, whose web inputs are identical) |
+| Archive | `vaydu-develop-c5526f6-release-linux.tar.gz` |
+| Archive sha256 | `7c99e467dd8b67284970324aad9e9f0bc5a06ae59b603770e0de6e560ba47b62` |
+| Source | `c5526f6` (API source byte-identical to the commit; web built on Linux from `d9fea62`, whose web inputs are identical) |
 | `release-up.sql` | `1d56e0a5a9d3b5a8ae4b35e5b6011ff4cbec113a5d6d7dd6dc9dfd8b91b9a298` (byte-identical to the rehearsed file) |
 | `release-dryrun.sql` | `3c097d50443eb8a662299ca423d5bbc173f98decb402385c8b957043f7ec6ec1` |
 | `release-down.sql` | `7941596e4c9bb218864adcfe9d043deff82c4213ebebff0468f166fe1caf6b10` |
 | `PREREQ.sql` / `VERIFY.sql` | `b4d32be4bd45c868099e792b6726069352ab6a0425d6f65f34215cbb55ec6a7b` / `4bccce60d008e6795b9e5c25012846df0deb1f4297a02ba24ac81950a95c83ab` |
-| `host-db-release.sh` | `d47fd59c0dab0d3913f2e9f4acfba2d31a01c8c67175a9a7276ee91790fe8c40` (unchanged) |
+| `host-db-release.sh` | `7c5d018f254d5908c28290be036030dc2ff42f39b0579a577421c2a20d520749` (corrected drill: fails closed, applies the preamble, checks data preservation) |
+| `drill-preamble.sql` / `tests/SUITES.txt` | `47236799eb0ac8159a8e30c7a17596c03316b0ce200f45fc8eb17f4dc61abdc0` / `5b83cedfb1751ad043835284127a9222d61ac49e83fdb6ff39f75123b1f16b1c` (9 suites) |
 | Host scripts (unchanged) | `host-predeploy.sh` `306adf03…f2`, `host-rollback.sh` `0259bd51…6e`, `rollout-develop-52097ef.sh` `54de2e6b…5d` (full values in step 1 above) |
+
+**Code, database and activation are identical to `e4a64c1`:** the same `release-up.sql`, `PREREQ.sql` and `VERIFY.sql`, and the same API and web. Only the drill tooling (`host-db-release.sh`, `drill-preamble.sql`, `tests/SUITES.txt`) changed.
 
 **Contents:**
 - inspection readiness, enforcement and layout (2a);
@@ -412,17 +415,17 @@ superseded. Stop at the first result that differs from **Expected**, and paste e
 ### 0. Upload (from Windows)
 
 ```
-scp "C:\Users\fedri\source\repos\Movabi-topup-on-2385da7\release\vaydu-develop-e4a64c1-release-linux.tar.gz" "C:\Users\fedri\source\repos\Movabi-topup-on-2385da7\release\vaydu-develop-e4a64c1-release-linux.tar.gz.sha256" edsadmin@87.106.64.25:~/
+scp "C:\Users\fedri\source\repos\Movabi-topup-on-2385da7\release\vaydu-develop-c5526f6-release-linux.tar.gz" "C:\Users\fedri\source\repos\Movabi-topup-on-2385da7\release\vaydu-develop-c5526f6-release-linux.tar.gz.sha256" edsadmin@87.106.64.25:~/
 ```
 
 ### 1. Verify the package, the host scripts and what is running (read-only)
 
 ```
 cd ~
-sha256sum -c vaydu-develop-e4a64c1-release-linux.tar.gz.sha256
+sha256sum -c vaydu-develop-c5526f6-release-linux.tar.gz.sha256
 sha256sum host-predeploy.sh host-rollback.sh rollout-develop-52097ef.sh
-mkdir -p ~/vaydu-release-e4a64c1 && tar -xzf vaydu-develop-e4a64c1-release-linux.tar.gz -C ~/vaydu-release-e4a64c1
-B=~/vaydu-release-e4a64c1/vaydu-develop-e4a64c1-release-linux
+mkdir -p ~/vaydu-release-c5526f6 && tar -xzf vaydu-develop-c5526f6-release-linux.tar.gz -C ~/vaydu-release-c5526f6
+B=~/vaydu-release-c5526f6/vaydu-develop-c5526f6-release-linux
 (cd "$B" && sha256sum -c --quiet SHA256SUMS && sha256sum -c --quiet ALL_SHA256SUMS && sha256sum -c --quiet RELEASE-MIGRATIONS.sha256 && echo BUNDLE_OK; cat SOURCE_SHA; cat ORDER.txt)
 docker inspect -f '{{.Config.Image}} {{.State.Status}}' movabi-develop-api; docker exec movabi-develop-api cat /app/SOURCE_SHA
 docker ps --filter label=com.docker.compose.service=web --filter label=com.docker.compose.project=movabi-develop --format '{{.Image}} {{.Status}}'
@@ -431,9 +434,9 @@ bash "$B/host-db-release.sh" "$B" prereq
 ```
 
 **Expected:**
-- `vaydu-develop-e4a64c1-release-linux.tar.gz: OK`.
+- `vaydu-develop-c5526f6-release-linux.tar.gz: OK`.
 - The three host-script hashes from step 1 above.
-- `BUNDLE_OK`, then `e4a64c1`, then the three migrations in order.
+- `BUNDLE_OK`, then `c5526f6`, then the three migrations in order.
 - The API runs one of `be0c761`, `39fc5ce`, `c972037` or `3c91991`, status `running`.
 - `PREREQ OK: release 1 exact, release 2 not applied`.
 
@@ -486,7 +489,7 @@ bash "$B/host-db-release.sh" "$B" dryrun
 ### 4. Record the running images, then apply release 2
 
 ```
-bash host-predeploy.sh vaydu-develop-e4a64c1-release-linux.tar.gz
+bash host-predeploy.sh vaydu-develop-c5526f6-release-linux.tar.gz
 PRE6=$(ls -td ~/vaydu-topup-fix-predeploy-* | head -1); echo "$PRE6"; cat "$PRE6/running-source-sha.txt"; grep -E 'API_IMAGE=|WEB_IMAGE=' "$PRE6/previous.env"
 bash "$B/host-db-release.sh" "$B" apply
 sleep 3; docker logs --since 2m movabi-develop-rest 2>&1 | tail -3
@@ -501,11 +504,11 @@ sleep 3; docker logs --since 2m movabi-develop-rest 2>&1 | tail -3
 ### 5. API, then web (overrides preserved; the rollout runs release 2's VERIFY before building)
 
 ```
-export ARCHIVE=vaydu-develop-e4a64c1-release-linux.tar.gz BUNDLE_DIR=vaydu-develop-e4a64c1-release-linux EXPECTED_SOURCE_SHA=e4a64c1
-API_TAG=release-e4a64c1 WEB_TAG=release-3c91991-linux bash rollout-develop-52097ef.sh --deploy-api-only
+export ARCHIVE=vaydu-develop-c5526f6-release-linux.tar.gz BUNDLE_DIR=vaydu-develop-c5526f6-release-linux EXPECTED_SOURCE_SHA=c5526f6
+API_TAG=release-c5526f6 WEB_TAG=release-3c91991-linux bash rollout-develop-52097ef.sh --deploy-api-only
 docker exec movabi-develop-api cat /app/SOURCE_SHA; curl -s https://movabi-api-develop.apps.evolsolution.com/health
 docker logs --since 5m movabi-develop-api 2>&1 | grep -iE 'error|fatal' | head
-API_TAG=release-e4a64c1 WEB_TAG=release-e4a64c1-linux bash rollout-develop-52097ef.sh --deploy-web-only
+API_TAG=release-c5526f6 WEB_TAG=release-c5526f6-linux bash rollout-develop-52097ef.sh --deploy-web-only
 docker ps --filter label=com.docker.compose.service=web --filter label=com.docker.compose.project=movabi-develop --format '{{.Image}} {{.Status}}'
 bash "$B/host-db-release.sh" "$B" verify
 (cd "$B" && bash host-live-config.sh) > ~/live-config-after-r2.txt 2>&1
@@ -513,8 +516,8 @@ diff <(grep -vE '^== taken at|movabi-develop|source sha|^== health' ~/live-confi
 ```
 
 **Expected:**
-- `e4a64c1` and `{"status":"ok"}`, with no new errors.
-- `movabi-web:release-e4a64c1-linux Up`.
+- `c5526f6` and `{"status":"ok"}`, with no new errors.
+- `movabi-web:release-c5526f6-linux Up`.
 - `VERIFY OK`.
 - `SWITCHES_UNCHANGED`: the deploy itself turns nothing on, and `permanent=false` stays.
 
@@ -559,7 +562,7 @@ VAYDU_OPS_ALERT_RECIPIENTS: "<the address you choose>"
 The address is never committed to the repository. Then redeploy the API with the same bundle and check:
 
 ```
-API_TAG=release-e4a64c1 WEB_TAG=release-e4a64c1-linux bash rollout-develop-52097ef.sh --deploy-api-only
+API_TAG=release-c5526f6 WEB_TAG=release-c5526f6-linux bash rollout-develop-52097ef.sh --deploy-api-only
 docker exec movabi-develop-api printenv | grep -E '^VAYDU_(CASH_RIDE_BOOKING|OPS_ALERTS)='
 docker logs --since 2m movabi-develop-api 2>&1 | grep '\[OpsAlert\]'
 docker exec movabi-develop-api node server/ops/send-test-ops-alert.cjs
