@@ -4,3 +4,6 @@ supabase/baseline/develop_live_public_schema_*.sql -text
 deploy/vaydu-develop-release/*.sql -text
 deploy/vaydu-develop-release/*.sha256 -text
 deploy/vaydu-develop-release/*.tsv -text
+# Release 2 SQL is checksummed: keep bytes.
+deploy/vaydu-develop-release-2/*.sql -text
+deploy/vaydu-develop-release-2/*.sha256 -text
