@@ -367,170 +367,242 @@ diff <(grep -v '^== taken at\|^== images\|movabi-develop\|source sha' live-confi
 - checks the readiness report for GB and NG;
 - walks your Driver Setup review (inspection "Missing photos", then upload, then admin approval).
 
-## Next release: API + web + **DATABASE release 2** (bundle cut after the decision table is reviewed)
+## Release 2: API + web + DATABASE (bundle `e4a64c1`, 2026-11-14)
 
-This release **has a database step**, so the "no database step" instructions of `be0c761` and
-`39fc5ce` do **not** apply. It includes everything in `be0c761`, plus:
-- **Area 3:** per-driver completion PIN control. The policy is frozen onto the job at assignment.
-  - Admin control in the driver modal: tenant-scoped, a reason is required, and changes are audited.
-  - The booking market's policy comes from the tenant setting, for that market only.
-- **D12:** develop's out-of-band inspection objects are captured in a migration. Nothing is dropped.
+**This release has a database step.** The "no database step" instructions of `be0c761`, `39fc5ce` and
+`c972037` do not apply. Earlier release-2 bundles `2381e96` and `4509243` were never deployed and are
+superseded. Stop at the first result that differs from **Expected**, and paste every output.
 
-The bundle is cut with `RELEASE_DIR=deploy/vaydu-develop-release-2`, so its `release-*.sql`, `PREREQ.sql`,
-`VERIFY.sql`, `ORDER.txt` and drill suites are release 2's. Release 1 stays applied and unchanged.
-
-### Cut bundle (2026-11-14)
+### What it is
 
 | | Value |
 |---|---|
-| Package | `release/vaydu-develop-4509243-release-linux.tar.gz`, sha256 `aafea0952bb824d5aae3c4ccf655e49bf2dc513bfa260d767ce3abbe4e9dd820` (supersedes `2381e96`, never deployed) |
-| `$N` / `$SHA` | `vaydu-develop-4509243-release-linux` / `4509243` (web built on Linux from `d9fea62`; web inputs identical) |
-| Database | release 2, 3 migrations: `release-up.sql` sha256 `55921a5cfccff6808a58d6a836746aba76fde4ed8d0cb78cd84df8568f24c7e3` (byte-identical to the rehearsed file); `release-down.sql` `7941596e…` |
-| vs be0c761 | API: `admin.routes.ts`, `booking.routes.ts` (PIN market policy, promo minor units, referral terms), `logistics.service.ts`, new `completion-pin-policy.ts`; web: 35 files (driver completion, admin PIN control) |
-| Drill suites | 7 release-1 suites + completion PIN + referral minor units |
-| Activation | `activation/` (README, `activate-gb.sql`, `activate-gb-cash.sql`, `deactivate-gb*.sql`) |
+| Archive | `vaydu-develop-e4a64c1-release-linux.tar.gz` |
+| Archive sha256 | `faf0d54c8eba4e98703f1fa0bb3d779ce843c59162599cc84123745a47041eb9` |
+| Source | `e4a64c1` (API source byte-identical to the commit; web built on Linux from `d9fea62`, whose web inputs are identical) |
+| `release-up.sql` | `1d56e0a5a9d3b5a8ae4b35e5b6011ff4cbec113a5d6d7dd6dc9dfd8b91b9a298` (byte-identical to the rehearsed file) |
+| `release-dryrun.sql` | `3c097d50443eb8a662299ca423d5bbc173f98decb402385c8b957043f7ec6ec1` |
+| `release-down.sql` | `7941596e4c9bb218864adcfe9d043deff82c4213ebebff0468f166fe1caf6b10` |
+| `PREREQ.sql` / `VERIFY.sql` | `b4d32be4bd45c868099e792b6726069352ab6a0425d6f65f34215cbb55ec6a7b` / `4bccce60d008e6795b9e5c25012846df0deb1f4297a02ba24ac81950a95c83ab` |
+| `host-db-release.sh` | `d47fd59c0dab0d3913f2e9f4acfba2d31a01c8c67175a9a7276ee91790fe8c40` (unchanged) |
+| Host scripts (unchanged) | `host-predeploy.sh` `306adf03…f2`, `host-rollback.sh` `0259bd51…6e`, `rollout-develop-52097ef.sh` `54de2e6b…5d` (full values in step 1 above) |
 
-### Exact migration order (one transaction, `release-up.sql`)
+**Contents:**
+- inspection readiness, enforcement and layout (2a);
+- the server's no-driver reason (1c);
+- separate readiness states (8);
+- the Driver Setup narrow-phone fix;
+- per-driver PIN control (3);
+- the promo and referral money fixes (7a, 7b);
+- per-market matching (P7) and surge (P8);
+- the ops alert sender (P14);
+- the GB activation scripts.
+
+**Not included:** the P3 debt reminders, P10 account-sharing detection, P11 driver bonus and P12 exemptions. They are approved but not built (matrix).
+
+### Migration order (one transaction, `release-up.sql`; release 1 must already be applied exactly)
 
 | # | Migration | Effect on develop |
 |---|---|---|
-| — | release 1 (applied 2026-11-13 09:46:47 UTC) | PREREQ requires its 15 functions to be exact |
-| 1 | `20261270000000_capture_develop_inspection_drift.sql` | **No change.** The column and the 6-argument function already exist and are only created when absent. A fingerprint check aborts the transaction if develop's copy differs. |
-| 2 | `20261270100000_completion_pin_effective.sql` | Adds `completion_pin_market_policy(jsonb)`, `stamp_completion_pin_policy()` and `mint_completion_pin_on_assignment()`, plus triggers `zz_stamp_completion_pin_policy` (BEFORE) and `zz_mint_completion_pin_on_assignment` (AFTER) on `jobs`. No client role can execute these functions. |
-| 3 | `20261270200000_referral_fare_minor_units.sql` | Replaces `earn_referral`. It is develop's live body with two changes: fares are converted from major to minor units with the currency exponent, and a job outside the campaign's market or currency is refused. PREREQ requires develop's live body (`98e50e33…`); VERIFY requires the fixed body (`114759b0…`). |
-| — | `NOTIFY pgrst, 'reload schema'` | Delivered at COMMIT only |
+| 1 | `20261270000000_capture_develop_inspection_drift.sql` | No change: develop already has the column and the 6-argument function. They are created only when absent and never dropped. |
+| 2 | `20261270100000_completion_pin_effective.sql` | Adds 3 functions and 2 triggers on `jobs`: the PIN policy is frozen at assignment, and a PIN is minted when a driver override needs one. |
+| 3 | `20261270200000_referral_fare_minor_units.sql` | Replaces `earn_referral` (develop's body `98e50e33…` becomes `bbc10e72…`): fares converted to minor units exactly, rewards rounded down, other market or currency refused. |
+| — | `NOTIFY pgrst, 'reload schema'` | Delivered at COMMIT only. |
 
-### Evidence before it reaches develop (local, 2026-11-13)
+### 0. Upload (from Windows)
 
-`scripts/release/rehearse-release-2.sh` (log: `docs/roadmap-evidence/rehearse-release-2.log`) ran on PostgreSQL 15.1 with
-develop's live schema plus release 1, seeded with inspection photos in every status (approved, rejected with reason,
-under review, replaced, uploaded, plus the develop-only `reason` value) and an inspection storage policy:
-- **Gates:** PREREQ accepts develop's state and VERIFY refuses it.
-- **Atomicity:** an injected failure and the dry run leave the schema byte-identical; the release applies as one transaction.
-- **D12 on develop:**
-  - every pre-existing function is unchanged;
-  - the columns, **every photo row** (statuses, approvals, reviewers, reasons) and the table grants, RLS and policies are unchanged;
-  - the **storage policies** and `storage.objects` grants are unchanged;
-  - both `register_driver_inspection_photo` grants are unchanged;
-  - the release SQL contains no `storage.` reference.
-- **Fresh database** (no drift): it installs the column and the 6-argument function with develop's exact fingerprint
-  (`f180b0b8…`, CR removed; develop's raw `65e2f700…` includes CRLF bytes) and develop's grants. Existing photo rows are
-  kept, and a second apply is a no-op.
-- **Suites with release 2 in place:** VERIFY 2 passes; release 1 VERIFY still passes; the PIN real-DB suite passes
-  17/17; all 7 release-1 suites pass (140 checks).
-- **Rollback:** release-down restores the **exact** pre-release-2 schema, and re-apply passes VERIFY.
-
-`bike-authenticated-routes.integration.spec.ts` (real GoTrue, PostgREST and routers) passes with release 2:
-- **Admin PIN routes:**
-  - a driver gets 403;
-  - no reason or an unknown policy gets 400;
-  - another tenant's driver, or a body tenant that isn't the driver's, gets 404 and nothing is written;
-  - set and read back are stored for the driver's own tenant.
-- **Real admin assignment** (`assign_driver_to_job`, every trigger on) freezes `disabled|driver`. Clearing the override
-  leaves the assigned job unchanged.
-- **`/api/jobs/complete`:**
-  - the frozen disabled job asks for no PIN and no PIN is minted;
-  - a new assignment follows the market (required) and a PIN is minted;
-  - the customer gets 403; a missing PIN is refused; a wrong PIN is refused and counted (`attempts 1`);
-  - the correct PIN passes and is recorded once.
-- **Audit:** `audit_logs` rows `admin_pin_policy_changed` and `admin_pin_policy_cleared`, each with the admin and the reason.
-
-### Host steps (stop at the first failure; paste each output)
-
-Names below use `$N` for the bundle name and `$SHA` for its source commit. Both are recorded with the cut bundle further down.
-
-**0. Running version (read-only).** The API must be one of `be0c761`, `39fc5ce`, `c972037` or `3c91991`, and
-PREREQ must pass. That means release 1 is exact and release 2 is not applied.
 ```
+scp "C:\Users\fedri\source\repos\Movabi-topup-on-2385da7\release\vaydu-develop-e4a64c1-release-linux.tar.gz" "C:\Users\fedri\source\repos\Movabi-topup-on-2385da7\release\vaydu-develop-e4a64c1-release-linux.tar.gz.sha256" edsadmin@87.106.64.25:~/
+```
+
+### 1. Verify the package, the host scripts and what is running (read-only)
+
+```
+cd ~
+sha256sum -c vaydu-develop-e4a64c1-release-linux.tar.gz.sha256
+sha256sum host-predeploy.sh host-rollback.sh rollout-develop-52097ef.sh
+mkdir -p ~/vaydu-release-e4a64c1 && tar -xzf vaydu-develop-e4a64c1-release-linux.tar.gz -C ~/vaydu-release-e4a64c1
+B=~/vaydu-release-e4a64c1/vaydu-develop-e4a64c1-release-linux
+(cd "$B" && sha256sum -c --quiet SHA256SUMS && sha256sum -c --quiet ALL_SHA256SUMS && sha256sum -c --quiet RELEASE-MIGRATIONS.sha256 && echo BUNDLE_OK; cat SOURCE_SHA; cat ORDER.txt)
 docker inspect -f '{{.Config.Image}} {{.State.Status}}' movabi-develop-api; docker exec movabi-develop-api cat /app/SOURCE_SHA
 docker ps --filter label=com.docker.compose.service=web --filter label=com.docker.compose.project=movabi-develop --format '{{.Image}} {{.Status}}'
-sha256sum -c $N.tar.gz.sha256 && tar xzf $N.tar.gz && B=~/$N && cat "$B/SOURCE_SHA" "$B/ORDER.txt"
-bash "$B/host-db-release.sh" "$B" prereq                 # PREREQ OK: release 1 exact, release 2 not applied
-(cd "$B" && bash host-live-config.sh) > live-config-before-r2.txt 2>&1
+bash "$B/host-db-release.sh" "$B" prereq
+(cd "$B" && bash host-live-config.sh) > ~/live-config-before-r2.txt 2>&1; grep -A3 "API flags" ~/live-config-before-r2.txt | head -4
 ```
-**1. Backup and restore drill (no change to develop).**
+
+**Expected:**
+- `vaydu-develop-e4a64c1-release-linux.tar.gz: OK`.
+- The three host-script hashes from step 1 above.
+- `BUNDLE_OK`, then `e4a64c1`, then the three migrations in order.
+- The API runs one of `be0c761`, `39fc5ce`, `c972037` or `3c91991`, status `running`.
+- `PREREQ OK: release 1 exact, release 2 not applied`.
+
+**On failure:** stop. Nothing has changed.
+
+### 2. Backup and restore drill (no change to develop)
+
 ```
-bash "$B/host-db-release.sh" "$B" backup                 # BACKUP_OK <dump> (+ globals, exact row counts, sha256)
-bash "$B/host-db-release.sh" "$B" drill <dump>           # throwaway copy: row counts equal the backup, PREREQ,
-                                                         # release-up, VERIFY, 8 suites (incl. completion PIN 17/17),
-                                                         # release-down = exact pre-release schema, DRILL_DONE
+bash "$B/host-db-release.sh" "$B" backup
+DUMP=$(ls -t ~/vaydu-develop-backups/develop-before-release-e4a64c1-*.dump | head -1); echo "$DUMP"
+bash "$B/host-db-release.sh" "$B" drill "$DUMP"
 ```
-**2. Dry run on develop's real data (ends in ROLLBACK).**
+
+**Expected:**
+- `BACKUP_OK <dump>`, with table-data entries above 0.
+- The drill restores into a throwaway container with no network:
+  - `PASS: restored row counts equal the backup's`;
+  - PREREQ, release-up and VERIFY each `PASS`;
+  - **9 suites PASS**: the 7 release-1 suites, `realdb-completion-pin-test.sql` and `realdb-referral-units-test.sql`;
+  - `PASS: rollback restored the exact pre-release schema on real data`;
+  - `DRILL_DONE`.
+
+**On failure:** stop. Nothing has changed.
+
+### 3. Dry run on develop's real data (ends in ROLLBACK)
+
 ```
-bash "$B/host-db-release.sh" "$B" dryrun                 # DRYRUN_OK, then "develop still in the pre-release state"
+bash "$B/host-db-release.sh" "$B" dryrun
 ```
-**3. Record the running images, then apply release 2** (migration order: `20261270000000`, then `20261270100000`; one transaction).
+
+**Expected:** `DRYRUN_OK (rolled back; develop unchanged)` and `PASS: develop still in the pre-release state`.
+
+### 4. Record the running images, then apply release 2
+
 ```
-bash host-predeploy.sh $N.tar.gz; PRE5=$(ls -td ~/vaydu-topup-fix-predeploy-* | head -1); cat "$PRE5/running-source-sha.txt"
-bash "$B/host-db-release.sh" "$B" apply                  # PREREQ -> release-up -> "VERIFY OK: release 1 + release 2 present ..."
-sleep 3; docker logs --since 2m movabi-develop-rest 2>&1 | tail -3   # schema cache reloaded
+bash host-predeploy.sh vaydu-develop-e4a64c1-release-linux.tar.gz
+PRE6=$(ls -td ~/vaydu-topup-fix-predeploy-* | head -1); echo "$PRE6"; cat "$PRE6/running-source-sha.txt"; grep -E 'API_IMAGE=|WEB_IMAGE=' "$PRE6/previous.env"
+bash "$B/host-db-release.sh" "$B" apply
+sleep 3; docker logs --since 2m movabi-develop-rest 2>&1 | tail -3
 ```
-**4. API, then web** (the rollout runs release 2's VERIFY before building anything).
+
+**Expected:**
+- `RELEASE_APPLIED`, then `VERIFY OK: release 1 + release 2 present (20 functions, 2 triggers), D12 captured, no cash-ride market outside GB/GBP`.
+- PostgREST logs a schema reload. If not, run `docker restart movabi-develop-rest`.
+
+**On failure:** the one transaction rolled back by itself. Run `bash "$B/host-db-release.sh" "$B" prereq` to confirm develop is unchanged.
+
+### 5. API, then web (overrides preserved; the rollout runs release 2's VERIFY before building)
+
 ```
-export ARCHIVE=$N.tar.gz BUNDLE_DIR=$N EXPECTED_SOURCE_SHA=$SHA
-API_TAG=release-$SHA WEB_TAG=release-3c91991-linux bash rollout-develop-52097ef.sh --deploy-api-only
+export ARCHIVE=vaydu-develop-e4a64c1-release-linux.tar.gz BUNDLE_DIR=vaydu-develop-e4a64c1-release-linux EXPECTED_SOURCE_SHA=e4a64c1
+API_TAG=release-e4a64c1 WEB_TAG=release-3c91991-linux bash rollout-develop-52097ef.sh --deploy-api-only
 docker exec movabi-develop-api cat /app/SOURCE_SHA; curl -s https://movabi-api-develop.apps.evolsolution.com/health
 docker logs --since 5m movabi-develop-api 2>&1 | grep -iE 'error|fatal' | head
-API_TAG=release-$SHA WEB_TAG=release-$SHA-linux bash rollout-develop-52097ef.sh --deploy-web-only
+API_TAG=release-e4a64c1 WEB_TAG=release-e4a64c1-linux bash rollout-develop-52097ef.sh --deploy-web-only
 docker ps --filter label=com.docker.compose.service=web --filter label=com.docker.compose.project=movabi-develop --format '{{.Image}} {{.Status}}'
 bash "$B/host-db-release.sh" "$B" verify
-(cd "$B" && bash host-live-config.sh) > live-config-after-r2.txt 2>&1
+(cd "$B" && bash host-live-config.sh) > ~/live-config-after-r2.txt 2>&1
+diff <(grep -vE '^== taken at|movabi-develop|source sha|^== health' ~/live-config-before-r2.txt) <(grep -vE '^== taken at|movabi-develop|source sha|^== health' ~/live-config-after-r2.txt) && echo SWITCHES_UNCHANGED
 ```
-**On failure:** before step 3, nothing on develop has changed. At step 3, the one transaction rolls back by
-itself. After step 3, use `bash host-rollback.sh "$PRE5" api|web|both`. Database rollback is only for the
-limits listed below.
 
-**5. Activate the approved GB values.** See `activation/README.md` in the bundle:
-- `activate-gb.sql` sets P1, P4, P5 and P6;
-- `activate-gb-cash.sql` and `VAYDU_CASH_RIDE_BOOKING=true` turn on 5b for one GB test driver.
+**Expected:**
+- `e4a64c1` and `{"status":"ok"}`, with no new errors.
+- `movabi-web:release-e4a64c1-linux Up`.
+- `VERIFY OK`.
+- `SWITCHES_UNCHANGED`: the deploy itself turns nothing on, and `permanent=false` stays.
 
-Run the live-config check before and after. Undo with `deactivate-gb*.sql`.
+**On failure:** `bash host-rollback.sh "$PRE6" api` (or `web` / `both`) returns to the recorded images. The previous API runs on the release-2 schema, so the database can stay.
 
-**6. Post-deploy journeys on develop** (these are what move areas to Verified):
-1. **Web check:** the agent hash-compares the live web assets with `mobile/browser`.
-2. **Area 2a, your driver account:** Driver Setup review shows **Vehicle details** and **Vehicle inspection — Missing photos (0 of 6 uploaded)**.
-   Then a GB test driver uploads the 6 photos, sees **Under review**, an admin approves them in Admin → Drivers, and the driver sees **Complete**.
-3. **Area 3, admin PIN control:**
-   1. In Admin → Drivers → a GB test driver → Completion PIN, set **Not used** with a reason.
-   2. Assign a test booking to that driver. The driver completes it without being asked for a PIN.
-   3. Set **Follow the booking market**. The driver's next job asks for the PIN, a wrong PIN is refused, and the right one completes.
-   4. Read-only checks:
-      `SELECT metadata->>'completion_pin_effective', metadata->>'completion_pin_source' FROM jobs WHERE id='<job>';`
-      `SELECT action, metadata->>'reason', created_at FROM audit_logs WHERE action LIKE 'admin_pin_policy_%' ORDER BY created_at DESC LIMIT 5;`
-4. **Area 8:** `GET /api/admin/market-readiness?tenantId=<GB tenant>&market=GB` and `…&market=NG` (admin token). GB shows
-   collection and payout ready (Stripe) and cash ride blocked. NG shows collection and payout blocked, with the reasons.
-5. **Area 1c:** a booking with no driver shows the server's reason on the tracking screen.
-6. **Driver Setup layout:** checked on a narrow phone.
-7. **Switches:** `live-config-after-r2.txt` against `live-config-before-r2.txt`. The only expected difference is the API source SHA:
-   **no switch changes**, and `permanent=false` throughout.
+### 6. Turn on the approved GB values (P1, P4–P8)
+
+```
+docker exec -i movabi-develop-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -U supabase_admin -d movabi_develop -P pager=off' < "$B/activation/activate-gb.sql"
+```
+
+**Expected:**
+- One `cancellation` row per GB tenant: `300/300/120/<50% of the GB minimum fare>`.
+- `FIRST5GB` and `REFERGB`, GB/GBP.
+- `setting` rows whose GB value is:
+  - `"required"` (PIN);
+  - the P7 weights (matching);
+  - `enabled true, maxSurge 1.5, trafficEnabled false` (surge).
+- `non-GB rows enabled (must be 0) | 0`.
+
+If it stops, the message says which check failed, and nothing has changed. Undo: `deactivate-gb.sql`.
+
+### 7. Cash rides for ONE GB test driver, and the ops alerts (API configuration)
+
+```
+docker exec -i movabi-develop-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -U supabase_admin -d movabi_develop -P pager=off -v driver_email="GB_TEST_DRIVER_EMAIL"' < "$B/activation/activate-gb-cash.sql"
+cp ~/vaydu-develop-overrides/docker-compose.develop-wallet.override.yml ~/vaydu-develop-overrides/docker-compose.develop-wallet.override.yml.bak-$(date -u +%Y%m%dT%H%M%SZ)
+```
+
+**Expected:** only `GB | GBP | t`.
+
+Then add these lines to the **api** service's `environment:` in
+`~/vaydu-develop-overrides/docker-compose.develop-wallet.override.yml`, using the same style as the existing entries
+there (`KEY: "value"` or `- KEY=value`):
+
+```
+VAYDU_CASH_RIDE_BOOKING: "true"
+VAYDU_OPS_ALERTS: "true"
+VAYDU_OPS_ALERT_RECIPIENTS: "<the address you choose>"
+```
+
+The address is never committed to the repository. Then redeploy the API with the same bundle and check:
+
+```
+API_TAG=release-e4a64c1 WEB_TAG=release-e4a64c1-linux bash rollout-develop-52097ef.sh --deploy-api-only
+docker exec movabi-develop-api printenv | grep -E '^VAYDU_(CASH_RIDE_BOOKING|OPS_ALERTS)='
+docker logs --since 2m movabi-develop-api 2>&1 | grep '\[OpsAlert\]'
+docker exec movabi-develop-api node server/ops/send-test-ops-alert.cjs
+```
+
+**Expected:**
+- Both variables are `true`.
+- `[OpsAlert] schedule on: every 15 min, recipients 1`.
+- `DELIVERED to 1 recipient(s)`, and the test email arrives.
+
+**Undo:**
+- `deactivate-gb-cash.sql`;
+- remove the three lines and redeploy the API (restore the `.bak` copy if needed).
+
+### 8. Post-deploy journeys (these, and only these, move features to Verified)
+
+1. **Web:** the agent hash-compares the live web assets with `mobile/browser`.
+2. **2a:** your review shows **Vehicle details** and **Vehicle inspection — Missing photos (0 of 6 uploaded)**.
+   A GB test driver then uploads 6 photos and sees **Under review**; an admin approves them and the driver sees **Complete**.
+3. **3 (PIN):**
+   1. In Admin → Drivers → Completion PIN, set **Not used** with a reason, assign a job, and complete it without a PIN.
+   2. Set **Follow the booking market**: the next job needs the PIN, a wrong PIN is refused, the right one completes.
+   3. Check the `audit_logs` rows.
+4. **6a/6b/6c:** a GB customer cancels more than 120 s after acceptance.
+   - The confirmation shows £3.00, and the Stripe test capture is £3.00.
+   - The driver's earnings show £2.40 (80%) once.
+   - With no card authorisation, the fee becomes an open debt.
+5. **7a:** a new GB customer's first booking of £8.00 or more shows and charges 5%, up to £5.00. A second booking gets no discount.
+6. **7b:** a referee's qualifying ride (£8.00 or more) credits the referrer 5%, up to £5.00, once.
+7. **1b (P7) and 4b (P8):** a GB dispatch with two drivers ranks as configured. A quote at high demand shows a surge of at most 1.5×, and traffic shows but does not change the fare. An NG quote is unchanged.
+8. **5b:** the selected driver takes a GB cash ride through to completion, and the ledger shows the 2.50 reservation settled. A second GB driver cannot take it.
+9. **8 / 1c / layout:** the GB and NG readiness reports; a no-driver reason; Driver Setup on a narrow phone.
+10. **9a:** the test alert in step 7 arrived.
 
 ### Compatibility
 
-- **Order: database first, then API.** The rollout runs this bundle's VERIFY (release 2) before building
-  anything, so it refuses to deploy the API before the migration.
-- **Running API (be0c761 or earlier) on the release-2 schema** (reasoned from the code, not executed):
-  - it keeps writing `completion_pin_required`, which the trigger reads as the market policy;
-  - it reads `effective_completion_pin_policy` (unchanged) at completion and gets the same override the trigger used;
-  - its driver and customer apps read `completion_pin_required`, which the trigger sets to the frozen policy.
-- **New API on the old schema** (not supported; prevented by VERIFY): no stamping, so a driver override of
-  "required" in a market that disables the PIN would have no minted PIN.
-- **Jobs already accepted when a policy changes:**
-  - after release 2, the policy is frozen at assignment; later override or market changes apply from that
-    driver's next assignment, and a reassignment re-resolves for the new driver;
-  - jobs assigned **before** release 2 carry no stamp, so the server reads the driver's current override at
-    completion (as before release 2).
+- **Order: database first, then API.** VERIFY in the rollout refuses the API before the migration.
+- **The previous API on the release-2 schema** (reasoned from the code, not executed):
+  - it writes `completion_pin_required` and reads `effective_completion_pin_policy` (unchanged) at completion;
+  - the triggers set `completion_pin_required` to the frozen policy, so its apps behave consistently;
+  - with the old API, `earn_referral` just becomes correct.
+- **Jobs already accepted when a PIN policy changes:**
+  - jobs assigned after release 2 keep the policy frozen at assignment, and a reassignment re-resolves;
+  - jobs assigned before release 2 read the driver's current override at completion, as before.
+- **Referral rewards earned before release 2** are not recalculated.
 
 ### Rollback limits
 
-- **Release-down also restores develop's exact live `earn_referral`.** Rewards earned while release 2 was applied stay as recorded.
-- **`host-db-release.sh "$B" rollback`** (release-down, one transaction):
-  - drops the two triggers and three functions;
-  - **keeps** every frozen job metadata value and every minted PIN, because customers may already have seen them;
-  - keeps both D12 objects, by instruction.
+- **Database:** `bash "$B/host-db-release.sh" "$B" rollback`, as one transaction:
+  - drops the PIN triggers and functions;
+  - restores develop's exact `earn_referral` (`98e50e33…`);
+  - keeps the D12 objects;
+  - keeps frozen PIN metadata and minted PINs, because customers may have seen them.
 
-  After that, PREREQ must pass again.
-- **Application rollback:** `bash host-rollback.sh "$PRE5" api|web|both`. The previous API runs on the release-2 schema
-  (see Compatibility), so the database can stay.
-- **Not undone by any rollback:** admin overrides set after apply, `audit_logs` rows, PIN attempts and verifications.
-- **Restoring the backup** loses every write made after it. It is a last resort and a separate decision: restore into a
-  **new** database, never over `movabi_develop` in place.
+  PREREQ must pass afterwards. Turn the activation off **first** (`deactivate-gb*.sql`): the old `earn_referral` would pay wrong amounts.
+- **Application:** `bash host-rollback.sh "$PRE6" api|web|both`.
+- **Never undone by any rollback:**
+  - admin PIN overrides;
+  - audit rows;
+  - PIN attempts;
+  - fees, debts, discounts and rewards already recorded (they are valid obligations);
+  - cash rides completed, together with their ledger entries.
+- **Restoring the step-2 backup** loses every write made after it. It is a last resort and a separate decision: restore into a **new** database, never over `movabi_develop` in place.

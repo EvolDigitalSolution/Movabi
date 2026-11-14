@@ -186,16 +186,34 @@ on until the host steps run. Live state is read with `host-live-config.sh` befor
 | 7a First-booking promo (P4) | ✓ (fixed 2026-11-14) | ✗ (bundle) | ✗ → `activate-gb.sql` | ✗ | Activation; first booking shows and charges 5% |
 | 7b Referrals (P5) | ✓ (fixed 2026-11-14) | ✗ (release 2 + bundle) | ✗ → `activate-gb.sql` | ✗ | Activation; referee's qualifying ride earns once |
 | 5b Cash rides (GB) | ✓ | ✓ | ✗ → `activate-gb-cash.sql` + `VAYDU_CASH_RIDE_BOOKING` | ✗ | Activation for one GB test driver; cash booking → completion → ledger |
-| 1b Matching weights (P7) | ~ weights per **tenant**, ranking flag **global** | ✓ | ✗ | ✗ | **T8**: per-market weights and ranking switch (a tenant-wide change would also rank NG) |
-| 4b Surge (P8) | ~ surge is per market (`service_market_rules`), but traffic always raises the surge score | ✓ | ✗ | ✗ | **T9**: per-market "traffic display-only", then GB rule `surge_enabled`, max 1.5 |
+| 1b Matching weights (P7) | ✓ 2026-11-14: per-market switch + weights (`smart_matching.markets.<CC>`); other markets unchanged (`driver-ranking-v23.spec.ts` 48/48) | ✗ (bundle `e4a64c1`) | ✗ → `activate-gb.sql` (GB 0.5 / 1.0 / 0.15 km, ranking on; road ETA stays off) | ✗ | Deploy, activate; a GB dispatch with two drivers |
+| 4b Surge (P8) | ✓ 2026-11-14: per-market `dynamic_pricing.markets.<CC>`, no tenant-level leak (`market-dynamic-pricing.spec.ts` 7/7); traffic display-only via `trafficEnabled:false`; activation stops if a GB strategy cap or live AI pricing would override | ✗ (bundle) | ✗ → `activate-gb.sql` (on, max 1.5, demand/supply) | ✗ | Deploy, activate; a high-demand GB quote ≤ 1.5×, NG unchanged |
 | 4c Map style (P9) | ✓ current style kept | ✓ | ✓ (no change) | ✗ | Seen on web and Android |
 | 6a Exemptions (P12) | **✗ not built** | — | ✗ | ✗ | **T10**: structured reasons in the cancel flow and the fee quote |
 | 6b Fee above cash hold (P13) | ✓ manual review (current) | ✓ | ✓ (no change) | ✗ | — |
 | 7c Driver bonus (P11) | **✗ not built** | — | ✗ | ✗ | **T4** |
 | 2b Account sharing (P10) | ~ suspension only | ✓ | ✗ | ✗ | **T3** |
-| 9a Ops alerts (P14) | ~ report script | ? | ✗ | ✗ | **T5**: schedule + email sender; **needs the destination address** |
+| 9a Ops alerts (P14) | ✓ 2026-11-14: scheduled report + email (`ops-alert.service.ts`, 13/13); recipient only from host config | ✗ (bundle) | ✗ → `VAYDU_OPS_ALERTS` + `VAYDU_OPS_ALERT_RECIPIENTS` on the API | ✗ | Address set on the host; `send-test-ops-alert.cjs` delivers |
 | 9b Backup restore | ✓ backup + drill in the release-2 host steps | ✓ | n/a | ✗ | Host drill |
 | NG payouts | ~ | ~ | ✗ | ✗ | **D-AF** deferred |
+
+**Money rules (2026-11-14):**
+- **Promos:** conversion uses `FareSplitService.toMinorExact`, which works on integers and refuses amounts with
+  more decimals than the currency has, instead of rounding.
+- **Referrals:** `earn_referral` uses exact numeric arithmetic with `wallet_currency_minor_exponent`. Rewards are rounded
+  **down** to a whole minor unit.
+- **Same table on both sides:** the API and database exponent tables are proven identical (`money-minor-units.spec.ts`, including every amount from 0.00 to 500.00).
+
+**Concurrency (real parallel database sessions, release-2 rehearsal):**
+- the same customer from two sessions gets one discount;
+- three retries of one redemption give one row, one budget charge and the same answer;
+- budget exhaustion never over-spends;
+- a burst of 8 gives one discount;
+- the same referral earned from three sessions gives one credit.
+
+**Cash activation:** enrols only the selected GB driver. Other GB drivers and NG drivers are neither enabled nor blocked.
+
+**Deactivation keeps** frozen fees and debts, applied discounts, earned rewards, linked referrals, cash rides in flight (settled or released exactly once) and enrolment and credit.
 
 ### Remaining technical work (no business decision outstanding except the alert address)
 
@@ -205,10 +223,10 @@ on until the host steps run. Live state is read with `host-live-config.sh` befor
 | T2 | Choose one GB test driver email for cash (operator choice, not a policy) | 5b |
 | T3 | Account-sharing signals (2 countries in 1 h, >2 devices in 24 h, >200 km in 10 min) → admin review queue | 2b |
 | T4 | Weekly driver bonus (£20 after 25 GB rides, Mon–Sun, £200/week budget) | 7c |
-| T5 | Ops report every 15 min + email alert; **the recipient address is the only value not supplied** | 9a |
+| T5 | ✓ built 2026-11-14 (ops alert sender). Remaining: the recipient address in the API configuration (host) | 9a |
 | T7 | Overdue debt: booking block at the threshold (exists), 24 h reminder, 30-day admin review | 6c |
-| T8 | Per-market matching weights and ranking switch (GB: 0.5 / 1.0 / 0.15 km, review-score ranking on, road ETA off) | 1b |
-| T9 | Per-market traffic display-only flag; GB surge on, max 1.5, demand/supply on | 4b |
+| T8 | ✓ built 2026-11-14 (per-market ranking) | 1b |
+| T9 | ✓ built 2026-11-14 (per-market surge, traffic display-only) | 4b |
 | T10 | Cancellation exemptions (driver >10 min late, not moving 5 min, wrong vehicle, safety) | 6a |
 
 ### Approved policy values (2026-11-14)
