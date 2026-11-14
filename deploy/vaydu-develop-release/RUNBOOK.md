@@ -379,6 +379,16 @@ This release **has a database step**, so the "no database step" instructions of 
 The bundle is cut with `RELEASE_DIR=deploy/vaydu-develop-release-2`, so its `release-*.sql`, `PREREQ.sql`,
 `VERIFY.sql`, `ORDER.txt` and drill suites are release 2's. Release 1 stays applied and unchanged.
 
+### Cut bundle (2026-11-14)
+
+| | Value |
+|---|---|
+| Package | `release/vaydu-develop-2381e96-release-linux.tar.gz`, sha256 `d33ffebccf13f212ab2ac5e76dfa861d83f9af0cef40d8f74767943266382a6f` |
+| `$N` / `$SHA` | `vaydu-develop-2381e96-release-linux` / `2381e96` (web built on Linux from `d9fea62`; web inputs identical) |
+| Database | release 2: `release-up.sql` sha256 `8df040b0b72fa76d02202fd5b1578d92ff2f38cb9b8482c0659d720f7e5ba147` (byte-identical to the rehearsed file), `release-down.sql` `4d97a095…` |
+| vs be0c761 | API: `admin.routes.ts`, `booking.routes.ts`, `logistics.service.ts`, new `completion-pin-policy.ts`; web: 35 files (driver completion, admin PIN control) |
+| Drill suites | 7 release-1 suites + `realdb-completion-pin-test.sql` |
+
 ### Exact migration order (one transaction, `release-up.sql`)
 
 | # | Migration | Effect on develop |
