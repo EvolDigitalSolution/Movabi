@@ -1,0 +1,254 @@
+-- Real-Postgres test for 20261270500000_errand_purchase_payer.sql (disposable database only).
+-- Deployed baseline + the migration. Covers:
+--   funded-budget authority (estimate above funded, requested-but-unfunded increase)
+--   per-purchase payer records, method lock, unsupported/mixed-method rejection
+--   driver-personal errand end to end: reservation -> spend -> completion -> queued
+--     payout (fare entitlement + reimbursement in one outbox transfer) -> reimbursed
+--   payout-worker semantics: pending keeps purchases 'recorded', exactly-once finish,
+--     retry after an uncertain provider outcome
+--   cancellation after purchase requires reconciliation (no silent customer release)
+-- Everything runs in one transaction and ROLLS BACK.
+\set ON_ERROR_STOP on
+BEGIN;
+DO $d$ DECLARE t text; BEGIN
+ FOR t IN SELECT tgname FROM pg_trigger tr JOIN pg_class c ON c.oid=tr.tgrelid WHERE c.relname='jobs' AND NOT tgisinternal
+   AND tgname NOT IN ('trg_enforce_job_payment_eligibility','enforce_ride_cash_credit_v1e')
+ LOOP EXECUTE format('ALTER TABLE public.jobs DISABLE TRIGGER %I', t); END LOOP; END $d$;
+
+INSERT INTO public.tenants(id,name,slug) VALUES ('11111111-1111-4111-8111-111111111111','t','t');
+INSERT INTO public.market_availability(country_code,launch_status,supported_currency) VALUES ('GB','live','GBP');
+INSERT INTO public.service_types(id,slug,name) VALUES ('dddddddd-dddd-4ddd-8ddd-dddddddddd02','errand','Errand');
+-- One driver per concurrently-active job: idx_jobs_one_active_per_driver enforces it.
+INSERT INTO auth.users(id) SELECT ('dddddddd-aaaa-4aaa-8aaa-'||lpad(to_hex(g),12,'0'))::uuid FROM generate_series(1,8) g;
+INSERT INTO auth.users(id) VALUES ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc');
+INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code)
+ SELECT ('dddddddd-aaaa-4aaa-8aaa-'||lpad(to_hex(g),12,'0'))::uuid,'11111111-1111-4111-8111-111111111111','driver','GB','GB' FROM generate_series(1,8) g;
+INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code) VALUES
+ ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb','11111111-1111-4111-8111-111111111111','customer','GB','GB'),
+ ('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','11111111-1111-4111-8111-111111111111','customer','GB','GB');
+INSERT INTO public.wallets(user_id,available_balance,reserved_balance,currency_code)
+ VALUES ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb',500,0,'GBP'),('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc',300,0,'GBP');
+
+CREATE TEMP TABLE results(n int, name text, ok boolean, detail text);
+
+-- A payable errand exactly as create -> wallet pay sees it: requested/pending job, a
+-- future-dated quote, errand_details with the (larger) customer estimate and an
+-- optional pre-existing 'pending' funding row with the SMALLER funded item budget.
+CREATE FUNCTION pg_temp.errand_job(fare numeric, estimate numeric, funded numeric, customer uuid DEFAULT 'cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
+RETURNS uuid LANGUAGE plpgsql AS $f$ DECLARE id uuid:=gen_random_uuid(); BEGIN
+ INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
+   payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown)
+ VALUES (id,'11111111-1111-4111-8111-111111111111',customer,'a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+   'pending','GB','GBP','requested',fare,
+   jsonb_build_object('quote_id',gen_random_uuid(),'quote_expires_at',now()+interval '10 minutes'),
+   jsonb_build_object('calculationVersion','test-v1'));
+ INSERT INTO public.errand_details(job_id,items_list,estimated_budget) VALUES (id,'[]',estimate);
+ IF funded IS NOT NULL THEN
+  INSERT INTO public.errand_funding(job_id,customer_id,item_budget,service_estimate,amount_reserved,status)
+  VALUES (id,customer,funded,fare,funded,'pending');
+ END IF;
+ RETURN id; END $f$;
+CREATE FUNCTION pg_temp.pay(j uuid, amount numeric, customer uuid DEFAULT 'cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
+RETURNS jsonb LANGUAGE sql AS $f$ SELECT public.pay_job_from_wallet(j,customer,amount,'GBP','11111111-1111-4111-8111-111111111111'::uuid) $f$;
+CREATE FUNCTION pg_temp.drv(n int) RETURNS uuid LANGUAGE sql AS $f$
+ SELECT ('dddddddd-aaaa-4aaa-8aaa-'||lpad(to_hex(n),12,'0'))::uuid $f$;
+CREATE FUNCTION pg_temp.assign(j uuid, d uuid) RETURNS void LANGUAGE sql AS $f$
+ UPDATE public.jobs SET driver_id=d,accepted_driver_id=d,status='accepted' WHERE id=j $f$;
+CREATE FUNCTION pg_temp.spend(j uuid, amount numeric) RETURNS text LANGUAGE plpgsql AS $f$ BEGIN
+ UPDATE public.errand_details SET actual_spending=amount WHERE job_id=j; RETURN 'ok';
+ EXCEPTION WHEN OTHERS THEN RETURN SQLERRM; END $f$;
+CREATE FUNCTION pg_temp.job_terms() RETURNS jsonb LANGUAGE sql AS $f$ SELECT jsonb_build_object(
+ 'total',10,'payout',8.5,'platformFee',1,'commission',0.5,'commissionRate',15,
+ 'currency','gbp','amountMinor',850,'destination','acct_drv_test','country','GB') $f$;
+CREATE FUNCTION pg_temp.purchases(j uuid) RETURNS jsonb LANGUAGE sql AS $f$
+ SELECT coalesce(jsonb_agg(jsonb_build_object('m',purchase_method,'p',payer,'k',kind,'a',amount_minor,'s',status,'t',reimbursement_transfer_id,'r',provider_reference) ORDER BY created_at),'[]')
+ FROM public.errand_purchase_payments WHERE job_id=j $f$;
+CREATE FUNCTION pg_temp.wbal(customer uuid DEFAULT 'cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb') RETURNS text LANGUAGE sql AS $f$
+ SELECT available_balance||'/'||reserved_balance FROM public.wallets WHERE user_id=customer $f$;
+
+-- =========================================================================
+-- 1. Funded budget is authoritative; a higher estimate never grants spend.
+-- =========================================================================
+DO $t$ DECLARE j uuid; r text; BEGIN
+ j:=pg_temp.errand_job(10,50,30);
+ r:=(pg_temp.pay(j,40))->>'status';
+ INSERT INTO results VALUES (1,'wallet pay reserves fare + funded budget (30), not the estimate',r='paid' AND pg_temp.wbal()='460.00/40.00',r||' '||pg_temp.wbal());
+ PERFORM pg_temp.assign(j,pg_temp.drv(1));
+ INSERT INTO results VALUES (1,'spend inside the funded budget is recorded',pg_temp.spend(j,30)='ok','');
+ INSERT INTO results VALUES (1,'payer evidence: one driver-personal manual purchase',pg_temp.purchases(j)
+   ='[{"m":"driver_personal","p":"driver","k":"manual","a":3000,"s":"recorded","t":null,"r":"manual-spend"}]'::jsonb,pg_temp.purchases(j)::text);
+ INSERT INTO results VALUES (1,'estimate (50) above the funded budget cannot be spent',pg_temp.spend(j,31) LIKE '%exceeds the funded budget%','');
+ INSERT INTO results VALUES (1,'the job method locked to driver_personal',
+   (SELECT purchase_method FROM public.errand_funding WHERE job_id=j)='driver_personal','');
+ PERFORM public.request_errand_over_budget(j,80,'items cost more than listed');
+ INSERT INTO results VALUES (1,'requested-but-unfunded increase still caps at 30',pg_temp.spend(j,31) LIKE '%exceeds the funded budget%','');
+ PERFORM public.approve_errand_over_budget(j);
+ INSERT INTO results VALUES (1,'approved increase is funded: delta reserved, budget now 80',
+   (SELECT item_budget FROM public.errand_funding WHERE job_id=j)=80 AND pg_temp.wbal()='410.00/90.00',pg_temp.wbal());
+ INSERT INTO results VALUES (1,'spend above the NEW funded budget is rejected',pg_temp.spend(j,81) LIKE '%exceeds the funded budget%','');
+ INSERT INTO results VALUES (1,'spend within the funded budget updates the payer record',pg_temp.spend(j,75)='ok'
+   AND pg_temp.purchases(j)='[{"m":"driver_personal","p":"driver","k":"manual","a":7500,"s":"recorded","t":null,"r":"manual-spend"}]'::jsonb,pg_temp.purchases(j)::text);
+END $t$;
+
+-- =========================================================================
+-- 2. Method lock + unsupported / mixed-method rejection.
+-- =========================================================================
+DO $t$ DECLARE j uuid; msg text; BEGIN
+ j:=pg_temp.errand_job(10,50,30); PERFORM pg_temp.pay(j,40); PERFORM pg_temp.assign(j,pg_temp.drv(2)); PERFORM pg_temp.spend(j,20);
+ BEGIN PERFORM public.activate_job_issuing_control(j,'card_late',30,'{}'); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (2,'cannot switch to the Vaydu card after driver spend is recorded',msg LIKE '%different purchase method%',msg);
+ BEGIN
+  INSERT INTO public.errand_purchase_payments(job_id,purchase_method,payer,kind,amount_minor,currency,provider_reference)
+   VALUES (j,'customer_direct','customer','capture',2000,'GBP','shop-ref-1'); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (2,'customer-direct purchases are rejected until enabled',msg LIKE '%not enabled%',msg);
+ BEGIN
+  INSERT INTO public.errand_purchase_payments(job_id,purchase_method,payer,kind,amount_minor,currency,provider_reference)
+   VALUES (j,'vaydu_card','vaydu','capture',2000,'GBP','txn-x'); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (2,'a second method on the same job is rejected',msg LIKE '%Mixed purchase methods%',msg);
+ BEGIN
+  INSERT INTO public.errand_purchase_payments(job_id,purchase_method,payer,kind,amount_minor,currency,provider_reference)
+   VALUES (j,'vaydu_card','driver','capture',100,'GBP','txn-y'); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (2,'a payer that does not match the method is rejected',msg LIKE '%does not match%',msg);
+END $t$;
+
+-- =========================================================================
+-- 3. Card-funded errand: activation locks the method; spend comes only from
+--    the issuing ledger; ledger replays dedupe.
+-- =========================================================================
+DO $t$ DECLARE j uuid; f uuid:=gen_random_uuid(); msg text; ap jsonb; BEGIN
+ j:=pg_temp.errand_job(10,50,NULL,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc');
+ UPDATE public.jobs SET payment_method='card',payment_status='authorized',payment_intent_id='pi_c1',
+   driver_id=pg_temp.drv(3),accepted_driver_id=pg_temp.drv(3),status='accepted' WHERE id=j;
+ INSERT INTO public.errand_funding(job_id,customer_id,item_budget,service_estimate,amount_reserved,status)
+  VALUES (j,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc',50,10,50,'reserved');
+ PERFORM public.activate_job_issuing_control(j,'card_c1',50,'{}');
+ INSERT INTO results VALUES (3,'card activation locks the job to vaydu_card',
+   (SELECT purchase_method FROM public.errand_funding WHERE job_id=j)='vaydu_card','');
+ INSERT INTO results VALUES (3,'manual spend cannot be recorded under a card method',
+   pg_temp.spend(j,10) LIKE '%card ledger%','');
+ INSERT INTO public.job_issuing_reserves(job_id,currency,amount_remaining) VALUES (j,'gbp',50);
+ ap:=public.record_issuing_authorization_request('card_c1','iauth_c1',20,'gbp','{"merchant_data":{"name":"Shop A","category":"grocery"},"status":"authorized"}');
+ INSERT INTO results VALUES (3,'an authorization inside the card limit is approved',(ap->>'approved')::boolean,ap::text);
+ PERFORM public.record_issuing_transaction('txn_c1','iauth_c1','card_c1',20,'gbp','capture','{"merchant_data":{"name":"Shop A"}}');
+ INSERT INTO results VALUES (3,'the capture wrote a vaydu-payer purchase row',pg_temp.purchases(j)
+   ='[{"m":"vaydu_card","p":"vaydu","k":"capture","a":2000,"s":"recorded","t":null,"r":"txn_c1"}]'::jsonb,pg_temp.purchases(j)::text);
+ PERFORM public.record_issuing_transaction('txn_c1','iauth_c1','card_c1',20,'gbp','capture','{"merchant_data":{"name":"Shop A"}}');
+ INSERT INTO results VALUES (3,'replaying the same transaction dedupes the payer record',
+   (SELECT count(*) FROM public.errand_purchase_payments WHERE job_id=j)=1,'');
+ INSERT INTO results VALUES (3,'ledger spend syncs to errand_details (allowed: equals ledger)',pg_temp.spend(j,20)='ok','');
+ INSERT INTO results VALUES (3,'a manual value different from the ledger is rejected',pg_temp.spend(j,25) LIKE '%card ledger%','');
+END $t$;
+
+-- =========================================================================
+-- 4. Full driver-personal errand: reservation -> spend -> completion -> queued
+--    payout (fare entitlement + reimbursement) -> reimbursed exactly once.
+-- =========================================================================
+DO $t$ DECLARE j uuid; q public.job_payout_queue; n int; e record; tok uuid; ok boolean; r text; BEGIN
+ j:=pg_temp.errand_job(10,50,30,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc');
+ PERFORM pg_temp.pay(j,40,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc'); PERFORM pg_temp.assign(j,pg_temp.drv(4)); PERFORM pg_temp.spend(j,20);
+ UPDATE public.jobs SET status='in_progress' WHERE id=j;
+ PERFORM public.complete_job_with_pending_payout(j,pg_temp.drv(4),pg_temp.job_terms(),
+   jsonb_build_object('completion_pin_verified_at',now()));
+ SELECT * INTO q FROM public.job_payout_queue WHERE job_id=j;
+ INSERT INTO results VALUES (4,'one outbox transfer carries fare entitlement + reimbursement (850+2000)',
+   q.amount_minor=2850 AND q.status='pending' AND (q.terms->>'reimbursementMinor')::int=2000
+   AND q.terms->>'purchaseMethod'='driver_personal',q.terms::text);
+ INSERT INTO results VALUES (4,'customer settled fare + spend; unused budget released',
+   pg_temp.wbal('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc')='270.00/0.00'
+   AND (SELECT status FROM public.errand_funding WHERE job_id=j)='settled'
+   AND (SELECT refund_amount FROM public.errand_funding WHERE job_id=j)=10,pg_temp.wbal('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc'));
+ SELECT amount,gross_amount,status INTO e FROM public.driver_earnings WHERE job_id=j;
+ INSERT INTO results VALUES (4,'earnings stay commissionable-fare only (8.50 of 10.00)',
+   e.amount=8.5 AND e.gross_amount=10 AND e.status='pending',e.amount::text);
+ -- spend can no longer change after completion
+ INSERT INTO results VALUES (4,'spend is frozen once the booking ends',pg_temp.spend(j,22) LIKE '%ended%','');
+ -- payout worker: claim -> processing; purchases must NOT be marked paid yet
+ SELECT * INTO q FROM public.claim_queued_job_payout(j) LIMIT 1; tok:=q.token;
+ INSERT INTO results VALUES (4,'claimed payout stays recorded until the transfer lands',
+   q.status='processing' AND (SELECT status FROM public.errand_purchase_payments WHERE job_id=j)='recorded',q.status);
+ SELECT count(*) INTO n FROM public.claim_queued_job_payout(j);
+ INSERT INTO results VALUES (4,'a live lease blocks a second claim (exactly-once worker)',n=0,n::text);
+ ok:=public.finish_queued_job_payout(j,gen_random_uuid(),'tr_wrong');
+ INSERT INTO results VALUES (4,'a wrong claim token cannot finish the payout',NOT ok AND q.status='processing','');
+ ok:=public.finish_queued_job_payout(j,tok,'tr_main_1');
+ INSERT INTO results VALUES (4,'confirmed transfer marks the purchase reimbursed once',
+   ok AND pg_temp.purchases(j)='[{"m":"driver_personal","p":"driver","k":"manual","a":2000,"s":"reimbursed","t":"tr_main_1","r":"manual-spend"}]'::jsonb
+   AND (SELECT status FROM public.job_payout_queue WHERE job_id=j)='paid',pg_temp.purchases(j)::text);
+ ok:=public.finish_queued_job_payout(j,tok,'tr_main_1');
+ INSERT INTO results VALUES (4,'replayed finish is idempotent (still one reimbursed purchase)',
+   ok AND (SELECT count(*) FROM public.errand_purchase_payments WHERE job_id=j AND status='reimbursed')=1,'');
+ INSERT INTO results VALUES (4,'the job records the completed settlement',
+   (SELECT settlement_status='transferred' AND status='completed' FROM public.jobs WHERE id=j),'');
+ -- retrying the whole completion is a safe replay
+ PERFORM public.complete_job_with_pending_payout(j,pg_temp.drv(4),pg_temp.job_terms(),
+   jsonb_build_object('completion_pin_verified_at',now()));
+ INSERT INTO results VALUES (4,'replayed completion does not create a second payout',
+   (SELECT count(*) FROM public.job_payout_queue WHERE job_id=j)=1,'');
+ r:=(public.settle_job_wallet_reservation(j,10))->>'status';
+ INSERT INTO results VALUES (4,'wallet settlement is exactly-once',r='already_settled',r);
+END $t$;
+
+-- =========================================================================
+-- 5. Retry after an uncertain provider outcome.
+-- =========================================================================
+DO $t$ DECLARE j uuid; q public.job_payout_queue; tok uuid; ok boolean; BEGIN
+ -- Legacy in-flight spend (recorded before payer records existed, simulated by
+ -- deleting the payer row the trigger wrote) must still be reimbursed.
+ j:=pg_temp.errand_job(10,50,30,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc');
+ PERFORM pg_temp.pay(j,40,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc'); PERFORM pg_temp.assign(j,pg_temp.drv(5));
+ PERFORM pg_temp.spend(j,20);
+ DELETE FROM public.errand_purchase_payments WHERE job_id=j;
+ UPDATE public.jobs SET status='in_progress' WHERE id=j;
+ PERFORM public.complete_job_with_pending_payout(j,pg_temp.drv(5),pg_temp.job_terms(),
+   jsonb_build_object('completion_pin_verified_at',now()));
+ SELECT * INTO q FROM public.claim_queued_job_payout(j) LIMIT 1;
+ -- Provider outcome was uncertain: worker marks the row 'reconcile'.
+ UPDATE public.job_payout_queue SET status='reconcile',lease_until=now()-interval '1 minute' WHERE job_id=j;
+ SELECT * INTO q FROM public.claim_queued_job_payout(j) LIMIT 1; tok:=q.token;
+ INSERT INTO results VALUES (5,'an uncertain outcome is reclaimable as reconcile without a new attempt',
+   q.status='reconcile' AND q.attempt=1,q.attempt::text);
+ ok:=public.finish_queued_job_payout(j,tok,'tr_retry_1');
+ INSERT INTO results VALUES (5,'the retried transfer reimburses the driver exactly once',
+   ok AND (SELECT reimbursement_transfer_id FROM public.errand_purchase_payments WHERE job_id=j)='tr_retry_1','');
+END $t$;
+
+-- =========================================================================
+-- 6. Cancellation after purchase requires reconciliation; funds stay put.
+-- =========================================================================
+DO $t$ DECLARE j uuid; msg text; BEGIN
+ j:=pg_temp.errand_job(10,50,30,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc');
+ PERFORM pg_temp.pay(j,40,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc'); PERFORM pg_temp.assign(j,pg_temp.drv(6));
+ PERFORM pg_temp.spend(j,15);
+ UPDATE public.jobs SET status='cancelled' WHERE id=j;
+ BEGIN PERFORM public.release_job_wallet_reservation(j,'test cancel'); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (6,'release with recorded purchases requires reconciliation',
+   msg LIKE '%purchase payments require reconciliation%',msg);
+ INSERT INTO results VALUES (6,'the reservation is untouched and the purchase stays recorded',
+   pg_temp.wbal('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc')='200.00/40.00'
+   AND (SELECT status FROM public.errand_purchase_payments WHERE job_id=j)='recorded',pg_temp.wbal('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc'));
+END $t$;
+
+-- =========================================================================
+-- 7. Fail-closed edges.
+-- =========================================================================
+DO $t$ DECLARE j uuid; BEGIN
+ j:=pg_temp.errand_job(10,50,NULL,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc');
+ UPDATE public.jobs SET payment_method='card',payment_status='authorized',payment_intent_id='pi_nf',status='accepted',
+   driver_id=pg_temp.drv(7) WHERE id=j;
+ INSERT INTO results VALUES (7,'no funding row means nothing was funded: spend rejected',
+   pg_temp.spend(j,5) LIKE '%exceeds the funded budget%','');
+ j:=pg_temp.errand_job(10,50,NULL,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc');
+ INSERT INTO public.errand_funding(job_id,customer_id,item_budget,service_estimate,amount_reserved,status)
+  VALUES (j,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc',0,10,0,'pending');
+ INSERT INTO results VALUES (7,'an unfunded (zero-reserved) marker cannot be spent against',
+   pg_temp.spend(j,5) LIKE '%exceeds the funded budget%','');
+END $t$;
+
+SELECT n, name, CASE WHEN ok THEN 'PASS' ELSE 'FAIL' END AS result, left(detail,90) AS detail FROM results ORDER BY n, name;
+SELECT count(*) FILTER (WHERE NOT ok) AS failures, count(*) AS checks FROM results;
+ROLLBACK;

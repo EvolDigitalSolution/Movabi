@@ -6,13 +6,15 @@ the same commit as any change that moves a state. Last updated 2026-11-16.
 
 ### Current develop baseline and restore gate (2026-11-16)
 
-- Verified current baseline supplied by the user: **API `f949a14`, web `release-f949a14-linux`**,
+- Reviewed restore/P8 baseline originally supplied by the user: **API `f949a14`, web `release-f949a14-linux`**,
   superseding API c972037/web 3c91991. Inspection: `/home/edsadmin/vaydu-p8-reconciliation.Q8xr7I`.
   Corrected tools require exact web tag, f949a14 served-file hashes/inventory and matching actual
   image ID; they record that ID/container for rollback and assert both survive API-only rollout.
   The passing real-backup drill evidence is reused, with its path/hash retained. Older inventories below are
   historical. A fresh host image/SOURCE_SHA check is required before deployment; rejected SSH
-  authentication is not retried. No deployment or activation has been verified in this session.
+  authentication is not retried. Latest user-supplied API baseline is now
+  **`release-eef726b-p8-tenant`**, with **`release-f949a14-linux`** web before the booking rollout.
+  The follow-up below distinguishes public frontend evidence from pending host image verification.
 - Replacement tooling checks globals restoration (`ON_ERROR_STOP=1`) and `pg_restore
   --exit-on-error` exit statuses explicitly. Only exact standalone `CREATE ROLE` statements for
   roles inventoried in the fresh disposable image are omitted, once each; every other statement
@@ -152,6 +154,21 @@ Fix source `799fcdc`, package source `5252a6b`; checksummed candidate
 `71a8453af95617b18cdfc773ec0f88e4ce614273111f037309f4e502aaff2b88`.
 Exact host command: `deploy/vaydu-booking-cash/RUN-5252a6b.md`. Shipped manifests/syntax and
 missing/incomplete restore-evidence failure gates pass; actual host rollout remains pending.
+
+**Uncommitted verification follow-up:** 16/16 browser cases pass on both the development server
+and an isolated optimized build; 72 focused tests and server typecheck pass. Stricter tests found
+stale no-show terms after address clearing. The additional frontend fix clears them on reset and
+only displays them for a valid quote, preserving all validation. Test-order dependence is removed;
+late quote/cash responses and fresh navigation are explicitly checked. No new commit/archive.
+
+The actual public develop index now matches the older 5252a6b candidate and its quote/submission
+browser case passes **with API/auth fixtures**. Actual API/web image IDs, the affected customer's
+saved row and authenticated cash/card-wallet response remain unverified; the supplied email is
+known, but the browser input helper could not access the session reliably. No data correction.
+Read-only host helper: `deploy/vaydu-booking-cash/inspect-customer.sh`. Keep the cash override,
+check its API image pin and final Compose order, and preserve the existing GB/GBP single-driver
+cohort. Africa PIN still has no successful host output. Full boundaries/logs and pin implications
+are recorded in `docs/roadmap-evidence/booking-cash-20261116.md`.
 
 ## States
 
@@ -342,6 +359,7 @@ on until the host steps run. Live state is read with `host-live-config.sh` befor
 | 9a Ops alerts (P14) | ✓ 2026-11-14: scheduled report + email (`ops-alert.service.ts`, 13/13); recipient only from host config | ✗ (bundle) | ✗ → `VAYDU_OPS_ALERTS` + `VAYDU_OPS_ALERT_RECIPIENTS` on the API | ✗ | Address set on the host; `send-test-ops-alert.cjs` delivers |
 | 9b Backup restore | ✓ backup + drill in the release-2 host steps | ✓ | n/a | ✗ | Host drill |
 | NG payouts | ~ | ~ | ✗ | ✗ | **D-AF** deferred |
+| Errand purchase payer + driver-personal reimbursement | ✓ 2026-11-16: `20261270500000` — per-purchase payer records, funded-budget cap fix, method lock, reimbursement through the payout outbox (`reimbursementMinor` in queue terms; purchases `reimbursed` with the transfer id); real-PG 38/38 + specs 72/72 (`docs/roadmap-evidence/errand-purchase-payer-20261116.md`) | ✗ | methods derived from evidence; `customer_direct`/`vaydu_direct`/`cash_advance` rejected by guard | ✗ | Deploy migration; live driver-personal errand journey |
 
 **Money rules (2026-11-14):**
 - **Promos:** conversion uses `FareSplitService.toMinorExact`, which works on integers and refuses amounts with
