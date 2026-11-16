@@ -222,4 +222,5 @@ q movabi_develop -c "DELETE FROM public.driver_cash_credit_markets_v1e WHERE cou
 q movabi_develop < "$act/deactivate-gb-cash.sql" > /dev/null 2>&1 && echo "PASS: deactivate-gb-cash.sql" || { echo "FAIL: cash deactivation"; fail=1; }
 check "cash off everywhere after deactivation, enrolment kept" "$(q movabi_develop -c "select (select count(*) from public.market_availability where public.driver_cash_credit_market_enabled_v1e(country_code,supported_currency))||'|'||(select count(*) from public.driver_cash_credit_enrolments_v1e)")" "0|1"
 source "$root/scripts/activation/check-p8-reconciliation.sh"
+source "$root/scripts/completion-pin/check-africa-policy.sh"
 [ "$fail" = 0 ] && echo "REHEARSAL 2 PASSED" || { echo "REHEARSAL 2 FAILED"; exit 1; }

@@ -1,5 +1,11 @@
 # Current gate — tooling-only replacement `f949a14` (2026-11-16)
 
+**New authorised PIN policy release:** `../vaydu-completion-pin-africa/README.md` describes the
+DB-only audited explicit African-market defaults (off), GB required and preserved driver
+overrides/frozen jobs. Deploy separately after fresh baseline checks using the existing passing
+real-backup evidence. No API/web restart or Africa-provider activation is included. Host
+execution remains pending an authenticated channel; rejected SSH authentication is not retried.
+
 **Verified current baseline:** API f949a14, web movabi-web:release-f949a14-linux; inspection
 `/home/edsadmin/vaydu-p8-reconciliation.Q8xr7I`. The corrected P8 tooling verifies the web's
 served bytes/inventory against the pinned f949a14 bundle and records its actual image/container

@@ -95,6 +95,29 @@ now contains the corrected exact commands and pre-/post-commit recovery boundari
 **Go-live gate:** no release packaging or go-live until every mandatory, non-deferred row is
 Implemented, Integrated and Verified and every decision below is resolved. Not met.
 
+### Completion PIN country defaults (2026-11-16)
+
+User-approved D5 update: off by default for the repository's explicit African market catalogue
+NG/GH/KE/ZA/UG/TZ/RW/MW/EG/CM/CI/SN/ZM; GB remains required. No all-non-GB/Africa inference.
+Authorised same-tenant driver overrides remain higher priority. A new preparation trigger reads
+the current explicit tenant/platform country entry at first unfrozen acceptance and hands it to
+the existing market resolver and unchanged override/freeze trigger. Existing jobs, PIN secrets
+and driver overrides are not rewritten. Non-African markets and all original acquisition,
+ownership, readiness, PIN attempt/replay and settlement functions/guards remain unchanged.
+
+Implemented on branch as a DB-only audited transaction; **25/25 service/policy tests** and
+**13/13 real-PostgreSQL policy/settlement checks** pass. Full release-2 rehearsal passes all nine
+original suites, P8 composition and exact rollback. NG completion succeeds without a PIN in an
+eligible provider/transport fixture; GB missing/wrong PINs reject. Real DB verifies tenant/driver
+isolation, frozen jobs, newly accepted pending jobs, audit, generic-tenant fallback and exactly
+one earnings/outbox record on settlement retry. This does not establish live provider readiness.
+
+**Deployment/activation pending authenticated host execution.** Existing authorisation is retained;
+only local Docker Desktop contexts are available, and rejected SSH authentication is not retried.
+Prepared deploy tools reuse passing real-backup evidence, verify f949a14/eef726b API and the
+release-f949a14-linux web content/image IDs, dry-run then apply/verify without restarting either.
+Details: `deploy/vaydu-completion-pin-africa/README.md`. Africa-provider integration stays deferred.
+
 ## States
 
 | State | Meaning (all must hold) |
@@ -477,7 +500,7 @@ release is deployed.
 | D2 | Approved map style (provider + style id) per platform. |
 | D3 | Matching weights for acceptance/cancellation rate and new-driver exposure, or confirm 0. |
 | D4 | What counts as account sharing, and the action taken. |
-| D5 | Default PIN mode per market. |
+| ~~D5~~ | **Resolved 2026-11-16:** explicit African catalogue off by default; GB required. Preserve authorised per-driver overrides and existing frozen jobs; apply current country policy to new acceptances. DB-only audited release prepared; host deployment pending. |
 | D6 | Per market+currency money values: promo cap + min fare, referral caps + min fare, funded campaign budgets, overdue-debt terms. |
 | D7 | Driver bonus rules and amounts. |
 | D8 | GB develop cash-ride cohort: driver id, tenant id, accepted terms version (and separate approval to enable). |
@@ -497,7 +520,7 @@ a value on your behalf: where a value is needed, the option names it.
 | D2 | Map styling (4c) | (a) Keep the current MapLibre/MapTiler base style. (b) A named provider + style id per platform (you supply). |
 | D3 | Reliability weights in matching (1b) | (a) Confirm 0: location only, reliability reported but not ranked. (b) Weights for acceptance rate, cancellation rate and new-driver exposure (you supply). Separately, (c) enable road-ETA ranking: this needs `VAYDU_TOMTOM_MATRIX_V23`, currently `false`, which adds TomTom matrix spend; or keep it off. |
 | D4 | Account-sharing policy (2b) | (a) Detection only: report signals to admins and take no automatic action. (b) Signals + action (e.g. suspend for review), with the signal definition you supply. Today only suspension/token revocation exists. |
-| D5 | Completion PIN (3) | Default per market: (a) off; (b) on for rides only; (c) on for all services. Per-driver overrides already exist. |
+| ~~D5~~ | Completion PIN (3) | Resolved: explicit African market defaults off, GB required; authorised same-tenant driver overrides preserved. No new policy decision needed. |
 | D6 | Promotions, referrals, campaigns, cancellation fees, overdue debt (6a/6c/7a/7b) | The rates are approved (5% promo, referrals, 80/20, debt threshold 50% of the minimum fare). Missing per market+currency: promo cap and minimum fare; referral caps and minimum fare; campaign budgets; cancellation fee amount, cap and grace period; overdue-debt terms. (a) Supply values for GB/GBP develop only. (b) Keep off. |
 | D7 | Driver bonuses (7c) | (a) Bonus rules and amounts (you supply). (b) Keep out of launch. |
 | D8 | GB develop cash-ride cohort (5b) | Supply the test driver id, the tenant id and the accepted cash terms version, plus separate approval to enable. (b) Keep off. |
