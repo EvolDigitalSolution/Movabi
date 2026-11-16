@@ -44,6 +44,11 @@ Exact correction/activation commands and verification limits:
 The full release-2 rehearsal also passes with blank/NULL GB profile registration fields,
 including activation twice, all nine suites, NG isolation, exact rollback and the existing
 campaign/surge/AI guards. This is local evidence; it does not establish live activation.
+Correction source commit: `a180556`. Operator artifact:
+`release/vaydu-gb-scope-fix-a180556.tar.gz`, SHA-256
+`a8fe2694d563f7d6a4fe2fa4ac95e174544caf9fc09e8f53b8976b933e03a394`.
+Archive contents verified against committed tools; API/web/release SQL unchanged from before
+this correction. Exact commands are in `deploy/vaydu-develop-activation/RUN-LEGACY-GB-SCOPE.md`.
 
 **Go-live gate:** no release packaging or go-live until every mandatory, non-deferred row is
 Implemented, Integrated and Verified and every decision below is resolved. Not met.
