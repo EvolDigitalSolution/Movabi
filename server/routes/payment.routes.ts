@@ -1,5 +1,6 @@
 ﻿import {stripeCheckoutMarket} from '../services/booking-payment-context';
 import {createMarketPaymentContextRouter} from './market-payment-context.routes';
+import { resolveGbQuoteTenant, QuoteTenantContextError } from '../services/gb-quote-tenant';
 import {loadDatabasePaymentPolicies} from '../services/payments/market-payment-store';
 import { createCardWalletRouter } from './card-wallet.routes';
 import { StripeSavedCards } from '../services/payments/stripe-saved-cards';
@@ -145,6 +146,9 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
     const city = await CityService.findCityForLocation(Number(lat), Number(lng));
     const stats = await dispatchService.getAreaStats(Number(lat), Number(lng));
 
+    const resolvedCountryCode = countryCode || (city as any)?.country_code || (city as any)?.country || 'GB';
+    const quoteTenantId = await resolveGbQuoteTenant({ countryCode: resolvedCountryCode,
+      authorization: req.headers.authorization, legacyTenantId: tenantId }, supabaseAdmin);
     const pricingInput = {
       lat: Number(lat),
       lng: Number(lng),
@@ -158,7 +162,7 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
       currencyCode,
       pricingPlan: pricingPlan || 'starter',
       city,
-      tenantId: tenantId || null,
+      tenantId: quoteTenantId,
       cityZone: cityZone || city?.name || null,
       zoneId: zoneId || cityZone || null,
       driverTier: driverTier || null,
@@ -199,6 +203,7 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('[PaymentRoutes] calculate-price failed:', error);
+    if (error instanceof QuoteTenantContextError) return res.status(error.status).json({ error: error.message, code: error.code });
     return res.status(500).json({ error: error.message || 'Failed to calculate price' });
   }
 });

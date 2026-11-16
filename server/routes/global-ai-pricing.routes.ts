@@ -1,4 +1,5 @@
 import {mapQuoteContext} from '../services/map-quote-context';
+import { resolveGbQuoteTenant, QuoteTenantContextError } from '../services/gb-quote-tenant';
 import {supabaseAdmin} from '../services/supabase.service';
 import { Router, Request, Response } from 'express';
 import { dispatchService } from '../services/dispatch.service';
@@ -26,11 +27,13 @@ router.post('/quote', quoteLimiter, async (req: Request, res: Response) => {
     }
 
     const mapAuthority=process.env.VAYDU_MAP_QUOTE_AUTHORITY_V23==='true';
+    let authenticatedUserId: string | null = null;
     if(mapAuthority){
       const header=String(req.headers.authorization||'');
       if(!/^Bearer\s+\S+$/i.test(header))return res.status(401).json({error:'Please sign in again.'});
       const {data,error}=await supabaseAdmin.auth.getUser(header.replace(/^Bearer\s+/i,''));
       if(error||!data?.user)return res.status(401).json({error:'Please sign in again.'});
+      authenticatedUserId=data.user.id;
     }
     const mapped=mapAuthority?await mapQuoteContext(req.body):null;
     let city = await CityService.findCityForLocation(lat, lng);
@@ -47,6 +50,8 @@ router.post('/quote', quoteLimiter, async (req: Request, res: Response) => {
     );
     const cityName = city?.name || null;
     const availability = await MarketAvailabilityService.requireCapability({ countryCode, marketCity: cityName, zoneId: req.body.zoneId, capability: 'quote', endpoint: '/api/pricing/global-ai/quote' });
+    const tenantId = await resolveGbQuoteTenant({ countryCode: availability.countryCode,
+      authorization: req.headers.authorization, legacyTenantId: req.body.tenantId, authenticatedUserId }, supabaseAdmin);
     const quoteReference = randomUUID();
     const { legacyPricing, quote } = await GlobalAiPricingService.resolveQuote({
       ...req.body,
@@ -56,6 +61,7 @@ router.post('/quote', quoteLimiter, async (req: Request, res: Response) => {
       pickupLng: req.body.pickupLng ?? lng,
       ...(mapped?{distanceKm:mapped.distanceKm,durationMinutes:mapped.durationMinutes,currencyCode:availability.currency}:{}),
       countryCode: availability.countryCode,
+      tenantId,
       cityName: availability.marketCity || cityName,
       city: city || null,
       demand: req.body.demand ?? stats.demand,
@@ -105,6 +111,7 @@ router.post('/quote', quoteLimiter, async (req: Request, res: Response) => {
 
     return res.json(responseBody);
   } catch (error: any) {
+    if (error instanceof QuoteTenantContextError) return res.status(error.status).json({ error: error.message, code: error.code });
     if(['MARKET_PRICING_NOT_CONFIGURED','MARKET_PRICING_CURRENCY_MISMATCH'].includes(error?.code))return res.status(409).json({error:'Pricing is not available for this pickup area yet.',code:error.code});
     console.error('[GlobalAiPricingRoutes] quote failed:', error);
     if (error instanceof MarketAvailabilityError) return res.status(error.httpStatus).json({ error: error.message, code: error.code, ...error.market });

@@ -1,5 +1,16 @@
 # Current gate — tooling-only replacement `f949a14` (2026-11-16)
 
+**Current activation handoff:** use `../vaydu-develop-activation/P8-RECONCILIATION.md` and its
+small checksummed P8 artifact. It inspects all activation prerequisites together, reconciles the
+four captured GB strategies, preserves inherited non-GB defaults, and runs the unchanged
+activation guard/body with correction under one dry-run/apply transaction. It includes the prior
+legacy UK scope correction only when still needed. The 3.35 minimum and both AI shadow controls
+stay; no new pricing decision. Existing backup/release gates still apply; no host run is inferred.
+The paired API-only candidate fixes the booking payload's missing tenant context; deploy it
+between inspection and atomic data apply. Its tenant binding stays off until that transaction.
+It uses f949a14 plus only two quote routes/one helper; web/release SQL stay identical and unfinished
+P3/P10/P11/P12 work is excluded. Do not deploy the current branch wholesale.
+
 **Activation mismatch follow-up:** user live evidence shows four blank-country legacy UK GBP
 pricing rows and an existing ride minimum of **GBP 3.35**. Do not alter the minimum or relax the
 activation guard. Use the separate checksummed scope-correction tools described in

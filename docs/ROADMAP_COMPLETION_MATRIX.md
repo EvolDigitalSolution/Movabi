@@ -50,6 +50,33 @@ Correction source commit: `a180556`. Operator artifact:
 Archive contents verified against committed tools; API/web/release SQL unchanged from before
 this correction. Exact commands are in `deploy/vaydu-develop-activation/RUN-LEGACY-GB-SCOPE.md`.
 
+### P8 strategy precedence and complete activation inspection (2026-11-16)
+
+The next operator handoff supersedes separate first-error activation attempts. Four existing GB
+strategy IDs are captured, audited and reconciled to cap 1.5, normal 1.0 and no fixed busy override,
+so the existing demand/supply curve runs. The quote strategy scope has no tenant filter; currency,
+country/service, vehicle/city/zone specificity, dates and updated_at priority were traced first.
+All unrelated strategy fields/IDs/timestamps, NG/other markets and both AI shadow controls stay.
+
+The comprehensive preflight reports all release, minimum/profile, scope, AI, campaign, settings,
+effective-policy and permission/trigger prerequisites together. It also identifies the setting-
+inheritance hazard: a new GB tenant row must copy current platform defaults before markets.GB is
+set, so that tenant's NG quotes do not change. The copy is audited; platform rows are unchanged.
+The exact activation body/guards are unchanged and run with all corrections under one outer
+transaction, first ROLLBACK then COMMIT, with explicit financial/market isolation assertions.
+
+The actual booking payload omits tenantId. A paired API-only candidate binds authenticated GB
+customer/driver quotes to their native profile tenant; its tenant-specific switch turns on in
+that same data transaction. It preserves preactivation/foreign routing, uses f949a14 plus only
+two quote routes and one helper, and excludes unfinished branch followups. Calculators, web and
+release SQL remain byte-identical to f949a14. Deploy that isolated candidate, not this whole branch.
+
+Local focused tests: **14/14** (7 PostgreSQL/real-resolver/real-quote cases plus 7 existing dynamic
+pricing tests), plus **25/25** tenant/route/country checks and server typecheck. Full release-2
+rehearsal tests the combined path, atomic tenant switch, all nine behaviour suites and rollback.
+**No host execution, live activation or develop journey is claimed.** The existing
+real-backup gate remains required. Operator details: `deploy/vaydu-develop-activation/P8-RECONCILIATION.md`.
+
 **Go-live gate:** no release packaging or go-live until every mandatory, non-deferred row is
 Implemented, Integrated and Verified and every decision below is resolved. Not met.
 
