@@ -1,5 +1,12 @@
 # Current gate — tooling-only replacement `f949a14` (2026-11-16)
 
+**Verified current baseline:** API f949a14, web movabi-web:release-f949a14-linux; inspection
+`/home/edsadmin/vaydu-p8-reconciliation.Q8xr7I`. The corrected P8 tooling verifies the web's
+served bytes/inventory against the pinned f949a14 bundle and records its actual image/container
+IDs. API-only rollout must preserve those identities. Reuse the passing real-backup evidence.
+See `../vaydu-develop-activation/P8-RECOVERY.md` for exact-image API recovery if SQL activation
+has not committed; post-commit verification failure must retain the paired API for investigation.
+
 **Current activation handoff:** use `../vaydu-develop-activation/P8-RECONCILIATION.md` and its
 checksummed P8 artifact. Exact source/hash/commands are in
 `../vaydu-develop-activation/RUN-P8-RECONCILIATION.md`. It inspects all activation prerequisites together, reconciles the

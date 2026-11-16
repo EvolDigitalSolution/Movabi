@@ -76,13 +76,22 @@ profiles, settings, existing campaigns and policies are checked for unintended c
 
 ## Host commands
 
+Current verified baseline (superseding the earlier c972037/3c91991 inventory): API f949a14,
+web movabi-web:release-f949a14-linux. Inspection evidence supplied by the operator:
+/home/edsadmin/vaydu-p8-reconciliation.Q8xr7I. No SSH retry is used to read that remote path.
+Each new inspection verifies served web bytes and exact file inventory against manifests
+derived from the checksum-pinned f949a14 bundle, checks the exact tag and its running image ID,
+and records actual web image/container IDs. Rollout checks those identities remain unchanged.
+The prior passing real-backup evidence is reused and its path/hash recorded in fresh evidence.
+See P8-RECOVERY.md for the API-deployed/activation-failed boundary and exact-image recovery.
+
 The actual booking client sends its session token but no tenantId. The paired API binds signed-in
 GB customer/driver quotes to the verified profile tenant, skipping blank registration country
 before country_code. Body tenant/user IDs cannot override the verified identity. A per-tenant
 quote_tenant_binding.markets.GB switch is enabled only in the same transaction as P8 activation.
 Before that switch, legacy routing remains in effect. Foreign-market routing is unchanged.
 
-The paired API uses immutable f949a14 as its base with exactly two route changes and one new
+The paired API is the unchanged reviewed eef726b archive, using immutable f949a14 as its base with exactly two route changes and one new
 helper. Calculators, web and release SQL are byte-identical to that base. Unfinished P3/P10/P11/
 P12 branch changes are excluded. Do not deploy the current branch wholesale or use the nested
 base artifact's older activation copy: use these operator tools.
@@ -127,3 +136,11 @@ the actual composed dry run and atomic apply, platform-default inheritance, all 
 suites, atomic tenant-binding activation and schema rollback. Server typecheck passes. Host output remains required; local transport tests are not labelled
 as live provider, browser or develop verification. Production, GB Stripe, inspection enforcement,
 Mapbox permanent=false and deferred Africa integrations are untouched.
+
+Baseline-tooling correction adds six isolated regressions of the actual shipped web guard:
+verified bytes/IDs accepted; old tag, retagged image, modified, missing and extra files refused.
+Packaging rechecks both archive manifests and the complete candidate/base difference set;
+the nested eef726b API archive is reused byte for byte. SQL and API source are unchanged by
+this tooling correction, so their earlier 39 tests and nine-suite rehearsal remain applicable.
+Three recovery regressions also refuse active bindings, failed DB inspection and wrong project
+without issuing a Docker mutation.

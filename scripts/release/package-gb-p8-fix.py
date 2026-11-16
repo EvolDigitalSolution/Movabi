@@ -23,7 +23,8 @@ files = {}
 for file in ['activate-gb.sql', 'correct-legacy-gb-pricing.sql', 'correct-gb-p8-strategies.sql',
              'activation-preflight.sql', 'p8-transaction-before.sql', 'p8-transaction-after.sql', 'preserve-platform-defaults.sql',
              'build-p8-transaction.sh', 'activate-gb-quote-tenant.sql', 'probe-p8-quotes.cjs',
-             'reconcile-gb-p8.sh', 'deploy-p8-api.sh', 'P8-RECONCILIATION.md']:
+             'reconcile-gb-p8.sh', 'deploy-p8-api.sh', 'verify-p8-web.sh', 'recover-p8-api.sh',
+             'P8-RECOVERY.md', 'P8-RECONCILIATION.md']:
     files[file] = committed(f'deploy/vaydu-develop-activation/{file}')
 files['P8_VERIFY.sql'] = committed('deploy/vaydu-develop-release-2/VERIFY.sql')
 api_paths = ['server/services/pricing.service.ts', 'server/services/marketplace-config.service.ts',
@@ -41,33 +42,35 @@ for manifest in ['SHA256SUMS', 'ALL_SHA256SUMS', 'RELEASE-MIGRATIONS.sha256']:
     for line in base[manifest].decode().splitlines():
         digest, path = line.split(None, 1)
         assert hashlib.sha256(base[path.lstrip('*').removeprefix('./')]).hexdigest() == digest
-candidate = dict(base)
+# Tooling correction: reuse the previously reviewed paired API archive byte for byte.
+previous = root / 'release/vaydu-gb-p8-fix-eef726b.tar.gz'
+assert hashlib.sha256(previous.read_bytes()).hexdigest() == 'c92f2f33a0ae9d61c62bd17a32a722f31c3afa6a3eea98413d620f60f94cf99a'
+with tarfile.open(previous) as tar:
+    old = {m.name.split('/', 1)[1]: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile()}
+api_name = 'vaydu-develop-eef726b-release-linux'
+api_data = old[api_name + '.tar.gz']
+with tarfile.open(fileobj=io.BytesIO(api_data)) as tar:
+    candidate = {m.name.split('/', 1)[1]: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile()}
 patches = ['server/routes/global-ai-pricing.routes.ts', 'server/routes/payment.routes.ts', 'server/services/gb-quote-tenant.ts']
-for path in patches:
-    candidate[path] = committed(path)
-for path in api_paths[:4]:
-    assert candidate[path] == committed(path), f'Unexpected calculator change: {path}'
-candidate['SOURCE_SHA'] = (sha + '\n').encode()
-candidate['API_BASE_SOURCE'] = b'f949a14\n'
-candidate['P8_API_PATCH.json'] = json.dumps({'base': 'f949a14', 'source': sha, 'patched_paths': patches,
-    'web_and_release_sql': 'byte-identical to base', 'unfinished_followups': 'excluded'}, indent=2).encode() + b'\n'
-for path, data in base.items():
-    if path not in patches + ['SOURCE_SHA', 'SHA256SUMS', 'ALL_SHA256SUMS']:
-        assert candidate[path] == data
-checks = [line.split(None, 1)[1].lstrip('*').removeprefix('./') for line in base['SHA256SUMS'].decode().splitlines()]
-candidate['SHA256SUMS'] = ''.join(hashlib.sha256(candidate[p]).hexdigest() + '  ' + p + '\n' for p in checks).encode()
-candidate['ALL_SHA256SUMS'] = ''.join(hashlib.sha256(data).hexdigest() + '  ./' + p + '\n'
-    for p, data in sorted(candidate.items()) if p not in ['SHA256SUMS', 'ALL_SHA256SUMS']).encode()
-api_name = f'vaydu-develop-{sha}-release-linux'
-api_buffer = io.BytesIO()
-with tarfile.open(fileobj=api_buffer, mode='w:gz') as tar:
-    for p, data in sorted(candidate.items()):
-        info = tarfile.TarInfo(api_name + '/' + p); info.size = len(data); info.mode = modes.get(p, 0o644)
-        tar.addfile(info, io.BytesIO(data))
-api_data = api_buffer.getvalue()
+changed = {p for p in base.keys() | candidate.keys() if base.get(p) != candidate.get(p)}
+assert changed == set(patches + ['SOURCE_SHA', 'SHA256SUMS', 'ALL_SHA256SUMS', 'API_BASE_SOURCE', 'P8_API_PATCH.json']), sorted(changed)
+for path in api_paths:
+    assert candidate[path] == committed(path), f'Unexpected API change: {path}'
+for manifest in ['SHA256SUMS', 'ALL_SHA256SUMS', 'RELEASE-MIGRATIONS.sha256']:
+    for line in candidate[manifest].decode().splitlines():
+        digest, path = line.split(None, 1)
+        assert hashlib.sha256(candidate[path.lstrip('*').removeprefix('./')]).hexdigest() == digest
+web = {p.removeprefix('mobile/browser/'): data for p, data in base.items() if p.startswith('mobile/browser/')}
+assert web and 'index.html' in web
+files['P8_WEB_f949a14_SHA256SUMS'] = ''.join(hashlib.sha256(data).hexdigest() + '  ./' + p + '\n' for p, data in sorted(web.items())).encode()
+files['P8_WEB_f949a14_FILES.txt'] = ''.join('./' + p + '\n' for p in sorted(web)).encode()
+files['P8_API_DIFF.json'] = json.dumps({'base': 'f949a14', 'candidate': 'eef726b', 'changed_source_paths': patches,
+    'other_differences': sorted(changed - set(patches)), 'web_release_sql_and_remaining_base': 'byte-identical',
+    'paired_api_archive': 'byte-identical to prior reviewed eef726b operator artifact'}, indent=2).encode() + b'\n'
 files[api_name + '.tar.gz'] = api_data
 files[api_name + '.tar.gz.sha256'] = (hashlib.sha256(api_data).hexdigest() + '  ' + api_name + '.tar.gz\n').encode()
-files['SOURCE_SHA'] = (sha + '\n').encode()
+files['SOURCE_SHA'] = b'eef726b\n'
+files['TOOLING_SOURCE_SHA'] = (sha + '\n').encode()
 files['P8_SHA256SUMS'] = ''.join(hashlib.sha256(data).hexdigest() + '  ' + file + '\n' for file, data in sorted(files.items())).encode()
 with tarfile.open(archive, 'x:gz') as tar:
     for file, data in sorted(files.items()):

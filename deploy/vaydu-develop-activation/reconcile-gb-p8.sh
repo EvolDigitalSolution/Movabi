@@ -19,16 +19,14 @@ if docker exec -i -w /app movabi-develop-api sha256sum -c < "$HERE/P8_API_SHA256
 else cat "$E/api-integrity.txt"; echo 'CORRECTABLE: paired API tenant-binding update required before --apply'; api_ready=0; fi
 if [[ "$api_ready" = 0 ]]; then
   case "$(cat "$E/api-source.txt")" in
-    c972037|f949a14|"$(cat "$HERE/SOURCE_SHA")") echo 'PASS: API source is an approved baseline or paired candidate' ;;
-    *) echo 'BLOCK: API source differs from the recorded c972037/reviewed f949a14 baseline; preserve it for review'; blocks=$((blocks+1)) ;;
+    f949a14|"$(cat "$HERE/SOURCE_SHA")") echo 'PASS: API source is the verified f949a14 baseline or paired candidate' ;;
+    *) echo 'BLOCK: API source differs from verified f949a14 baseline; preserve it for review'; blocks=$((blocks+1)) ;;
   esac
   if printf '%s  %s\n' 54de2e6be3bad38ede117414fd6ca5480b110b10541c4c5b4e81c7ed34c6675d /home/edsadmin/rollout-develop-52097ef.sh | sha256sum -c -; then :;
   else echo 'BLOCK: approved API-only rollout helper is missing or changed'; blocks=$((blocks+1)); fi
 fi
-mapfile -t web_images < <(docker ps --filter label=com.docker.compose.service=web --filter label=com.docker.compose.project=movabi-develop --format '{{.Image}}')
-printf '%s\n' "${web_images[@]}" | tee "$E/web-image.txt"
-if [[ "${#web_images[@]}" = 1 && "${web_images[0]}" = movabi-web:*3c91991* ]]; then echo 'PASS: recorded 3c91991 web baseline retained';
-else echo 'BLOCK: web baseline differs from recorded 3c91991; inspect before rollout'; blocks=$((blocks+1)); fi
+if bash "$HERE/verify-p8-web.sh" "$E"; then :;
+else echo 'BLOCK: verified f949a14 web baseline required'; blocks=$((blocks+1)); fi
 if docker exec movabi-develop-api node -e 'const e=process.env;console.log(JSON.stringify({gbStripeTest:!!e.STRIPE_SECRET_KEY?.startsWith("sk_test_"),cashFlag:e.VAYDU_CASH_RIDE_BOOKING==="true",opsFlag:e.VAYDU_OPS_ALERTS==="true",opsRecipients:(e.VAYDU_OPS_ALERT_RECIPIENTS||"").split(",").filter(Boolean).length,smtpConfigured:!!(e.EMAIL_USER&&e.EMAIL_PASS),note:"cash/ops prerequisites are separate; this command changes neither"}))' | tee "$E/optional-environment.json"; then :;
 else echo 'BLOCK: develop API environment inspection unavailable'; blocks=$((blocks+1)); fi
 if P -q < "$HERE/P8_VERIFY.sql" > "$E/release-verify.log" 2>&1; then echo 'PASS: full unchanged release-2 VERIFY';
@@ -56,6 +54,7 @@ if [[ -z "${RESTORE_DRILL_LOG:-}" ]]; then
 fi
 if [[ -n "${RESTORE_DRILL_LOG:-}" && -f "$RESTORE_DRILL_LOG" ]]; then
   if passed_drill "$RESTORE_DRILL_LOG"; then echo "PASS: recorded real-backup drill evidence $RESTORE_DRILL_LOG";
+    printf '%s\n' "$RESTORE_DRILL_LOG" > "$E/restore-drill-path.txt"; sha256sum "$RESTORE_DRILL_LOG" > "$E/restore-drill.sha256";
   else echo 'BLOCK: recorded restore drill did not satisfy the gate'; blocks=$((blocks+1)); fi
 elif [[ "$MODE" = --apply || "${P8_REQUIRE_RESTORE_GATE:-false}" = true ]]; then echo 'BLOCK: RESTORE_DRILL_LOG must name the existing passed real-backup drill.log'; blocks=$((blocks+1));
 else echo 'EXTERNAL GATE: set RESTORE_DRILL_LOG to the existing passed real-backup drill log before --apply'; fi

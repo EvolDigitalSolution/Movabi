@@ -6,7 +6,11 @@ the same commit as any change that moves a state. Last updated 2026-11-16.
 
 ### Current develop baseline and restore gate (2026-11-16)
 
-- User-reported current baseline: **API `c972037`, web `3c91991`**. Older inventories below are
+- Verified current baseline supplied by the user: **API `f949a14`, web `release-f949a14-linux`**,
+  superseding API c972037/web 3c91991. Inspection: `/home/edsadmin/vaydu-p8-reconciliation.Q8xr7I`.
+  Corrected tools require exact web tag, f949a14 served-file hashes/inventory and matching actual
+  image ID; they record that ID/container for rollback and assert both survive API-only rollout.
+  The passing real-backup drill evidence is reused, with its path/hash retained. Older inventories below are
   historical. A fresh host image/SOURCE_SHA check is required before deployment; rejected SSH
   authentication is not retried. No deployment or activation has been verified in this session.
 - Replacement tooling checks globals restoration (`ON_ERROR_STOP=1`) and `pg_restore
@@ -22,7 +26,8 @@ the same commit as any change that moves a state. Last updated 2026-11-16.
 - Tooling replacement: **`f949a14`**, archive SHA-256
   `58dcdbaf0b27769bcf15bfbfa584e4e64002c4ab27ada42cd4f5f57cc089488a`. Shipped drill passes
   local synthetic-data rehearsal (9/9 + preservation + rollback) and 5/5 failure regressions;
-  **real-backup host gate still pending**. Exact host command is in the current RUNBOOK gate.
+  **passing real-backup evidence reported by the user**, revalidated by the P8 tools before deployment.
+  Exact original drill command remains in the RUNBOOK; no repeat or new backup is requested.
 
 ### Activation mismatch: legacy UK pricing scope (2026-11-16)
 
