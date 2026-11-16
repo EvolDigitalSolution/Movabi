@@ -69,8 +69,8 @@ export class PaymentService {
     // JOB PAYMENT
     // =========================
 
-    async cardWallet():Promise<{canAdd:boolean;consentVersion:string;cards:Array<{id:string;brand:string;last4:string;expMonth:number;expYear:number}>}> {
-        return firstValueFrom(this.http.get<{canAdd:boolean;consentVersion:string;cards:Array<{id:string;brand:string;last4:string;expMonth:number;expYear:number}>}>(`${this.apiUrl}/card-wallet`,{headers:await this.getAuthHeaders()}));
+    async cardWallet():Promise<{canAdd:boolean;reasonCode?:string|null;consentVersion:string;cards:Array<{id:string;brand:string;last4:string;expMonth:number;expYear:number}>}> {
+        return firstValueFrom(this.http.get<{canAdd:boolean;reasonCode?:string|null;consentVersion:string;cards:Array<{id:string;brand:string;last4:string;expMonth:number;expYear:number}>}>(`${this.apiUrl}/card-wallet`,{headers:await this.getAuthHeaders()}));
     }
     async beginCardSetup(requestId:string,consentVersion:string):Promise<{clientSecret:string;setupIntentId:string}> {
         return firstValueFrom(this.http.post<{clientSecret:string;setupIntentId:string}>(`${this.apiUrl}/card-wallet/setup`,{requestId,consentVersion},{headers:await this.getAuthHeaders()}));

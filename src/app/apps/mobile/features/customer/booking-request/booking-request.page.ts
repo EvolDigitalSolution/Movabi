@@ -14,7 +14,6 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
-    FormsModule,
     ReactiveFormsModule,
     FormBuilder,
     FormGroup,
@@ -124,7 +123,6 @@ type PackageSize = 'small' | 'medium' | 'large';
     imports: [
         IonicModule,
         CommonModule,
-        FormsModule,
         ReactiveFormsModule,
         ButtonComponent,
         InputComponent,
@@ -987,8 +985,8 @@ type PackageSize = 'small' | 'medium' | 'large';
                         <div class="mt-4 flex items-center gap-2" data-testid="discount-entry">
                           <input
                             type="text"
-                            [ngModel]="discountCodeInput()"
-                            (ngModelChange)="discountCodeInput.set($event)"
+                            [value]="discountCodeInput()"
+                            (input)="discountCodeInput.set($any($event.target).value)"
                             placeholder="Discount code"
                             autocomplete="off"
                             class="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold uppercase tracking-wide focus:border-blue-400 focus:outline-none"
@@ -1086,6 +1084,9 @@ type PackageSize = 'small' | 'medium' | 'large';
                           </label>
                         }
                       </fieldset>
+                      @if (cashOffer()?.available && !cashChosen()) {
+                        <p class="text-xs text-slate-200">Cash means paying the fare to your driver. A separate card security hold is still required for cancellation or no-show fees.</p>
+                      }
                       @if (cashChosen()) {
                         <p class="text-xs text-slate-200" role="note" aria-label="Cash payment terms">
                           Pay {{ formatRequestCurrency(walletPaymentRequired()) }} in cash to your driver at the end of the ride.
@@ -1145,6 +1146,9 @@ type PackageSize = 'small' | 'medium' | 'large';
                 }
 
 
+                @if (quoteValid() && cashOffer()?.available === false) {
+                  <p data-testid="cash-unavailable-reason" role="status" class="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">{{ cashOffer()?.reason || 'Cash availability could not be confirmed. You can still choose card.' }}</p>
+                }
                 @if (showNoShowDisclosure()) {
                   <div data-testid="no-show-disclosure" class="text-xs text-slate-500 leading-relaxed">
                     <p>By booking, you agree to the cancellation and no-show policy.</p>
@@ -1394,15 +1398,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     @ViewChild('cardElementContainer')
     set cardElementContainerRef(ref: ElementRef<HTMLDivElement> | undefined) {
-        if (ref && !this.cardElementHost) {
-            this.cardElementHost = ref;
-            void this.initStripeElements();
-        } else if (!ref) {
-            this.cardMounted = false;
-            this.cardReady.set(false);
-            this.cardComplete.set(false);
-            this.cardElementHost = null;
-        }
+        if (ref?.nativeElement === this.cardElementHost?.nativeElement) return;
+        if (this.cardMounted) this.card?.unmount();
+        this.cardMounted = false;
+        this.cardReady.set(false);
+        this.cardComplete.set(false);
+        this.cardElementHost = ref || null;
+        if (ref) void this.initStripeElements();
     }
 
     private fb = inject(FormBuilder);
@@ -1432,6 +1434,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     ServiceTypeEnum = ServiceTypeEnum;
     type: ServiceTypeEnum = ServiceTypeEnum.RIDE;
     bookingForm!: FormGroup;
+    private formSubscriptions = new Subscription();
+    private routeSubscription?: Subscription;
 
     estimatedPrice = signal(0);
     submitting = signal(false);
@@ -1603,7 +1607,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         ].includes(message) ? message : null;
     });
     private lastFareBreakdown: GlobalAiPricingFareBreakdown | null = null;
-    private lastQuoteReference: string | null = null;
+    private readonly quoteReference = signal<string | null>(null);
+    private get lastQuoteReference(): string | null { return this.quoteReference(); }
+    private set lastQuoteReference(value: string | null) { this.quoteReference.set(value); }
     private lastQuoteExpiresAt: string | null = null;
     /** Signature of the last SUCCESSFUL authoritative quote (null until one succeeds). */
     private lastQuotedSignature: string | null = null;
@@ -1712,7 +1718,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     });
 
     /** A current authoritative quote exists, so a discount code can be bound to it. */
-    hasCurrentQuote = computed(() => !!this.lastQuoteReference);
+    hasCurrentQuote = computed(() => this.quoteValid() && !!this.lastQuoteReference);
 
     walletBalance = computed(() => {
         const wallet=this.walletService.wallet();
@@ -1727,7 +1733,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     paymentChoice = signal<'card' | 'wallet' | 'cash'>('card');
     /** Server decision for paying the current quote in cash (pilot markets); null = not offered. */
-    cashOffer = signal<{ available: boolean; holdAmountMinor?: number; currency?: string } | null>(null);
+    cashOffer = signal<{ available: boolean; holdAmountMinor?: number; currency?: string; code?: string; reason?: string } | null>(null);
     cashChosen = computed(() => this.paymentChoice() === 'cash' && !!this.cashOffer()?.available);
     cashHoldMajor = computed(() => {
         const offer = this.cashOffer();
@@ -1747,9 +1753,14 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         try {
             const offer = await this.paymentService.cashAvailability(quoteId);
             if (this.lastQuoteReference !== quoteId) return;
-            this.cashOffer.set(offer?.available ? offer : null);
+            this.cashOffer.set(offer || null);
             if (!offer?.available && this.paymentChoice() === 'cash') this.paymentChoice.set('card');
-        } catch { if (this.lastQuoteReference === quoteId) this.resetCashOffer(); }
+        } catch (error: any) {
+            if (this.lastQuoteReference !== quoteId) return;
+            this.resetCashOffer();
+            this.cashOffer.set({available:false,code:error?.error?.code || 'CASH_AVAILABILITY_UNCONFIRMED',
+                reason:error?.error?.code ? error.error.error : 'Cash availability could not be confirmed. You can still choose card.'});
+        }
     }
 
     walletCoversPayment = computed(() => {
@@ -1870,13 +1881,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             });
 
         this.pickupSearch$
-            .pipe(debounceTime(650), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
+            .pipe(distinctUntilChanged(), debounceTime(650), takeUntilDestroyed(this.destroyRef))
             .subscribe(query => {
                 this.performSearch('pickup', query);
             });
 
         this.dropoffSearch$
-            .pipe(debounceTime(650), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
+            .pipe(distinctUntilChanged(), debounceTime(650), takeUntilDestroyed(this.destroyRef))
             .subscribe(query => {
                 this.performSearch('dropoff', query);
             });
@@ -1927,6 +1938,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
      * profile, saved addresses, or any persistent user preference.
      */
     private resetRequestState(): void {
+        this.routeSubscription?.unsubscribe();
         this.globalAiPricingQuote.startNewRequest();
         this.quotedMarket.set(null);this.savedCardsOwner=null;this.savedCardsEnabled.set(false);this.savedCards.set([]);this.selectedSavedCard.set(null);
         // Pricing / route / quote state belongs to the previous request.
@@ -1972,6 +1984,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     ngOnDestroy() {
         this.searchDisposed=true;
+        this.formSubscriptions.unsubscribe();
+        this.routeSubscription?.unsubscribe();
+        this.fareRequestSequence += 1;
         this.addressSearchSubscriptions?.pickup?.unsubscribe();
         this.addressSearchSubscriptions?.dropoff?.unsubscribe();
         this.cardReady.set(false);
@@ -2491,6 +2506,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         if(!this.stripeJourney())return;
         if (this.cardMounted || this.stripeInitializing) return;
         if (!this.cardElementHost?.nativeElement) return;
+        const host = this.cardElementHost.nativeElement;
 
         this.stripeInitializing = true;
         this.cardReady.set(false);
@@ -2498,7 +2514,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.cardError.set(null);
 
         try {
-            this.stripe ??= await this.paymentService.getStripe();
+            const stripe = this.stripe || await this.paymentService.getStripe();
+            if (this.searchDisposed || this.cardElementHost?.nativeElement !== host || !this.stripeJourney()) return;
+            this.stripe = stripe;
 
             if (!this.stripe) {
                 this.cardError.set('Payment service is unavailable right now.');
@@ -2528,17 +2546,19 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 });
 
                 this.card.on('ready', () => {
+                    if (this.searchDisposed || !this.cardMounted) return;
                     this.cardReady.set(true);
                     this.cardError.set(null);
                 });
 
                 this.card.on('change', event => {
+                    if (this.searchDisposed || !this.cardMounted) return;
                     this.cardError.set(event.error?.message ?? null);
                     this.cardComplete.set(!!event.complete && !event.error);
                 });
             }
 
-            this.card.mount(this.cardElementHost.nativeElement);
+            this.card.mount(host);
             this.cardMounted = true;
         } catch (error) {
             console.error('Failed to initialize Stripe Elements', error);
@@ -2548,6 +2568,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             this.cardMounted = false;
         } finally {
             this.stripeInitializing = false;
+            if (!this.searchDisposed && this.cardElementHost?.nativeElement && this.cardElementHost.nativeElement !== host && this.stripeJourney()) {
+                void this.initStripeElements();
+            }
         }
     }
 
@@ -2636,6 +2659,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     private initForm() {
+        // A service-route change replaces the group. Retire its debounced subscriptions
+        // before binding the new controls; callbacks must never read a later form instance.
+        this.formSubscriptions.unsubscribe();
+        this.formSubscriptions = new Subscription();
         const baseFields = {
             pickup_address: ['', Validators.required],
             notes: ['']
@@ -2709,7 +2736,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
             this.applyErrandModeRules(initialMode);
 
-            this.bookingForm.get('errand_mode')?.valueChanges
+            this.formSubscriptions.add(this.bookingForm.get('errand_mode')?.valueChanges
                 .pipe(takeUntilDestroyed(this.destroyRef))
                 .subscribe(mode => {
                     this.applyErrandModeRules(
@@ -2719,13 +2746,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     this.syncFormSignals(this.bookingForm.getRawValue());
                     this.formValidSignal.set(this.bookingForm.valid);
                     void this.recalculateFare();
-                });
+                }));
         }
 
         this.syncFormSignals(this.bookingForm.getRawValue());
         this.formValidSignal.set(this.bookingForm.valid);
 
-        this.bookingForm.valueChanges
+        this.formSubscriptions.add(this.bookingForm.valueChanges
             .pipe(
                 debounceTime(400),
                 distinctUntilChanged(),
@@ -2735,13 +2762,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 this.syncFormSignals(this.bookingForm.getRawValue());
                 this.formValidSignal.set(this.bookingForm.valid);
                 void this.recalculateFare();
-            });
+            }));
 
-        this.bookingForm.statusChanges
+        this.formSubscriptions.add(this.bookingForm.statusChanges
             .pipe(takeUntilDestroyed(this.destroyRef))
             .subscribe(() => {
                 this.formValidSignal.set(this.bookingForm.valid);
-            });
+            }));
     }
 
     private syncFormSignals(values: Record<string, unknown>) {
@@ -3109,6 +3136,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     private updateRoute() {
+        this.routeSubscription?.unsubscribe();
         if (
             this.pickupLocation.latitude &&
             this.pickupLocation.longitude &&
@@ -3134,7 +3162,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 return;
             }
 
-            this.routing.getRoute(pickup, dropoff).subscribe(result => {
+            this.routeSubscription = this.routing.getRoute(pickup, dropoff).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(result => {
                 if (result) {
                     this.routeResult.set(result);
                     this.mapComponent.drawRoute(result);
@@ -3163,6 +3191,20 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     private clearRouteAndFare() {
+        this.routeSubscription?.unsubscribe();
+        // Editing an address invalidates work already in flight, even before another
+        // complete route exists. A late quote must not resurrect retired payment views.
+        this.fareRequestSequence += 1;
+        this.quoteInFlightSignature = null;
+        this.lastQuotedSignature = null;
+        this.currentQuoteSignature.set(null);
+        this.authoritativeQuote.set(null);
+        this.lastQuoteReference = null;
+        this.lastQuoteExpiresAt = null;
+        this.lastFareBreakdown = null;
+        this.fareCalculating.set(false);
+        this.fareCalculationError.set(null);
+        this.resetCashOffer();
         this.routeResult.set(null);
         this.fareEstimate.set(null); this.fulfilmentSnapshot.set(null);
         this.estimatedPrice.set(0);
@@ -3358,7 +3400,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 throw new Error('The quote did not resolve a valid service country and currency.');
             }
             this.quotedMarket.set({countryCode:response.market.countryCode,currency:response.market.currency});
-            if(this.stripeJourney())void this.loadSavedCards();else{this.savedCardsEnabled.set(false);this.savedCards.set([]);this.selectedSavedCard.set(null);}
+            if(this.stripeJourney())void this.loadSavedCards();else{this.savedCardsOwner=null;this.savedCardsEnabled.set(false);this.savedCards.set([]);this.selectedSavedCard.set(null);}
             this.lastQuotedSignature = signature;
 
             const breakdown = response.legacy.fareBreakdown;

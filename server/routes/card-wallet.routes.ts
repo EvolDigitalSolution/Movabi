@@ -15,32 +15,35 @@ export function createCardWalletRouter(authenticate: (req: Request) => Promise<s
     try {
       const userId = await authenticate(req);
       if (!userId) return res.status(401).json({error: 'Please sign in again.'});
-      if (process.env.VAYDU_SAVED_CARDS_V23 !== 'true') return res.status(404).json({error: 'Saved cards are unavailable.'});
+      if (process.env.VAYDU_SAVED_CARDS_V23 !== 'true') return res.status(404).json({error: 'Saved-card management is currently disabled.', code: 'SAVED_CARDS_DISABLED'});
       res.locals.cardWalletUserId = userId;
       next();
     } catch { return res.status(503).json({error: 'Payment methods are temporarily unavailable.'}); }
   });
-  async function canAdd(userId: string): Promise<boolean> {
-    if (process.env.VAYDU_CARD_SETUP_V23 !== 'true') return false;
+  async function setupAvailability(userId: string): Promise<{canAdd:boolean;reasonCode:string|null}> {
+    if (process.env.VAYDU_CARD_SETUP_V23 !== 'true') return {canAdd:false,reasonCode:'CARD_SETUP_DISABLED'};
     const {data, error} = await supabaseAdmin.from('profiles')
-      .select('country_code,registration_market_city').eq('id', userId).single();
+      .select('registration_country_code,country_code,registration_market_city').eq('id', userId).single();
     if (error || !data) throw Error('Profile unavailable');
     // The request body never supplies country, city, provider or account.
-    if (data.country_code !== 'GB') return false;
+    const country = String(data.registration_country_code?.trim() || data.country_code?.trim() || '').toUpperCase();
+    if (!/^[A-Z]{2}$/.test(country)) return {canAdd:false,reasonCode:'CARD_SETUP_MARKET_UNRESOLVED'};
+    if (country !== 'GB') return {canAdd:false,reasonCode:'CARD_SETUP_MARKET_UNSUPPORTED'};
     try {
-      const market = await MarketAvailabilityService.requireCapability({countryCode: data.country_code,
+      const market = await MarketAvailabilityService.requireCapability({countryCode: country,
         marketCity: data.registration_market_city, capability: 'payment'});
-      return cardWalletSetupAllowed({cardsEnabled: true, setupEnabled: true,
+      const allowed = cardWalletSetupAllowed({cardsEnabled: true, setupEnabled: true,
         country: market.countryCode, currency: market.currency, paymentEnabled: market.capabilities.payment,
         routes: JSON.stringify(await loadDatabasePaymentPolicies(supabaseAdmin,{country:String(market.countryCode),currency:String(market.currency),method:'card'}))});
-    } catch { return false; }
+      return {canAdd:allowed,reasonCode:allowed?null:'CARD_SETUP_MARKET_UNSUPPORTED'};
+    } catch { return {canAdd:false,reasonCode:'CARD_SETUP_MARKET_UNAVAILABLE'}; }
   }
   router.get('/', async (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     try {
       const userId = String(res.locals.cardWalletUserId);
-      const [saved, allowed] = await Promise.all([cards.list(userId), canAdd(userId)]);
-      return res.json({cards: saved, canAdd: allowed, consentVersion: CARD_SETUP_CONSENT_VERSION});
+      const [saved, availability] = await Promise.all([cards.list(userId), setupAvailability(userId)]);
+      return res.json({cards: saved, ...availability, consentVersion: CARD_SETUP_CONSENT_VERSION});
     } catch { return res.status(503).json({error: 'Could not load payment methods. Please try again.'}); }
   });
   router.post('/setup', async (req, res) => {
@@ -54,7 +57,8 @@ export function createCardWalletRouter(authenticate: (req: Request) => Promise<s
     }
     try {
       const userId = String(res.locals.cardWalletUserId);
-      if (!await canAdd(userId)) return res.status(409).json({error: 'Adding cards is not available for your market.'});
+      const availability = await setupAvailability(userId);
+      if (!availability.canAdd) return res.status(409).json({error: availability.reasonCode==='CARD_SETUP_DISABLED'?'Adding saved cards is currently disabled.':'Adding cards is not available for your market.',code:availability.reasonCode});
       return res.json(await cards.beginSetup(userId, body.requestId, body.consentVersion));
     } catch { return res.status(503).json({error: 'Card setup could not be confirmed. Retry using this same form.'}); }
   });

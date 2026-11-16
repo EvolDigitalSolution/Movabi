@@ -1,4 +1,5 @@
 import {savedCustomerAddress} from '@shared/utils/customer-home-address';
+import {profileRegistrationCountry,savedProfileCurrency} from '@shared/utils/profile-market-context';
 import { Component, inject, OnInit, computed, signal } from '@angular/core';
 import { AdminService } from '../../services/admin.service';
 import { Profile } from '../../../../shared/models/booking.model';
@@ -166,8 +167,9 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
                 <div><dt class="text-xs font-semibold text-slate-500">Phone</dt><dd class="mt-1 text-slate-900">{{ user.phone || 'Not provided' }}</dd></div>
                 <div><dt class="text-xs font-semibold text-slate-500">Account status</dt><dd class="mt-1 capitalize text-slate-900">{{ (user.account_status || 'active').replaceAll('_', ' ') }}</dd></div>
                 <div><dt class="text-xs font-semibold text-slate-500">Joined</dt><dd class="mt-1 text-slate-900">{{ user.created_at ? (user.created_at | date:'medium') : 'Not provided' }}</dd></div>
-                <div><dt class="text-xs font-semibold text-slate-500">Country</dt><dd class="mt-1 text-slate-900">{{ user.registration_country_code || user.country_code || 'Not provided' }}</dd></div>
-                <div><dt class="text-xs font-semibold text-slate-500">Currency</dt><dd class="mt-1 text-slate-900">{{ user.currency_code || 'Not provided' }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Registration country</dt><dd class="mt-1 text-slate-900">{{ registrationCountry(user) || 'Not provided' }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Saved profile currency</dt><dd class="mt-1 text-slate-900">{{ profileCurrency(user) || 'Not provided' }}</dd></div>
+                <div class="sm:col-span-2 text-xs text-slate-500">Booking currency and payment provider follow the service market. Existing payments retain their recorded currency and amounts.</div>
                 <div class="sm:col-span-2"><dt class="text-xs font-semibold text-slate-500">Home address</dt><dd class="mt-1 whitespace-pre-line break-words text-slate-900">{{ customerHomeAddress(user) || 'Not provided' }}</dd></div>
                 <div><dt class="text-xs font-semibold text-slate-500">Registration city</dt><dd class="mt-1 text-slate-900">{{ user.registration_market_city || 'Not provided' }}</dd></div>
                 <div class="sm:col-span-2"><dt class="text-xs font-semibold text-slate-500">Customer ID</dt><dd class="mt-1 break-all font-mono text-xs text-slate-700">{{ user.id }}</dd></div>
@@ -341,6 +343,8 @@ export class UserListComponent implements OnInit {
     }
 
     customerHomeAddress = savedCustomerAddress;
+    registrationCountry = profileRegistrationCountry;
+    profileCurrency = savedProfileCurrency;
 
     async loadUsers() {
         const data = await this.adminService.getUsers();

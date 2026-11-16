@@ -36,7 +36,7 @@ type SavedCard = {id:string;brand:string;last4:string;expMonth:number;expYear:nu
         }
         @if (loaded() && !cards().length) { <p>You have no saved cards.</p> }
         @if (loaded() && !canAdd()) {
-          <p>Adding cards is not currently available for your market. Available payment choices are shown at checkout.</p>
+          <p>{{ unavailableReason() }}</p>
         }
         @if (loaded() && canAdd() && !showForm()) {
           <button type="button" class="rounded-xl bg-slate-900 p-3 text-white" [disabled]="busy()" (click)="openForm()">Add a card</button>
@@ -61,6 +61,7 @@ export class PaymentMethodsPage implements AfterViewInit, OnDestroy {
   readonly error = signal(''); readonly notice = signal(''); readonly canAdd = signal(false);
   readonly cards = signal<SavedCard[]>([]); readonly removing = signal<string|null>(null);
   readonly showForm = signal(false); readonly complete = signal(false);
+  readonly unavailableReason = signal('Adding cards is not currently available. Available payment choices are shown at checkout.');
   consent = false;
   private consentVersion = ''; private stripe: Stripe|null = null; private element: StripeCardElement|null = null;
   private requestId: string|null = null; private setup: {clientSecret:string;setupIntentId:string}|null = null;
@@ -74,11 +75,18 @@ export class PaymentMethodsPage implements AfterViewInit, OnDestroy {
       const wallet = await this.payments.cardWallet();
       if (this.destroyed) return;
       this.cards.set(wallet.cards); this.canAdd.set(wallet.canAdd); this.consentVersion = wallet.consentVersion;
+      this.unavailableReason.set(wallet.reasonCode === 'CARD_SETUP_DISABLED'
+        ? 'Adding saved cards is currently disabled. Available payment choices are shown at checkout.'
+        : wallet.reasonCode === 'CARD_SETUP_MARKET_UNSUPPORTED'
+          ? 'Saving cards is not supported for your registration market. Available payment choices are shown at checkout.'
+          : 'Adding cards is not currently available. Available payment choices are shown at checkout.');
       if (!wallet.canAdd) { this.showForm.set(false); this.element?.destroy(); this.element = null; }
       this.loaded.set(true);
     } catch (error) {
-      if ((error as {status?:number})?.status === 404) { this.cards.set([]); this.canAdd.set(false); this.loaded.set(true); }
-      else this.error.set('Payment methods could not be loaded. Please retry.');
+      if (this.destroyed) return;
+      this.error.set((error as {error?:{code?:string}})?.error?.code === 'SAVED_CARDS_DISABLED'
+        ? 'Saved-card management is currently disabled. Available payment choices are shown at checkout.'
+        : 'Payment methods could not be loaded. Please retry.');
     }
     finally { this.loading.set(false); }
   }

@@ -740,18 +740,28 @@ router.post('/create', bookingCreateLimiter, async (req: Request, res: Response)
                 .eq('id', applied.id);
         }
         insertPayload.customer_id = userId;
+        const cashRequested = String(payload.payment_method || metadata.payment_choice || '').toLowerCase() === 'cash';
+        let cashTenantId: string | null = null;
+        if (cashRequested) {
+            const { data: cashProfile, error: cashProfileError } = await supabaseAdmin.from('profiles').select('tenant_id').eq('id', userId).maybeSingle();
+            if (cashProfileError) return res.status(503).json({code:'CASH_ACCOUNT_UNAVAILABLE',error:'Cash account eligibility could not be confirmed.'});
+            if (!cashProfile?.tenant_id || String(cashProfile.tenant_id) !== String(insertPayload.tenant_id || ''))
+                return res.status(409).json({code:'CASH_MARKET_UNAVAILABLE',error:'Cash booking is not available for this account.'});
+            cashTenantId = String(cashProfile.tenant_id);
+        }
         // C2: negotiation/bidding modes, draft/expiry and agreed_fare are
         // server-derived from the authoritative marketplace configuration and
         // never trusted from the client. Resolver failure fails closed to direct
         // checkout.
         try {
-            const modes = await MarketplaceConfigService.determineJobModes(canonicalService);
+            const modes = await MarketplaceConfigService.determineJobModes(canonicalService, cashRequested ? cashTenantId : null);
             insertPayload.negotiation_mode_enabled = modes.negotiation;
             insertPayload.bid_mode_enabled = modes.bidding;
             insertPayload.status = modes.negotiation ? 'pending_fare_confirmation' : 'requested';
             insertPayload.is_draft = modes.negotiation;
             insertPayload.expires_at = modes.negotiation ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : null;
         } catch (modeError) {
+            if (cashRequested) return res.status(503).json({code:'CASH_MODE_UNAVAILABLE',error:'Cash fare eligibility could not be confirmed. Please retry.'});
             console.error('[BookingRoutes] marketplace mode resolution failed; failing closed to direct checkout:', modeError);
             insertPayload.negotiation_mode_enabled = false;
             insertPayload.bid_mode_enabled = false;
@@ -804,7 +814,7 @@ router.post('/create', bookingCreateLimiter, async (req: Request, res: Response)
         // Cash Ride (pilot markets only): the customer pays the driver in cash; the booking is
         // secured by an on-session card hold for its fee terms, frozen here from server policy.
         // Card/wallet bookings are unaffected; nothing here charges.
-        if (String(payload.payment_method || metadata.payment_choice || '').toLowerCase() === 'cash') {
+        if (cashRequested) {
             if (insertPayload.status === 'pending_fare_confirmation' || insertPayload.negotiation_mode_enabled || insertPayload.bid_mode_enabled)
                 return res.status(409).json({ code: 'CASH_FIXED_FARE_ONLY', error: 'Cash rides use the quoted fare only.' });
             const scheduledMs = Date.parse(String(insertPayload.scheduled_time || ''));
@@ -813,9 +823,6 @@ router.post('/create', bookingCreateLimiter, async (req: Request, res: Response)
             if (!cashFareTermsOk(insertPayload.fare_breakdown))
                 return res.status(409).json({ code: 'CASH_FARE_TERMS_UNAVAILABLE', error: 'This quote cannot be paid in cash. Get a new quote or pay by card.' });
             // Fee terms (and so the hold amount) follow the customer's own tenant, never the request.
-            const { data: cashProfile } = await supabaseAdmin.from('profiles').select('tenant_id').eq('id', userId).maybeSingle();
-            if (!cashProfile?.tenant_id || String(cashProfile.tenant_id) !== String(insertPayload.tenant_id || ''))
-                return res.status(409).json({ code: 'CASH_MARKET_UNAVAILABLE', error: 'Cash booking is not available for this account.' });
             const cashCurrency = String(insertPayload.currency_code || '').toUpperCase();
             const noShowFeeMinor = noShowConfig.noShowEnabled && isRide && isUkGbp
                 ? NoShowService.computeCurrentNoShowSplit(FareSplitService.toMinor(quotedFare, cashCurrency), cashCurrency).feeMinor : 0;
@@ -2957,25 +2964,40 @@ router.post('/negotiation/:id/counter', async (req: Request, res: Response) => {
 
 /** Server decision for paying a quote in cash: pilot market, Ride, hold route and the fee hold amount. */
 router.post('/cash/availability', async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    let context: {countryCode:string;currency:string;tenantId:string;serviceSlug:string} | undefined;
     try {
         const userId = await getAuthUserId(req);
         if (!userId) return res.status(401).json({ error: 'Authentication required' });
         const quoteId = String(req.body?.quoteId || '').trim();
         if (!quoteId) return res.status(400).json({ code: 'INVALID_INPUT', error: 'quoteId is required' });
-        const { data: profile } = await supabaseAdmin.from('profiles').select('tenant_id').eq('id', userId).maybeSingle();
+        const { data: profile, error: profileError } = await supabaseAdmin.from('profiles').select('tenant_id').eq('id', userId).maybeSingle();
+        if (profileError) return res.status(503).json({code:'CASH_ACCOUNT_UNAVAILABLE',error:'Cash account eligibility could not be confirmed.'});
         const tenantId = String(profile?.tenant_id || '');
-        const { data: q, error } = await supabaseAdmin.from('quote_market_adjustments').select('country_code,currency,service_type,returned_customer_fare')
+        if (!tenantId) return res.json({available:false,code:'CASH_MARKET_UNAVAILABLE',reason:'Cash booking is not available for this account.'});
+        const { data: q, error } = await supabaseAdmin.from('quote_market_adjustments').select('country_code,currency,service_type,returned_customer_fare,protected_fare_snapshot')
             .eq('quote_reference', quoteId).maybeSingle();
         if (error || !q) return res.status(404).json({ code: 'QUOTE_NOT_VERIFIED', error: 'Quote not found' });
         const currency = String(q.currency || '').toUpperCase(), country = String(q.country_code || '').toUpperCase();
+        context = {countryCode:country,currency,tenantId,serviceSlug:String(q.service_type || '')};
+        // Match the existing /create fixed-fare guard. Availability must not offer a choice
+        // which creation will refuse; the client cannot assert that negotiation is disabled.
+        const modes = await MarketplaceConfigService.determineJobModes(String(q.service_type || ''), tenantId);
+        if (modes.negotiation || modes.bidding) return res.json({available:false,code:'CASH_FIXED_FARE_ONLY',reason:'Cash rides use the quoted fare only.',context});
+        if (req.body?.scheduledTime !== undefined) {
+            const scheduledMs=Date.parse(String(req.body.scheduledTime));
+            if (!Number.isFinite(scheduledMs)) return res.status(400).json({code:'INVALID_INPUT',error:'A valid scheduledTime is required.'});
+            if (scheduledMs>Date.now()+5*60*1000) return res.json({available:false,code:'CASH_IMMEDIATE_ONLY',reason:'Cash is available for rides now, not scheduled rides.',context});
+        }
+        if (!cashFareTermsOk(q.protected_fare_snapshot)) return res.json({available:false,code:'CASH_FARE_TERMS_UNAVAILABLE',reason:'This quote cannot be paid in cash. Get a new quote or pay by card.',context});
         const noShowConfig = await NoShowService.getEnabledConfig();
         const noShowFeeMinor = noShowConfig.noShowEnabled && q.service_type === 'ride' && country === 'GB' && currency === 'GBP'
             ? NoShowService.computeCurrentNoShowSplit(FareSplitService.toMinor(Number(q.returned_customer_fare), currency), currency).feeMinor : 0;
         const terms = await cashRideBooking().terms({ tenantId, country, currency, service: String(q.service_type || ''), noShowFeeMinor });
         return res.json({ available: true, holdAmountMinor: terms.amountMinor, currency: terms.currency, provider: terms.provider,
-            noShowFeeMinor: terms.noShowFeeMinor, lateCancelFeeMinor: terms.lateCancelFeeMinor });
+            noShowFeeMinor: terms.noShowFeeMinor, lateCancelFeeMinor: terms.lateCancelFeeMinor, context });
     } catch (error) {
-        if (error instanceof PaymentLayerError) return res.json({ available: false, code: error.code, reason: error.message });
+        if (error instanceof PaymentLayerError) return res.json({ available: false, code: error.code, reason: error.message, context });
         return cashFailure(res, error);
     }
 });

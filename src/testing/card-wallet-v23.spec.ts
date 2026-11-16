@@ -4,11 +4,11 @@ import {cardWalletSetupAllowed} from '../../server/services/payments/card-wallet
 import {StripeSavedCards, CARD_SETUP_CONSENT_VERSION} from '../../server/services/payments/stripe-saved-cards';
 import {createCardWalletRouter} from '../../server/routes/card-wallet.routes';
 
-const state = vi.hoisted(() => ({country:'GB',profileError:false,marketError:false,
+const state = vi.hoisted(() => ({country:'GB',registrationCountry:null as string|null,profileCurrency:'GBP',profileError:false,marketError:false,
   setup:vi.fn(),list:vi.fn(),remove:vi.fn()}));
 vi.mock('../../server/services/stripe.service', () => ({stripe:{}}));
 vi.mock('../../server/services/supabase.service', () => ({supabaseAdmin:{from:(table:string) => {
-  const query:any = {select:()=>query,eq:()=>query,then:(resolve:any,reject:any)=>Promise.resolve({data:table==='market_payment_routes'?[{country_code:'GB',currency_code:'GBP',method:'card',provider:'stripe',merchant_account_ref:'stripe-platform',preferred:true,enabled:true,merchant_approved:true,adapter_ready:true,payout_approved:false,capabilities:['authorise','capture','release','refund','retrieve']}]:[],error:null}).then(resolve,reject),single:async()=>({data:{country_code:state.country,registration_market_city:'Manchester'},error:state.profileError?{}:null})};return query;
+  const query:any = {select:()=>query,eq:()=>query,then:(resolve:any,reject:any)=>Promise.resolve({data:table==='market_payment_routes'?[{country_code:'GB',currency_code:'GBP',method:'card',provider:'stripe',merchant_account_ref:'stripe-platform',preferred:true,enabled:true,merchant_approved:true,adapter_ready:true,payout_approved:false,capabilities:['authorise','capture','release','refund','retrieve']}]:[],error:null}).then(resolve,reject),single:async()=>({data:{country_code:state.country,registration_country_code:state.registrationCountry,currency_code:state.profileCurrency,registration_market_city:'Manchester'},error:state.profileError?{}:null})};return query;
 }}}));
 vi.mock('../../server/services/market-availability.service', () => ({MarketAvailabilityService:{requireCapability:async() => {
   if(state.marketError)throw Error('Unavailable');
@@ -61,7 +61,7 @@ async function http(method:string,path:string,body?:unknown,authenticated=true){
 }
 describe('card wallet authenticated HTTP boundary',()=>{
   beforeEach(()=>{
-    state.country='GB';state.profileError=false;state.marketError=false;
+    state.country='GB';state.registrationCountry=null;state.profileCurrency='GBP';state.profileError=false;state.marketError=false;
     vi.stubEnv('VAYDU_SAVED_CARDS_V23','true');vi.stubEnv('VAYDU_CARD_SETUP_V23','true');vi.stubEnv('VAYDU_MARKET_PAYMENT_ROUTES',JSON.stringify([route]));
     state.list.mockReset().mockResolvedValue([]);state.setup.mockReset().mockResolvedValue({clientSecret:'private-secret',setupIntentId:'seti_owner'});state.remove.mockReset().mockResolvedValue(undefined);
     vi.spyOn(StripeSavedCards.prototype,'list').mockImplementation(state.list);
@@ -70,6 +70,10 @@ describe('card wallet authenticated HTTP boundary',()=>{
   });
   it('requires a session before listing',async()=>{expect((await http('GET','',undefined,false)).status).toBe(401);expect(state.list).not.toHaveBeenCalled();});
   it('is off when saved cards are disabled',async()=>{vi.stubEnv('VAYDU_SAVED_CARDS_V23','false');expect((await http('GET','')).status).toBe(404);});
+  it('feature-disabled 404 is machine-readable, distinct from a missing route',async()=>{vi.stubEnv('VAYDU_SAVED_CARDS_V23','false');expect((await http('GET','')).body.code).toBe('SAVED_CARDS_DISABLED');});
+  it.each([null,'','   '])('blank legacy registration %j falls back to explicit GB country',async registration=>{state.registrationCountry=registration;expect((await http('GET','')).body.canAdd).toBe(true);});
+  it.each(['GBP','NGN'])('NG registration never enables Stripe saving from profile currency %s',async c=>{state.country='GB';state.registrationCountry='NG';state.profileCurrency=c;const r=await http('GET','');expect(r.body).toMatchObject({canAdd:false,reasonCode:'CARD_SETUP_MARKET_UNSUPPORTED'});expect((await http('POST','/setup',{requestId,consentVersion:CARD_SETUP_CONSENT_VERSION})).status).toBe(409);expect(state.setup).not.toHaveBeenCalled();});
+  it('missing country fields do not fall back to GB',async()=>{state.country='';state.registrationCountry=' ';expect((await http('GET','')).body).toMatchObject({canAdd:false,reasonCode:'CARD_SETUP_MARKET_UNRESOLVED'});});
   it('does not allow Nigerian registration to create Stripe setup',async()=>{state.country='NG';const response=await http('POST','/setup',{requestId,consentVersion:CARD_SETUP_CONSENT_VERSION});expect(response.status).toBe(409);expect(state.setup).not.toHaveBeenCalled();});
   it('keeps removal available after a market change',async()=>{state.country='NG';expect((await http('DELETE','/pm_owner')).status).toBe(200);expect(state.remove).toHaveBeenCalledWith('owner','pm_owner');});
   it('rejects injected provider, owner, amount or country',async()=>{for(const key of ['provider','userId','amount','country'])expect((await http('POST','/setup',{requestId,consentVersion:CARD_SETUP_CONSENT_VERSION,[key]:'forged'})).status).toBe(400);expect(state.setup).not.toHaveBeenCalled();});

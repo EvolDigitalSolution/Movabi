@@ -1,4 +1,5 @@
 import { cashRideBooking } from './payments/cash-ride-booking.instance';
+import { cashRideAcquisitionApproved, isCashRide, mapCashCreditError } from './driver-cash-credit';
 import {driverMatchesJobMarket} from './driver-market-scope';
 import {orderDriversByRoadEta} from './driver-road-eta';
 import { marketRankingPolicy } from './market-matching-policy';
@@ -711,19 +712,20 @@ export class DispatchService {
         const pickupLng = Number((job as any).pickup_lng);
         const attempts = Math.max(1, Number((job as any).dispatch_attempts || 1));
         const radius = BASE_RADIUS_DEGREES + (attempts - 1) * RADIUS_STEP_DEGREES;
+        const cashRide = isCashRide(job);
 
         let profileQuery = this.supabase
             .from('profiles')
             .select('id, lat, lng, is_available, is_online, last_active_at, stripe_connect_status, charges_enabled, payouts_enabled')
             .eq('role', 'driver')
             .eq('is_available', true)
-            .eq('is_online', true)
-            .eq('charges_enabled', true)
+            .eq('is_online', true);
+        if (!cashRide) profileQuery = profileQuery.eq('charges_enabled', true)
             .eq('payouts_enabled', true)
             // UK-only payout scope: only offer work to drivers in a supported payout country.
             .in('registration_country_code', SUPPORTED_PAYOUT_COUNTRIES)
-            .eq('registration_country_code', String((job as any).country_code || (job as any).metadata?.country_code || '').toUpperCase())
-            .limit(MAX_NOTIFY_DRIVERS * 2);
+            .eq('registration_country_code', String((job as any).country_code || (job as any).metadata?.country_code || '').toUpperCase());
+        profileQuery = profileQuery.limit(MAX_NOTIFY_DRIVERS * 2);
 
         if (tenantId) {
             profileQuery = profileQuery.eq('tenant_id', tenantId);
@@ -815,7 +817,7 @@ export class DispatchService {
         // work for the requested service. Unknown service slugs fall through to
         // preserve existing compatibility-only behaviour.
         const canonicalService = toCanonicalDriverService(job.service_slug);
-        const eligibleDrivers = canonicalService
+        let eligibleDrivers = canonicalService
             ? compatibleDrivers.filter(driver => {
                 const profile = profilesById.get(driver.id);
                 if (!profile) return false;
@@ -825,6 +827,25 @@ export class DispatchService {
                 return isDriverEligibleForService(profile, vehicle, canonicalService, 'verified_at_acquisition');
             })
             : compatibleDrivers.filter(driver => profilesById.has(driver.id));
+
+        if (cashRide) {
+            // The canonical cash-credit RPC checks the enabled, consented cohort,
+            // native tenant/market/currency and reconciled credit status. Never fall
+            // back to Stripe readiness for an unenrolled cash candidate. Assignment
+            // still reserves credit atomically; this read does not reserve money.
+            const approved: NearbyDriver[] = [];
+            for (const driver of eligibleDrivers) {
+                try {
+                    if (await cashRideAcquisitionApproved(this.supabase, driver.id, job)) approved.push(driver);
+                } catch (error) {
+                    if (mapCashCreditError(error)) continue;
+                    if (strictRead) throw error;
+                    console.error('[DispatchService] Cash cohort read failed:', (error as any)?.code);
+                    return [];
+                }
+            }
+            eligibleDrivers = approved;
+        }
 
         console.log(`[DispatchService] Eligibility filter: ${compatibleDrivers.length} compatible -> ${eligibleDrivers.length} eligible for service ${canonicalService || job.service_slug}`);
 

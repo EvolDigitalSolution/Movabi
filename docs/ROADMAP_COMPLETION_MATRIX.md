@@ -121,6 +121,33 @@ Source `a349f13`; DB-only artifact `release/vaydu-pin-africa-a349f13.tar.gz`, SH
 `144236226360cc72ecd5ea274be2d26dcfaaf9f61e7c1087ae8ad061c6372d8e`.
 Exact authorised host apply/verify block: `deploy/vaydu-completion-pin-africa/RUN.md`.
 
+### Booking form, cash choices and card-wallet investigation (2026-11-16)
+
+The original local form fails NG01350 and deployed develop assets reproduce `_rawValidators`
+after quote rendering, under isolated browser API/auth fixtures. The conditional discount input
+incorrectly registered ngModel inside a reactive group. Fixed signal binding, form subscription
+retirement, stale route/quote cancellation and conditional Stripe host remounting retain validation.
+Cash unavailable codes/reasons are now displayed; eligible Card/Cash choices explain the separate
+security hold and paying the fare to the driver. Native-tenant fixed/immediate/fare checks align
+availability with creation. Cash dispatch now checks the canonical enrolled GB/GBP tenant cohort
+before offers; card payout filters and all other eligibility/acquisition guards remain.
+
+Local: **13/13 browser cases** on both the dev server and isolated optimized develop build,
+**146/146 focused server/policy tests**, server typecheck and mobile develop build pass.
+Disposable PG rehearsal passes all nine suites, cash accounting/acquisition,
+cohort isolation and exact rollback. No new cash enablement/enrolment or financial data rewrite.
+Card-wallet's real public endpoint returns 401 (mounted); authenticated feature-disabled 404 is
+typed separately from missing routes. NG saved-card setup stays unsupported. Admin labels now
+distinguish registration country and persisted profile currency; no currency-based market inference.
+
+**Not live verified/deployed:** affected customer profile/token/quote response are unavailable;
+fixture browser tests do not establish that customer's eligibility or provider completion.
+Cash activation (flag, GB/GBP and one driver) is user-reported; preserve it and verify freshly.
+Evidence, exact local checks and read-only authenticated diagnosis:
+`docs/roadmap-evidence/booking-cash-20261116.md`. Historical rows below retain their recorded
+deployment states; this local fix does not mark a live journey complete.
+Isolated package/develop rollout/recovery: `deploy/vaydu-booking-cash/DEPLOYMENT.md`.
+
 ## States
 
 | State | Meaning (all must hold) |
