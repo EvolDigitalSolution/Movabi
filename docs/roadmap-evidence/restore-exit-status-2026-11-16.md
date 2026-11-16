@@ -20,6 +20,18 @@ Repeated bootstrap CREATEs and unrecognised forms are not suppressed. Globals us
 psql ON_ERROR_STOP=1; pg_restore uses --exit-on-error. Both statuses are explicitly checked.
 No message matching determines success.
 
+## Replacement artifact
+
+Tooling commit and SOURCE_SHA: `f949a14`. Archive:
+`release/vaydu-develop-f949a14-release-linux.tar.gz`, SHA-256
+`58dcdbaf0b27769bcf15bfbfa584e4e64002c4ab27ada42cd4f5f57cc089488a`.
+All SHA256SUMS, ALL_SHA256SUMS and RELEASE-MIGRATIONS.sha256 entries were verified directly
+from the archive. All 644 API/web/release-SQL payload files match c5526f6 byte-for-byte.
+The packaged f949a14 drill was then rerun through the full local reproduction: all nine suites,
+both data checks, preamble cleanup, exact public-schema rollback and PREREQ passed, exit 0.
+The five restore-status regressions also pass against its shipped host-db-release.sh.
+Real-backup host verification is still pending.
+
 ## Regression checks
 
 `bash scripts/release/test-host-drill-restore.sh` runs the real drill entry point with

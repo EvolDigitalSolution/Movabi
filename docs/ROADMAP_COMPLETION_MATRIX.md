@@ -19,6 +19,10 @@ the same commit as any change that moves a state. Last updated 2026-11-16.
   `/home/edsadmin/vaydu-develop-backups/develop-before-release-e4a64c1-20261114T201704Z.dump`.
 - P3/P10/P11/P12 approvals remain valid. Independent implementation can continue while this host
   gate is pending; it must not change the API/web/SQL payload of the tooling-only replacement.
+- Tooling replacement: **`f949a14`**, archive SHA-256
+  `58dcdbaf0b27769bcf15bfbfa584e4e64002c4ab27ada42cd4f5f57cc089488a`. Shipped drill passes
+  local synthetic-data rehearsal (9/9 + preservation + rollback) and 5/5 failure regressions;
+  **real-backup host gate still pending**. Exact host command is in the current RUNBOOK gate.
 
 **Go-live gate:** no release packaging or go-live until every mandatory, non-deferred row is
 Implemented, Integrated and Verified and every decision below is resolved. Not met.

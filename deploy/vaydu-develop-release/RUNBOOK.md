@@ -1,4 +1,34 @@
-# Develop release `3c91991`: database, API and web
+# Current gate — tooling-only replacement `f949a14` (2026-11-16)
+
+**Use this gate before the historical release instructions below.** API baseline reported by the
+user is `c972037`; web baseline is `3c91991`. Both require a fresh host check. Do not retry rejected
+SSH authentication. Deployment/activation remain gated on the corrected shipped drill against the
+existing backup; do not create another backup for diagnosis.
+
+- Archive: `release/vaydu-develop-f949a14-release-linux.tar.gz`.
+- SHA-256: `58dcdbaf0b27769bcf15bfbfa584e4e64002c4ab27ada42cd4f5f57cc089488a`.
+- API, web and release SQL are byte-identical to `c5526f6` / `e4a64c1` (644 payload files).
+- Upload the archive and `deploy/vaydu-develop-release/verify-and-drill-f949a14.sh` to
+  `/home/edsadmin`. From an authenticated host terminal run this exact command:
+
+```bash
+bash /home/edsadmin/verify-and-drill-f949a14.sh
+```
+
+The complete script verifies archive/internal checksums, runs the shipped silent-failure
+regressions, checks the actual API/web baseline and PREREQ, records live configuration, and runs
+the drill against `/home/edsadmin/vaydu-develop-backups/develop-before-release-e4a64c1-20261114T201704Z.dump`.
+It requires all nine suites, data preservation, preamble cleanup, exact public-schema rollback,
+PREREQ after rollback and pre-release data preservation. It checks both drill and log exit statuses.
+Expected final line: `HOST_DRILL_GATE_PASSED evidence=...`. It does not deploy or activate anything.
+Keep the output and live-config evidence for review before proceeding.
+
+Globals restoration now omits only exact standalone CREATE ROLE statements matching roles
+inventoried in the fresh disposable container, once each. ALTER ROLE, grants and all other SQL
+remain strict. Globals uses ON_ERROR_STOP; pg_restore uses --exit-on-error; both exit statuses
+are checked explicitly. No error-text matching establishes restore success.
+
+# Historical develop release `3c91991`: database, API and web
 
 **Authorised by the user on 2026-11-12, for shared DEVELOP only.** Production and go-live stay separately
 gated. This release enables nothing: no cash-ride market, no cancellation-fee policy, no PIN policy, no
