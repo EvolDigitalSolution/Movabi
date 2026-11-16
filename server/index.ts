@@ -1,4 +1,5 @@
 import { OpsAlertService } from './services/ops-alert.service';
+import { DebtFollowupService } from './services/debt-followup.service';
 import flutterwaveBookingSplitRoutes from './routes/flutterwave-booking-split.routes';
 import {developDriverPaymentAccountRouter} from './routes/driver-payment-account-develop.routes';
 import './services/payments/wallet-collection-startup';
@@ -231,6 +232,7 @@ try {
     GbMotMonitorService.start();
     // Area 9a / P14: scheduled payment-operations report + email alert (off unless VAYDU_OPS_ALERTS=true).
     new OpsAlertService().start();
+    new DebtFollowupService().start();
     let shoppingCleanupRunning = false;
     setInterval(() => {
       if (shoppingCleanupRunning) return;

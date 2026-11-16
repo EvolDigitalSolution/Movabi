@@ -8,7 +8,7 @@ interface Receivable {
     id: string; customer_id: string; job_id: string | null;
     currency_code: string; amount_minor: number; reason: string;
     status: string; policy_version: number | null; dispute_reason: string | null;
-    created_at: string;
+    created_at: string; review_required?: boolean;
 }
 interface AuditRow { id: string; action: string; metadata: any; created_at: string; }
 
@@ -50,6 +50,7 @@ interface AuditRow { id: string; action: string; metadata: any; created_at: stri
                   <td class="px-3 py-2 font-bold">{{ money(r.amount_minor, r.currency_code) }}</td>
                   <td class="px-3 py-2">
                     {{ label(r.reason) }}
+                    @if (r.review_required) { <p class="text-xs font-bold text-amber-800">Admin review required</p> }
                     @if (r.dispute_reason) { <p class="mt-0.5 max-w-[16rem] truncate text-xs text-amber-700" [title]="r.dispute_reason">“{{ r.dispute_reason }}”</p> }
                   </td>
                   <td class="px-3 py-2 font-mono text-xs text-slate-500">{{ r.customer_id.slice(0, 8) }}…</td>

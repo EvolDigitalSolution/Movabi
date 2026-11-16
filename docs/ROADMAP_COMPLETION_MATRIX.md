@@ -202,17 +202,17 @@ on until the host steps run. Live state is read with `host-live-config.sh` befor
 | 6a Cancellation fee (P1) | ✓ | ✓ | ✗ → `activate-gb.sql` (300/300/120 s) | ✗ | Activation; customer cancels after grace (Stripe test capture) |
 | 6b Compensation 80/20 | ✓ | ✓ | follows 6a | ✗ | Captured fee settles 80/20 once |
 | 6c Debt threshold (approved 50%) | ✓ | ✓ | follows 6a | ✗ | Receivable from an uncollectable fee |
-| 6c Overdue debt terms (P3) | **✗ not built**: 24 h reminder, 30-day admin review | — | ✗ | ✗ | **T7** build |
+| 6c Overdue debt terms (P3) | ✓ worker + durable inbox reminder + admin-review flag (2026-11-16); local tests below | ✗ separate future release | ✗ explicit develop flag + tenant/GB/GBP scope required | ✗ | **T7** feature-release rehearsal, host deployment and journey |
 | 7a First-booking promo (P4) | ✓ (fixed 2026-11-14) | ✗ (bundle) | ✗ → `activate-gb.sql` | ✗ | Activation; first booking shows and charges 5% |
 | 7b Referrals (P5) | ✓ (fixed 2026-11-14) | ✗ (release 2 + bundle) | ✗ → `activate-gb.sql` | ✗ | Activation; referee's qualifying ride earns once |
 | 5b Cash rides (GB) | ✓ | ✓ | ✗ → `activate-gb-cash.sql` + `VAYDU_CASH_RIDE_BOOKING` | ✗ | Activation for one GB test driver; cash booking → completion → ledger |
 | 1b Matching weights (P7) | ✓ 2026-11-14: per-market switch + weights (`smart_matching.markets.<CC>`); other markets unchanged (`driver-ranking-v23.spec.ts` 48/48) | ✗ (bundle `e4a64c1`) | ✗ → `activate-gb.sql` (GB 0.5 / 1.0 / 0.15 km, ranking on; road ETA stays off) | ✗ | Deploy, activate; a GB dispatch with two drivers |
 | 4b Surge (P8) | ✓ 2026-11-14: per-market `dynamic_pricing.markets.<CC>`, no tenant-level leak (`market-dynamic-pricing.spec.ts` 7/7); traffic display-only via `trafficEnabled:false`; activation stops if a GB strategy cap or live AI pricing would override | ✗ (bundle) | ✗ → `activate-gb.sql` (on, max 1.5, demand/supply) | ✗ | Deploy, activate; a high-demand GB quote ≤ 1.5×, NG unchanged |
 | 4c Map style (P9) | ✓ current style kept | ✓ | ✓ (no change) | ✗ | Seen on web and Android |
-| 6a Exemptions (P12) | **✗ not built** | — | ✗ | ✗ | **T10**: structured reasons in the cancel flow and the fee quote |
+| 6a Exemptions (P12) | ~ tested structured-reason/evidence classifier only | ✗ | ✗ | ✗ | **T10**: atomic quote/cancel integration, evidence capture, review and customer UI remain |
 | 6b Fee above cash hold (P13) | ✓ manual review (current) | ✓ | ✓ (no change) | ✗ | — |
-| 7c Driver bonus (P11) | **✗ not built** | — | ✗ | ✗ | **T4** |
-| 2b Account sharing (P10) | ~ suspension only | ✓ | ✗ | ✗ | **T3** |
+| 7c Driver bonus (P11) | ~ tested GB/London week + distinct-ride eligibility only | ✗ | ✗ | ✗ | **T4**: atomic global budget, award/payment persistence and driver reporting remain |
+| 2b Account sharing (P10) | ~ tested review-only signal evaluator; existing suspension is separate | ✗ detector not integrated | ✗ | ✗ | **T3**: scoped observations, authenticated ingestion and durable admin queue remain |
 | 9a Ops alerts (P14) | ✓ 2026-11-14: scheduled report + email (`ops-alert.service.ts`, 13/13); recipient only from host config | ✗ (bundle) | ✗ → `VAYDU_OPS_ALERTS` + `VAYDU_OPS_ALERT_RECIPIENTS` on the API | ✗ | Address set on the host; `send-test-ops-alert.cjs` delivers |
 | 9b Backup restore | ✓ backup + drill in the release-2 host steps | ✓ | n/a | ✗ | Host drill |
 | NG payouts | ~ | ~ | ✗ | ✗ | **D-AF** deferred |
@@ -241,13 +241,13 @@ on until the host steps run. Live state is read with `host-live-config.sh` befor
 |---|---|---|
 | T1 | Host steps: release-2 bundle, activation scripts, live-config before/after | everything above |
 | T2 | Choose one GB test driver email for cash (operator choice, not a policy) | 5b |
-| T3 | Account-sharing signals (2 countries in 1 h, >2 devices in 24 h, >200 km in 10 min) → admin review queue | 2b |
-| T4 | Weekly driver bonus (£20 after 25 GB rides, Mon–Sun, £200/week budget) | 7c |
+| T3 | Signal evaluator built/tested. Remaining: observation persistence + ingestion + admin review queue (no automatic suspension) | 2b |
+| T4 | GB/London calendar + distinct-ride evaluator built/tested. Remaining: atomic GBP 200/week global budget, GBP 20 award/payment and driver UI | 7c |
 | T5 | ✓ built 2026-11-14 (ops alert sender). Remaining: the recipient address in the API configuration (host) | 9a |
-| T7 | Overdue debt: booking block at the threshold (exists), 24 h reminder, 30-day admin review | 6c |
+| T7 | ✓ built: durable 24 h inbox reminder and 30-day review, worker + admin flag. Separate migration 20261270300000; disabled and not in f949a14. Remaining: feature-release rehearsal, tenant scope/flag activation and develop journey | 6c |
 | T8 | ✓ built 2026-11-14 (per-market ranking) | 1b |
 | T9 | ✓ built 2026-11-14 (per-market surge, traffic display-only) | 4b |
-| T10 | Cancellation exemptions (driver >10 min late, not moving 5 min, wrong vehicle, safety) | 6a |
+| T10 | Structured reason/evidence classifier built/tested. Remaining: evidence collection, atomic fee/cancel integration, claim review and customer UI | 6a |
 
 ### Approved policy values (2026-11-14)
 
@@ -267,6 +267,31 @@ on until the host steps run. Live state is read with `host-live-config.sh` befor
 | P13 | Fee above the cash hold: manual review |
 | P14 | Ops report every 15 min; email recipient **to be supplied** |
 
+### Independent follow-up implementation (2026-11-16; not shipped in f949a14)
+
+P3 uses `20261270300000_overdue_debt_followup.sql` and `DebtFollowupService`, wired at API
+startup but off unless **both** `VAYDU_DEPLOYMENT_ENV=develop` and `VAYDU_DEBT_FOLLOWUPS=true`.
+No scopes are inserted by the migration. Only an explicitly enabled tenant/GB/GBP scope can run.
+The 24 h reminder is a durable in-app notification linked to `/customer/wallet`; 30-day open or
+disputed debt sets the existing admin-review flag and writes an audit event. Disputed debt is not
+chased with a reminder. No interest, late fee, amount, account status or booking-threshold change.
+
+Evidence: `src/testing/debt-followup.spec.ts` **5/5**; `scripts/release/test-debt-followup-realdb.py`
+passes on PostgreSQL 16.15 with existing table definitions/PKs extracted from the live baseline:
+age boundaries, market/currency/tenant scope, resolved/disputed exclusions, unchanged financial
+data, exactly-once retry, inbox-failure atomic rollback, four parallel workers/20 reminders,
+public-role denial and invalid batch/scope rejection. This is local evidence, not a develop journey.
+Server TypeScript check and the admin application build pass; existing debt/receivable route
+regressions pass **19/19**. Admin build has the existing unused RouterLink warning in DriverWalletPage.
+
+`approved-followup-policies.ts` has **12/12** policy tests for P10/P11/P12, including isolation,
+strict signal thresholds, London week boundaries across DST, duplicate ride exclusion and
+unproven exemption claims. These are calculations only: they never suspend, pay, reserve budget
+or waive a fee. GB bonus weeks use the GB civil calendar (Europe/London). Claims are classified
+for review, not treated as verified facts. The integration gaps in T3/T4/T10 remain mandatory;
+no new policy approval is being requested. All follow-up changes require a separate feature
+release and must never be mixed into the immutable tooling-only replacement.
+
 ## 0. Unfinished work started first
 
 | Sub-requirement | Implemented | Integrated | Verified | Deployed | Enabled | Evidence / gap |
@@ -285,7 +310,7 @@ on until the host steps run. Live state is read with `host-live-config.sh` befor
 | 1b | Location-aware matching using reliability | ✓ | ✓ | prior (unit 81/81) | ? | ✗ | Weights default 0 → reliability off until D3. |
 | 1c | Availability messages = server decision | ✓ | ✓ | ✓ 2026-11-13: `e2e/customer-no-driver-reason.spec.ts` 5/5 (the real tracking page renders the three dispatch reasons and the handoff reason verbatim, with a generic fallback when there is none); `no-driver-reason-customer-text.spec.ts` 3/3 (fails on the old code) | ~ (handoff fix pending the next bundle) | n/a | **Fixed:** `/driver-unable` wrote the driver's own free text into the customer-visible reason. It is now fixed server text; the driver's text stays in `metadata.driver_handoff_history`. |
 | 2a | Vehicle inspection (6 slots for motor vehicles, 3 for bikes) **in readiness, submission, approval and eligibility** | ✓ | ✓ | ✓ local (2026-11-13), on a **real backend** and the **real review screen**; see below | ✗ (develop still runs 3c91991, which shows "Complete" with no photos) | n/a | **NOT complete until deployed to develop and your own application is re-checked there.** On-device upload still unverified. |
-| 2b | Account-sharing protections | ~ | ✓ | ✓ suspension revokes the same token + refresh (rehearsal, both checks) | ? | n/a | Only suspension/revocation exists; the sharing policy itself is undefined (D4). |
+| 2b | Account-sharing protections | ~ | ~ suspension only; detector not wired | prior suspension/revocation rehearsal; new signal-core tests pass | ? suspension only | ✗ detector | P10 approved. Review-only signal evaluator built; observation persistence, authenticated ingestion and durable admin queue remain T3. |
 | 3 | Backend per-driver completion PIN policy | ✓ | ✓ | ✓ 2026-11-13: real-PG `realdb-completion-pin-test.sql` 17/17 (release-2 rehearsal); real routes (admin PIN routes, real `assign_driver_to_job`, `/api/jobs/complete`, `audit_logs`); unit 21 | ✗ (release 2 pending) | ✓ no switch once deployed; market default unset = required (P6) | Frozen at assignment; reassignment re-resolves; pre-release-2 jobs read the current override at completion. |
 | 4a | Traffic indicators | ✓ | ✓ | prior (`traffic-route.spec.ts`) | ? | ? | Live TomTom key unverified. |
 | 4b | Traffic-aware pricing + surge | ~ | ~ | prior | ? | ✗ | `maxSurge` default 1 (off). Needs D1. |
@@ -294,10 +319,10 @@ on until the host steps run. Live state is read with `host-live-config.sh` befor
 | 5b | Cash-job accounting | ✓ | ✓ (both chains reconciled by `20261269000000`) | ✓ book/activate/complete/cancel/no-show (real-PG, 59/59 also on the merged schema); reassign incl. concurrency (rehearsal with both chains + merge); restored disabled-acquisition gate (merge test); early-stop prior | ✗ | ✗ | Courier cash off in every market (D10 resolved). |
 | 6a | Cancellation fees + policy publish/enable + customer preview | ✓ | ✓ | ✓ at `cc3b909`: real-PG **22/22** + 6 lifecycle checks (`bash scripts/cancellation-fee/run-realdb-tests.sh`, `docs/roadmap-evidence/cancellation-fee-realdb.log`); route spec 11/11 with **mock** Stripe (`src/testing/cancellation-fee-routes.spec.ts`; 8 of 11 fail on the previous route); upgraded-clone rehearsal checks 1 + 2 through real admin/booking routes; `cancellation-fee-preview` 4/4; mobile + admin builds | ✗ | ✗ (no policy enabled anywhere; amounts are D6) | **Fixed (were broken, proven):** fee read from `jobs.cancellation_fee`, a column the deployed `jobs` lacks (preview always 404, no fee ever captured or recorded); a published version could never be enabled; admin policy list selected non-existent columns (always 500, hidden by the UI as an empty list); publish/list not tenant-scoped; card capture used `fee×100` regardless of currency; `accepted`/`heading_to_pickup`/`driver_en_route` could not be cancelled through the API. **Now:** `20261268000000` — `cancellation_fee_quote`: due only when the customer cancels, an enabled policy exists for the booking's tenant+market, the market currency equals the booking currency (else fail closed), and a driver accepted more than `grace_seconds` ago; amount `least(fee_minor, fee_cap_minor, fare)` in the booking currency's minor units (0/2/3 decimals proven); highest enabled version applies. The quote is frozen into `metadata.cancellation_fee_quote` in the cancelling transaction; later policy changes and retries never re-price it. `/cancel` acts only on the frozen quote: card capture via the Stripe currency rule, capped at `amount_capturable`, idempotency key `vaydu-cancel-fee:<job>`; a receivable (frozen version) when nothing can be captured or there is no PaymentIntent; one receivable on retry; driver/admin cancellations never create customer debt. Customer sees the same server quote in the cancel confirmation. Admin: audited enable/disable with confirmation, tenant-scoped publish/list/enable. Rollback restores the `20261267` function, keeps frozen history; the API then charges nothing. **Interpretation recorded (from the recorded design, not a new value):** the grace period runs from the driver's acceptance (`jobs.accepted_at`). **Open:** `exempt_reasons` are not applied (matching the customer's free text would let anyone avoid the fee; needs structured reasons); `/policies/audit` lists all tenants' policy audit entries; no browser test of the cancel confirmation or the admin enable control yet. |
 | 6b | Driver compensation 80% of collected | ✓ | ✓ card bookings and cash-ride holds (code); cash-ride DB path blocked by the migration conflict below | ✓ card at `46eafb8`; cash at `29c4a75`: rehearsal checks 1 + 2 book a fee from a captured cash-ride HOLD over real PostgREST/PostgreSQL (hold table only, as a documented stand-in — see the conflict below): only the hold intent counts, merchant taken from the hold row (never the caller), 320/80 split, replay converges; route spec +3 cash cases and webhook spec +2 cash cases (**mock** Stripe), `cash-ride-booking` 25/25 incl. read-only `capturedFeeIntent`. Earlier card evidence at `46eafb8`: upgraded-clone rehearsal (real service code over real PostgREST/PostgreSQL, **mock** captured PaymentIntent object) checks 1 + 2; route spec 15/15 and webhook spec 6/6 with **mock** Stripe; existing debt-repayment webhook spec 7/7; `stripe-ledger-inverse` 2/2; 179/179 in the affected set; earlier PG 14 + webhook 7 for the settlement RPCs (prior) | ✗ | ✗ | Approved 80/20, on collection. **Linked (2026-11-12):** a cancellation fee captured from the booking's own authorisation is now booked as a collection. `server/services/cancellation-fee-collection.ts`: receivable (idempotent per job + reason, frozen policy version, amount actually collected, converted back from Stripe units exactly — never rounded) → existing `settle_cancellation_compensation` (frozen version, deduped on provider + merchant + environment + PaymentIntent id). Called by `/cancel` right after capture and by the Stripe webhook for the same PaymentIntent (storage failure → 500, Stripe re-delivers), so a crash between capture and settlement converges exactly once. **Proven on real PG:** policy disabled before collection → frozen version still applies; receivable paid 400 → driver 320 / platform 80, earnings row `cancellation_compensation` 3.2000/0.8000; replay → `already_settled`, one event, one receivable; another PaymentIntent → not applicable; more than the fee (charged before cancelling) → nothing booked; a confirmed full refund reverses the compensation to 0 (existing reversal authority, which finds the receivable by this PaymentIntent). **Fixed in passing:** a retried cancel after the fee was captured used to mark the booking `requires_refund`; it now settles idempotently and stays `paid` (an earlier full charge still goes to refund; an unreadable state goes to `requires_review`). The webhook never re-activates a cancelled booking. A currency with no configured Stripe route (e.g. KWD) is refused, so the card path fails closed. **Cash rides (added):** when the hold covers the whole frozen fee, `/cancel` captures it once and books it through the same service against the HOLD intent (`capturedFeeIntent`, read-only, provider-verified) under the hold row's merchant; the webhook resolves hold intents by `vaydu_cash_fee_hold` and settles the same event. No-show fees from the hold were already compensated by the no-show path. **Rare case kept explicit:** if the fee now exceeds the hold disclosed at booking (policy raised after booking), the remainder stays the customer's debt as designed, the hold part is captured but NOT auto-compensated (one receivable per job+reason cannot be both paid and open), and the booking goes to `requires_review`. **Open:** that partial-cover compensation needs a partial-collection receivable model; no real Stripe sandbox capture observed by the agent. |
-| 6c | Customer debt + repayment | ✓ | ✓ | ✓ authenticated `/debts` returns a seeded receivable on the upgraded clone (both checks); repayment prior | ✗ | ✗ | Real Stripe repayment return unverified; overdue terms D6. |
+| 6c | Customer debt + repayment + P3 follow-up | ✓ | ✓ branch; follow-up worker disabled | P3 local real-PG + 5 worker tests; prior authenticated debts rehearsal | ✗ P3 | ✗ P3 | P3 approved and built separately from f949a14; scope activation, full feature-release rehearsal and develop journey pending. Real Stripe repayment return remains unverified. |
 | 7a | Customer promotion (5% first booking) | ✓ | ✓ | prior | ✗ | ✗ | Caps/min fare/budget D6. |
 | 7b | Referrals (5% customer / 5% × 20 jobs driver) | ✓ | ✓ | ~ migrations apply (rehearsal); lifecycle prior (14/14) | ✗ | ✗ | |
-| 7c | Driver bonuses | ~ | ~ | ✗ | ✗ | ✗ | Needs D7. |
+| 7c | Driver bonuses | ~ policy core | ✗ | local eligibility/DST tests only | ✗ | ✗ | P11 approved; atomic global budget, durable award/payment and driver reporting remain T4. |
 | 8 | Ride-market readiness validation | ✓ | ✓ | ✓ 2026-11-13: `market-readiness-states.spec.ts` 10/10 | ✗ (next bundle) | n/a | `collection`, `payout` and `cash_ride` are each `ready`/`blocked`/`unknown` with reasons, read from the runtime gates: legacy GB/GBP Stripe or `market_payment_routes`; Stripe Connect or `driver_payout_markets` plus the sandbox runtime; `VAYDU_CASH_RIDE_BOOKING` plus `driver_cash_credit_market_enabled_v1e`. **Fixed:** the tenant id was ignored, so drivers were counted across tenants; it is now enforced for tenant admins. Read errors were silently "not configured" and are now `unknown`. City rows no longer shadow the country row. Report only: it enables nothing. No admin UI yet (API only). |
 | 9a | Operational reporting + monitoring | ~ | ~ | ✓ `report-unresolved-payment-ops.cjs` exit 0 / 2 / 3 against the upgraded clone (rehearsal) | ? | ✗ | No scheduled consumer or alert target. |
 | 9b | Backup restoration + recovery | ~ | n/a | ✗ | ~ | n/a | Fresh isolated restore drill of a current develop backup outstanding (runbook step 2 creates one). |

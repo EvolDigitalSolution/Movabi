@@ -1781,7 +1781,7 @@ router.get('/receivables', requireAdmin, async (req: Request, res: Response) => 
     const status: string = ['open','disputed','paid','waived','written_off'].includes(String(req.query.status)) ? String(req.query.status) : 'open';
     const { data, error } = await supabaseAdmin
         .from('customer_receivables')
-        .select('id,customer_id,job_id,currency_code,amount_minor,reason,status,policy_version,dispute_reason,created_at')
+        .select('id,customer_id,job_id,currency_code,amount_minor,reason,status,policy_version,dispute_reason,created_at,review_required')
         .eq('status', status === 'open' ? 'open' : status)
         .order('created_at', { ascending: false })
         .limit(200);
