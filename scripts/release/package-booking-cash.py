@@ -30,7 +30,9 @@ raw_source=subprocess.check_output(['git','archive','--format=tar','f949a14'],cw
 with tarfile.open(fileobj=io.BytesIO(raw_source)) as t:source_base={m.name:t.extractfile(m).read() for m in t.getmembers() if m.isfile() and m.name.startswith('src/')}
 for p in tracked:
  if p.startswith('src/') and p not in web_paths:assert (snapshot/p).read_bytes()==source_base[p],p
-for p in web_paths:assert (snapshot/p).read_bytes()==committed(p),p
+# Windows checkout line endings are normalised by Git. Compare the actual compiled
+# inputs to committed source with only that normalisation, never ignoring code changes.
+for p in web_paths:assert (snapshot/p).read_bytes().replace(b'\r\n',b'\n')==committed(p).replace(b'\r\n',b'\n'),p
 assert (web_root/'index.html').is_file()
 candidate=dict(paired)
 for p in api_paths:candidate[p]=committed(p)
