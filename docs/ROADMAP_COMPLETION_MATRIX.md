@@ -147,6 +147,11 @@ Evidence, exact local checks and read-only authenticated diagnosis:
 `docs/roadmap-evidence/booking-cash-20261116.md`. Historical rows below retain their recorded
 deployment states; this local fix does not mark a live journey complete.
 Isolated package/develop rollout/recovery: `deploy/vaydu-booking-cash/DEPLOYMENT.md`.
+Fix source `799fcdc`, package source `5252a6b`; checksummed candidate
+`release/vaydu-booking-cash-5252a6b.tar.gz` SHA-256
+`71a8453af95617b18cdfc773ec0f88e4ce614273111f037309f4e502aaff2b88`.
+Exact host command: `deploy/vaydu-booking-cash/RUN-5252a6b.md`. Shipped manifests/syntax and
+missing/incomplete restore-evidence failure gates pass; actual host rollout remains pending.
 
 ## States
 
@@ -326,7 +331,7 @@ on until the host steps run. Live state is read with `host-live-config.sh` befor
 | 6c Overdue debt terms (P3) | ✓ worker + durable inbox reminder + admin-review flag (2026-11-16); local tests below | ✗ separate future release | ✗ explicit develop flag + tenant/GB/GBP scope required | ✗ | **T7** feature-release rehearsal, host deployment and journey |
 | 7a First-booking promo (P4) | ✓ (fixed 2026-11-14) | ✗ (bundle) | ✗ → `activate-gb.sql` | ✗ | Activation; first booking shows and charges 5% |
 | 7b Referrals (P5) | ✓ (fixed 2026-11-14) | ✗ (release 2 + bundle) | ✗ → `activate-gb.sql` | ✗ | Activation; referee's qualifying ride earns once |
-| 5b Cash rides (GB) | ✓ | ✓ | ✗ → `activate-gb-cash.sql` + `VAYDU_CASH_RIDE_BOOKING` | ✗ | Activation for one GB test driver; cash booking → completion → ledger |
+| 5b Cash rides (GB) | ✓; form/reason/matching correction `799fcdc` | Existing API user-reported; correction pending | User-reported on: API flag + GB/GBP + one enrolled test driver; preserve cohort | ✗ live journey; local browser/server/PG pass | Fresh authenticated eligibility, Card/Cash booking → enrolled-driver acquisition → completion → ledger; deploy correction |
 | 1b Matching weights (P7) | ✓ 2026-11-14: per-market switch + weights (`smart_matching.markets.<CC>`); other markets unchanged (`driver-ranking-v23.spec.ts` 48/48) | ✗ (bundle `e4a64c1`) | ✗ → `activate-gb.sql` (GB 0.5 / 1.0 / 0.15 km, ranking on; road ETA stays off) | ✗ | Deploy, activate; a GB dispatch with two drivers |
 | 4b Surge (P8) | ✓ 2026-11-14: per-market `dynamic_pricing.markets.<CC>`, no tenant-level leak (`market-dynamic-pricing.spec.ts` 7/7); traffic display-only via `trafficEnabled:false`; activation stops if a GB strategy cap or live AI pricing would override | ✗ (bundle) | ✗ → `activate-gb.sql` (on, max 1.5, demand/supply) | ✗ | Deploy, activate; a high-demand GB quote ≤ 1.5×, NG unchanged |
 | 4c Map style (P9) | ✓ current style kept | ✓ | ✓ (no change) | ✗ | Seen on web and Android |
@@ -361,7 +366,7 @@ on until the host steps run. Live state is read with `host-live-config.sh` befor
 | ID | Work | For |
 |---|---|---|
 | T1 | Host steps: release-2 bundle, activation scripts, live-config before/after | everything above |
-| T2 | Choose one GB test driver email for cash (operator choice, not a policy) | 5b |
+| T2 | Existing GB test driver is already enrolled (user evidence); inspect native tenant/ID/terms and preserve enrolment, no new choice/approval | 5b |
 | T3 | Signal evaluator built/tested. Remaining: observation persistence + ingestion + admin review queue (no automatic suspension) | 2b |
 | T4 | GB/London calendar + distinct-ride evaluator built/tested. Remaining: atomic GBP 200/week global budget, GBP 20 award/payment and driver UI | 7c |
 | T5 | ✓ built 2026-11-14 (ops alert sender). Remaining: the recipient address in the API configuration (host) | 9a |
@@ -420,7 +425,7 @@ release and must never be mixed into the immutable tooling-only replacement.
 | Top-up form closes/resets after **server-confirmed** credit; balance + history refresh | ✓ | ✓ | ✓ browser (mock API, Stripe.js stub) | ✗ (in 635a285, not deployed) | n/a | `3734ddd`. `npx playwright test -c playwright.driver-topup.config.ts` 5/5 at 635a285 (2 with real Stripe.js + test key). Gap: `/driver/wallet` page not browser-tested (shares the component). |
 | Cash-ride message vs Top up action from separate server decisions | ✓ | ✓ | ✓ browser + real-PG | ✗ | n/a | Both directions in the browser; `realdb-market-pilot-test.sql` 15/15: `pilotEnabled` equals the acquisition gate per market. |
 | Exactly one ledger credit per successful payment (GB Stripe) | ✓ | ✓ | ✓ real Auth/PostgREST/PG, **mock** Stripe | ? | ~ (GB sandbox scope, prior record) | `scripts/test-driver-topup-db.ps1 -Integration` exit 0: 1 PaymentIntent for 2 concurrent submissions; unpaid verify writes nothing; concurrent paid verifies → one event, ledger `1:10000` on 10500. Develop ledger check pending (runbook step 6). Real **sandbox** payment → credit: not observed by the agent. |
-| Develop test cohort (cash rides GB/GBP) | ✓ | ✓ | ✓ real-PG 59/59 + rollback identity; browser cash booking `prior` | ✗ | ✗ | `bash scripts/cash-ride/run-realdb-tests.sh`. Deploy authorised + pending; enablement **not** authorised; needs D8. |
+| Develop test cohort (cash rides GB/GBP) | ✓; UI/matching correction `799fcdc` | ✓ source | Local real-PG + nine-suite rehearsal and 13 browser cases pass | Existing deployment user-reported; correction pending | GB/GBP + API flag + one driver user-reported on | Preserve that cohort; no re-enrolment or activation. Actual authenticated customer/driver/provider journey pending. |
 | Bank-account (payout) setup failure | ~ | ~ | ✗ | ? | ✗ | Separate from collection and cash-ride eligibility. NG Flutterwave subaccount first creation not demonstrated; app-DB binding for the co-hosted service unresolved. The user's last observed failure is still to be recorded (not reproduced here). |
 
 ## 1–9. Mandatory areas
@@ -533,7 +538,7 @@ release is deployed.
 | ~~D5~~ | **Resolved 2026-11-16:** explicit African catalogue off by default; GB required. Preserve authorised per-driver overrides and existing frozen jobs; apply current country policy to new acceptances. DB-only audited release prepared; host deployment pending. |
 | D6 | Per market+currency money values: promo cap + min fare, referral caps + min fare, funded campaign budgets, overdue-debt terms. |
 | D7 | Driver bonus rules and amounts. |
-| D8 | GB develop cash-ride cohort: driver id, tenant id, accepted terms version (and separate approval to enable). |
+| ~~D8~~ | Existing GB/GBP cash flag/market and one enrolled test driver confirmed by user on 2026-11-16. Preserve the current cohort; actual IDs/tenant/terms are a fresh verification task, not a new approval. |
 | ~~D10~~ | **Resolved 2026-11-12 by the user: "Keep them off".** Courier (delivery/errand) cash stays off in every market, including cash-pilot markets; cash applies to Rides only, with a card hold. Already enforced by `20261269000000`: `courier_enabled` defaults to false; no migration, API route or runbook sets it (only disposable test fixtures do); the markets table is writable by the database owner only, so the API cannot switch it on. Turning it on later needs a new decision and an owner-level change. |
 | ~~D9~~ | **Resolved 2026-11-12 by the user: "Driver-initiated only".** Implemented as above; handoff after acceptance counts as driver-initiated — confirmed by the user ("Yes, count handoffs"). |
 | ~~D11~~ | **Verified on develop 2026-11-13** (release 3c91991, real provider requests through the deployed adapter). Address, postcode, country isolation, fallback, reverse and `permanent=false` passed on 2026-11-12. Landmark (exact Terminal 2), business (Tesco Extra) and category (restaurant within 10 km) now pass too, through intent-aware TomTom place and category search ([record](roadmap-evidence/develop-release-3c91991-host.md)). |
@@ -553,7 +558,7 @@ a value on your behalf: where a value is needed, the option names it.
 | ~~D5~~ | Completion PIN (3) | Resolved: explicit African market defaults off, GB required; authorised same-tenant driver overrides preserved. No new policy decision needed. |
 | D6 | Promotions, referrals, campaigns, cancellation fees, overdue debt (6a/6c/7a/7b) | The rates are approved (5% promo, referrals, 80/20, debt threshold 50% of the minimum fare). Missing per market+currency: promo cap and minimum fare; referral caps and minimum fare; campaign budgets; cancellation fee amount, cap and grace period; overdue-debt terms. (a) Supply values for GB/GBP develop only. (b) Keep off. |
 | D7 | Driver bonuses (7c) | (a) Bonus rules and amounts (you supply). (b) Keep out of launch. |
-| D8 | GB develop cash-ride cohort (5b) | Supply the test driver id, the tenant id and the accepted cash terms version, plus separate approval to enable. (b) Keep off. |
+| ~~D8~~ | GB develop cash-ride cohort (5b), existing activation user-confirmed | Preserve the existing enabled GB/GBP market and single enrolled driver. Verify native ID/tenant/terms; no expansion or repeat approval. |
 | ~~D12~~ | **Resolved 2026-11-13 (user: capture, do not drop):** `20261270000000` captures both objects; no-op on develop; proven to preserve rows, grants, RLS and storage policies; fresh install matches develop. |
 | D13 | Cancellation-fee `exempt_reasons` (6a) | (a) Structured reasons the customer picks (e.g. driver late, wrong pickup), list supplied by you. (b) No exemptions (current behaviour). Matching free text is not offered: anyone could avoid the fee. |
 | D14 | Fee larger than the cash-ride hold disclosed at booking (6b) | (a) Build a partial-collection receivable model so the hold part is compensated automatically. (b) Keep the current manual review (`requires_review`). |
