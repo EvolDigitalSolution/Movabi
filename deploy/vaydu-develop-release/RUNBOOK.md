@@ -1,7 +1,8 @@
 # Current gate — tooling-only replacement `f949a14` (2026-11-16)
 
 **Current activation handoff:** use `../vaydu-develop-activation/P8-RECONCILIATION.md` and its
-small checksummed P8 artifact. It inspects all activation prerequisites together, reconciles the
+checksummed P8 artifact. Exact source/hash/commands are in
+`../vaydu-develop-activation/RUN-P8-RECONCILIATION.md`. It inspects all activation prerequisites together, reconciles the
 four captured GB strategies, preserves inherited non-GB defaults, and runs the unchanged
 activation guard/body with correction under one dry-run/apply transaction. It includes the prior
 legacy UK scope correction only when still needed. The 3.35 minimum and both AI shadow controls

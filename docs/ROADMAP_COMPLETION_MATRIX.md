@@ -76,6 +76,10 @@ pricing tests), plus **25/25** tenant/route/country checks and server typecheck.
 rehearsal tests the combined path, atomic tenant switch, all nine behaviour suites and rollback.
 **No host execution, live activation or develop journey is claimed.** The existing
 real-backup gate remains required. Operator details: `deploy/vaydu-develop-activation/P8-RECONCILIATION.md`.
+Correction source: **`eef726b`**. Checksummed operator artifact:
+`release/vaydu-gb-p8-fix-eef726b.tar.gz`, SHA-256
+`c92f2f33a0ae9d61c62bd17a32a722f31c3afa6a3eea98413d620f60f94cf99a`.
+Exact inspection/API-only/correction/activation block: `deploy/vaydu-develop-activation/RUN-P8-RECONCILIATION.md`.
 
 **Go-live gate:** no release packaging or go-live until every mandatory, non-deferred row is
 Implemented, Integrated and Verified and every decision below is resolved. Not met.
