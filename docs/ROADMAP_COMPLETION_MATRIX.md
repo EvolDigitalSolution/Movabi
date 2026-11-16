@@ -117,6 +117,9 @@ only local Docker Desktop contexts are available, and rejected SSH authenticatio
 Prepared deploy tools reuse passing real-backup evidence, verify f949a14/eef726b API and the
 release-f949a14-linux web content/image IDs, dry-run then apply/verify without restarting either.
 Details: `deploy/vaydu-completion-pin-africa/README.md`. Africa-provider integration stays deferred.
+Source `a349f13`; DB-only artifact `release/vaydu-pin-africa-a349f13.tar.gz`, SHA-256
+`144236226360cc72ecd5ea274be2d26dcfaaf9f61e7c1087ae8ad061c6372d8e`.
+Exact authorised host apply/verify block: `deploy/vaydu-completion-pin-africa/RUN.md`.
 
 ## States
 
