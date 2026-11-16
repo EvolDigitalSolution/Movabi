@@ -85,6 +85,12 @@ Correction source: **`eef726b`**. Checksummed operator artifact:
 `release/vaydu-gb-p8-fix-eef726b.tar.gz`, SHA-256
 `c92f2f33a0ae9d61c62bd17a32a722f31c3afa6a3eea98413d620f60f94cf99a`.
 Exact inspection/API-only/correction/activation block: `deploy/vaydu-develop-activation/RUN-P8-RECONCILIATION.md`.
+**Current operator tooling supersedes that artifact:** source `28452fb`, artifact
+`release/vaydu-gb-p8-fix-28452fb.tar.gz`, SHA-256
+`8b342b6a7eb8312809cca6a1ac4f4d9bd84e8b637a132e15513a761338103a90`.
+The paired eef726b API is unchanged byte-for-byte. Strict f949a14 web verification and exact
+image recovery evidence are added; 6 web + 3 recovery guard checks pass. The same handoff path
+now contains the corrected exact commands and pre-/post-commit recovery boundaries.
 
 **Go-live gate:** no release packaging or go-live until every mandatory, non-deferred row is
 Implemented, Integrated and Verified and every decision below is resolved. Not met.
