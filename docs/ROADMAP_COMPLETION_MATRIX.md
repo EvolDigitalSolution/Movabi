@@ -24,6 +24,27 @@ the same commit as any change that moves a state. Last updated 2026-11-16.
   local synthetic-data rehearsal (9/9 + preservation + rollback) and 5/5 failure regressions;
   **real-backup host gate still pending**. Exact host command is in the current RUNBOOK gate.
 
+### Activation mismatch: legacy UK pricing scope (2026-11-16)
+
+User-supplied live evidence: four legacy national GBP pricing rows have blank country codes;
+the ride minimum is **GBP 3.35**. NG pricing has explicit country scope. This is not a new price.
+The quote service's legacy GB default selects the blank UK rows, while the activation minimum
+guard correctly requires explicit GB/GBP. The guard is unchanged. A separate transactional,
+audited correction captures those four IDs, rejects conflicts/stale data, sets only country_code
+to GB and preserves all other fields, including updated_at and the timestamp trigger mode.
+NG and all unrelated pricing rows are asserted unchanged. No currency-to-country rule is added.
+
+Both activation profile lookups now skip blank/whitespace registration countries before falling
+back to country_code; a nonblank registration country keeps precedence. Local regression:
+10 PostgreSQL integration cases plus the existing market-fare spec pass (11 tests); 16 actual
+GB/NG quote calculations compare identical before/after correction. The installed host services
+will be checked separately by the correction wrapper. **Not applied or activated by the agent.**
+Exact correction/activation commands and verification limits:
+`deploy/vaydu-develop-activation/LEGACY-GB-SCOPE.md`. Existing real-backup/release gates still apply.
+The full release-2 rehearsal also passes with blank/NULL GB profile registration fields,
+including activation twice, all nine suites, NG isolation, exact rollback and the existing
+campaign/surge/AI guards. This is local evidence; it does not establish live activation.
+
 **Go-live gate:** no release packaging or go-live until every mandatory, non-deferred row is
 Implemented, Integrated and Verified and every decision below is resolved. Not met.
 

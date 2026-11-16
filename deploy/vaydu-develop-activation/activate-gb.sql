@@ -54,7 +54,7 @@ END $m$;
 CREATE TEMP TABLE gb_tenants ON COMMIT DROP AS
   SELECT DISTINCT tenant_id FROM public.profiles
    WHERE tenant_id IS NOT NULL AND role IN ('driver','customer')
-     AND upper(coalesce(registration_country_code, country_code, '')) = 'GB';
+     AND upper(coalesce(nullif(btrim(registration_country_code), ''), nullif(btrim(country_code), ''), '')) = 'GB';
 DO $t$ BEGIN IF NOT EXISTS (SELECT 1 FROM gb_tenants) THEN RAISE EXCEPTION 'no GB tenant found'; END IF; END $t$;
 
 -- P8 preconditions: nothing else may override the approved GB surge.

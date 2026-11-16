@@ -12,7 +12,7 @@ CREATE TEMP TABLE cash_driver ON COMMIT DROP AS
   SELECT u.id AS driver_id, p.tenant_id
     FROM auth.users u JOIN public.profiles p ON p.id=u.id
    WHERE lower(u.email)=lower(:'driver_email') AND p.role='driver'
-     AND upper(coalesce(p.registration_country_code,p.country_code,''))='GB' AND p.tenant_id IS NOT NULL;
+     AND upper(coalesce(nullif(btrim(p.registration_country_code),''),nullif(btrim(p.country_code),''),''))='GB' AND p.tenant_id IS NOT NULL;
 DO $c$ BEGIN
   IF (SELECT count(*) FROM cash_driver) <> 1 THEN RAISE EXCEPTION 'driver_email is not exactly one GB driver'; END IF;
   IF NOT EXISTS (SELECT 1 FROM public.cancellation_policies c JOIN cash_driver d ON d.tenant_id=c.tenant_id WHERE c.market_code='GB' AND c.enabled) THEN

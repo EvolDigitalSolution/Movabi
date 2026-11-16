@@ -1,5 +1,13 @@
 # Current gate — tooling-only replacement `f949a14` (2026-11-16)
 
+**Activation mismatch follow-up:** user live evidence shows four blank-country legacy UK GBP
+pricing rows and an existing ride minimum of **GBP 3.35**. Do not alter the minimum or relax the
+activation guard. Use the separate checksummed scope-correction tools described in
+`../vaydu-develop-activation/LEGACY-GB-SCOPE.md`, then the corrected activation copy from that
+artifact. It fixes blank/NULL profile lookup too and verifies actual GB/NG quotes before/after.
+The f949a14 archive remains immutable; this data/activation correction replaces none of its
+API, web or release SQL. The real-backup/release verification gate below still applies.
+
 **Use this gate before the historical release instructions below.** API baseline reported by the
 user is `c972037`; web baseline is `3c91991`. Both require a fresh host check. Do not retry rejected
 SSH authentication. Deployment/activation remain gated on the corrected shipped drill against the
