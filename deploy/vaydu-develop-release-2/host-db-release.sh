@@ -11,7 +11,7 @@
 # Never prints credentials. FAILS CLOSED: exit code 0 only when every step of the command succeeded.
 #
 # drill (2026-11-14): every step is checked and any failure makes the exit code 1, with DRILL_FAILED:
-#   restore without error lines; restored row counts equal the backup's; PREREQ; release-up; VERIFY;
+#   successful globals/pg_restore exit statuses; restored row counts equal the backup's; PREREQ; release-up; VERIFY;
 #   EVERY suite listed in tests/SUITES.txt (no more, no fewer) passes, each run with drill-preamble.sql inside
 #   its own rolled-back transaction; the restored data is byte-identical after the suites; release-down
 #   restores the exact pre-release schema; PREREQ passes again; the data is byte-identical to before the
@@ -54,10 +54,28 @@ drill)
   [ "$ok" -ge 5 ] || { echo "FAIL: the throwaway database did not become ready"; echo "DRILL_FAILED"; exit 1; }
   D(){ docker exec -i -e PGPASSWORD="$PW" "$N" psql -X -h 127.0.0.1 -U supabase_admin -d "${1:-movabi_develop}" -v ON_ERROR_STOP=1 -P pager=off "${@:2}"; }
   D postgres -qc "CREATE DATABASE movabi_develop;" || { echo "FAIL: cannot create the drill database"; echo "DRILL_FAILED"; exit 1; }
-  docker exec -i -e PGPASSWORD="$PW" "$N" psql -X -h 127.0.0.1 -U supabase_admin -d postgres -q < "$F.globals.sql" > "$T/globals.log" 2>&1 || true
-  docker exec -i -e PGPASSWORD="$PW" "$N" pg_restore -h 127.0.0.1 -U supabase_admin -d movabi_develop < "$F" > "$T/restore.log" 2>&1 || true
-  errs=$(grep -c 'error:' "$T/restore.log" || true)
-  if [ "$errs" = 0 ]; then echo "PASS: pg_restore reported no errors"; else bad "pg_restore reported $errs error line(s):"; grep 'error:' "$T/restore.log" | head -20; fi
+  # The same Supabase image bootstraps roles also present in pg_dumpall. Snapshot them BEFORE
+  # restoring globals. Omit only their exact, standalone CREATE ROLE statements (once each).
+  # All ALTER ROLE, memberships, custom-role creation and other SQL remain unchanged and strict.
+  # No SQLSTATE or message-text suppression: an unexpected duplicate or ANY other SQL error fails.
+  if D postgres -qAt -c "select 'CREATE ROLE '||quote_ident(rolname)||';' from pg_roles where rolname !~ '^pg_' order by rolname" > "$T/bootstrap-roles.sql"; then
+    echo "PASS: inventoried fresh-image bootstrap roles"
+  else
+    rc=$?; bad "bootstrap role inventory exited $rc"; echo "DRILL_FAILED (globals)"; exit 1
+  fi
+  awk 'FILENAME == ARGV[1] { bootstrap[$0]=1; next }
+       ($0 in bootstrap) && !seen[$0]++ { print "-- Already bootstrapped: " $0; next }
+       { print }' "$T/bootstrap-roles.sql" "$F.globals.sql" > "$T/globals.sql"
+  if D postgres -q < "$T/globals.sql" > "$T/globals.log" 2>&1; then
+    echo "PASS: globals restore exited 0 (only pre-existing bootstrap CREATE ROLE statements omitted)"
+  else
+    rc=$?; bad "globals restore exited $rc"; tail -20 "$T/globals.log"; echo "DRILL_FAILED (globals)"; exit 1
+  fi
+  if docker exec -i -e PGPASSWORD="$PW" "$N" pg_restore --exit-on-error -h 127.0.0.1 -U supabase_admin -d movabi_develop < "$F" > "$T/restore.log" 2>&1; then
+    echo "PASS: pg_restore exited 0"
+  else
+    rc=$?; bad "pg_restore exited $rc"; tail -20 "$T/restore.log"; echo "DRILL_FAILED (restore)"; exit 1
+  fi
   echo "$COUNTS_SQL" | D movabi_develop -tA > "$T/counts.tsv" 2>&1 || bad "row counts could not be read"
   if diff "$F.counts.tsv" "$T/counts.tsv" > "$T/counts.diff"; then echo "PASS: restored row counts equal the backup's ($(wc -l < "$T/counts.tsv") tables)"; else bad "row counts differ from the backup:"; head -20 "$T/counts.diff"; fi
   if [ "$fail" != 0 ]; then echo "DRILL_FAILED (restore)"; exit 1; fi
@@ -70,6 +88,7 @@ drill)
   echo "$DATA_SQL" | D movabi_develop -tA > "$T/data-released.tsv" 2>&1 || bad "data fingerprint could not be read"
   # Behaviour suites: exactly the listed set; each with the preamble inside its own rolled-back transaction.
   mapfile -t SUITES < <(grep -v '^#' "$B/tests/SUITES.txt" | sed 's/\r$//' | grep .)
+  [ "${#SUITES[@]}" -eq 9 ] || bad "expected exactly 9 behaviour suites, found ${#SUITES[@]}"
   present=$(cd "$B/tests" && ls *.sql | sort | tr '\n' ' '); listed=$(printf '%s\n' "${SUITES[@]}" | sort | tr '\n' ' ')
   [ "$present" = "$listed" ] || bad "suites present ($present) differ from tests/SUITES.txt ($listed)"
   passed=0

@@ -2,7 +2,23 @@
 
 Single source of truth for the nine mandatory roadmap areas. Supersedes the status tables in
 `LAUNCH-ROADMAP-HANDOFF.md` and `BIKE_COMPLETION_MATRIX.md` (kept as history). Update this file in
-the same commit as any change that moves a state. Last updated 2026-11-14.
+the same commit as any change that moves a state. Last updated 2026-11-16.
+
+### Current develop baseline and restore gate (2026-11-16)
+
+- User-reported current baseline: **API `c972037`, web `3c91991`**. Older inventories below are
+  historical. A fresh host image/SOURCE_SHA check is required before deployment; rejected SSH
+  authentication is not retried. No deployment or activation has been verified in this session.
+- Replacement tooling checks globals restoration (`ON_ERROR_STOP=1`) and `pg_restore
+  --exit-on-error` exit statuses explicitly. Only exact standalone `CREATE ROLE` statements for
+  roles inventoried in the fresh disposable image are omitted, once each; every other statement
+  remains strict. Silent and uppercase-output failure regressions run through the actual drill.
+- All **nine** behaviour suites, post-suite data preservation, preamble cleanup, exact public-schema
+  rollback, PREREQ after rollback and pre-release data preservation remain mandatory. Deployment
+  stays gated until the corrected **shipped** drill passes against the existing real backup
+  `/home/edsadmin/vaydu-develop-backups/develop-before-release-e4a64c1-20261114T201704Z.dump`.
+- P3/P10/P11/P12 approvals remain valid. Independent implementation can continue while this host
+  gate is pending; it must not change the API/web/SQL payload of the tooling-only replacement.
 
 **Go-live gate:** no release packaging or go-live until every mandatory, non-deferred row is
 Implemented, Integrated and Verified and every decision below is resolved. Not met.

@@ -40,6 +40,8 @@ cp -r "$WEB" "$OUT/mobile/browser"
 for f in VERIFY.sql PREREQ.sql ORDER.txt release-up.sql release-dryrun.sql release-down.sql RELEASE-MIGRATIONS.sha256 host-db-release.sh; do git -c core.autocrlf=false cat-file -p "HEAD:$REL/$f" > "$OUT/$f"; done
 # The real-data drill preamble ships with the release whose drill uses it (host-db-release.sh drill).
 if git cat-file -e "HEAD:$REL/drill-preamble.sql" 2>/dev/null; then git -c core.autocrlf=false cat-file -p "HEAD:$REL/drill-preamble.sql" > "$OUT/drill-preamble.sql"; fi
+# Run the restore-status regression checks against the actual shipped drill, without Docker access.
+git -c core.autocrlf=false cat-file -p HEAD:scripts/release/test-host-drill-restore.sh > "$OUT/test-host-drill-restore.sh"
 for f in host-live-config.sh live-config.sql trace-driver-inspection.sql; do git -c core.autocrlf=false cat-file -p "HEAD:$TOOLS/$f" > "$OUT/$f"; done
 # Develop activation scripts (approved GB values) travel with the bundle; nothing runs them automatically.
 ACT=deploy/vaydu-develop-activation
