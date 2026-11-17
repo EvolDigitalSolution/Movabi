@@ -74,10 +74,24 @@ run_test(){ local file="$1" out; out="$(q -F ' | ' < "$tests/$file")" || { echo 
  local summary; summary="$(echo "$out" | tail -1)"; echo "   failures | checks = $summary"
  [ "${summary%% *}" = 0 ] || fail=1; }
 
-# The pending 202612700..202612704 migrations capture live-develop drift (inspection/pin/referral/
-# receivables objects that exist on live develop but not in the deployed baseline export); they do
-# not apply there and touch none of the errand purchase-payer objects. The errand and bridge
-# migrations apply directly on the baselines they were written against.
+# Pending migration chain. On the live-develop baseline the full pending chain
+# (202612700..202612706 — inspection drift capture, completion-PIN effective/acceptance, referral
+# minor units, receivables follow-up, then the errand payer + customer wallet bridge) is applied
+# in order, mirroring the deploy sequence. On the older deployed export the 202612700..202612704
+# drift captures do not apply (their objects only exist on live develop) and touch none of the
+# errand purchase-payer objects, so only the two new migrations are applied there.
+case "$baseline" in
+  develop_live*)
+    apply 20261270000000_capture_develop_inspection_drift
+    apply 20261270100000_completion_pin_effective
+    apply 20261270200000_referral_fare_minor_units
+    apply 20261270300000_overdue_debt_followup
+    apply 20261270400000_completion_pin_acceptance_market
+    ;;
+  *)
+    echo "NOTE: baseline '$baseline' predates the 202612700..202612704 drift captures; applying 705+706 only"
+    ;;
+esac
 apply 20261270500000_errand_purchase_payer
 apply 20261270600000_customer_wallet_booking_bridge
 run_test realdb-errand-purchase-payer-test.sql

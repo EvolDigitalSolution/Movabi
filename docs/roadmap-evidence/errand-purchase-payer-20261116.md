@@ -137,3 +137,33 @@ New endpoint `GET /api/bookings/:jobId/purchase-ledger` (booking.routes.ts) retu
 alongside `driver_earnings` (commissionable) and the queue row's `terms.reimbursementMinor` —
 so both dimensions reconcile even inside a single provider transfer. Admin accounting export
 now includes `errand_purchase_payments`.
+
+
+## Deployment-readiness closure — 2026-11-17 (second pass)
+
+- **Full-chain rehearsal**: `run-realdb-tests.sh` and `run-worker-rehearsal.sh` now apply
+  `202612700→706` in deploy order on `develop_live_public_schema_20261112.sql` over
+  `supabase/postgres:15.1.1.78` — including the inspection drift capture, completion-PIN
+  effective/acceptance (Africa/GB PIN work), referral and receivables migrations.
+  42/42 + 11/11 + worker 10/10, all green.
+- **Harness-only accommodations documented**: the rehearsal disables the supabase image's
+  bundled DDL-watch event triggers and non-payment `jobs` AFTER-triggers during fixture
+  inserts only; payment-integrity triggers stay enabled (PREFLIGHT.md).
+- **Endpoint isolation**: `GET /api/bookings/:jobId/purchase-ledger` requires the booking's
+  customer, its assigned driver, or an admin **of the same tenant** (tenant_id compared).
+- **Screens**: driver earnings expanded row shows "Shopping reimbursement" separately from
+  commissionable earnings (lazy per-job ledger fetch, cached; degrades gracefully on 403);
+  admin finance daily report exposes `shoppingReimbursement` per booking (non-commissionable
+  driver-paid purchases only).
+- **Browser-tested**: `e2e/driver-earnings-errand-ledger.spec.ts` 4/4 against this checkout's
+  dev build (note: `E2E_BASE_URL=http://localhost:3001` — port 3000 was held by a different
+  checkout's dev server, which produced a false failure initially).
+- **Withdrawal reconciliation**: verified nothing credits a driver wallet balance for
+  payout money — `earnings_payable` is taxonomy-only, no write path. The automatic
+  transfer cannot create a second withdrawable balance (PREFLIGHT.md).
+- **Customer funding**: the chain test exercises the real `initiate_wallet_topup` →
+  `confirm_wallet_topup_with_total` (+idempotent replay) path — not seeded balances.
+- **Reproducibility**: test `.sql` files are git-tracked (force-added past the `*.sql`
+  gitignore); baselines and harness files are committed — clean checkout reproduces all suites.
+- **Package**: `deploy/vaydu-errand-purchase-payer/package/` = two migrations + PREFLIGHT +
+  `CHECKSUMS.sha256` over final content.

@@ -32,6 +32,7 @@ export function financeBooking(row: Record<string, unknown>): FinanceBooking {
     completedAt: String(row.completed_at), paymentMethod: String(row.payment_method || 'unknown'), paymentStatus: String(row.payment_status || 'unknown'),
     customerPayments: total ?? 0, commission: commission ?? 0, platformFee: platform ?? 0,
     platformIncome: (commission ?? 0) + (platform ?? 0), driverEarnings: driver ?? 0,
+    shoppingReimbursement: 0,
     serviceRefunds: Number(row.total_service_refunded_minor || 0) / factor,
     splitValid, transferStatus: String(row.stripe_transfer_status || 'not recorded'), transferId: row.stripe_transfer_id ? String(row.stripe_transfer_id) : null
   };
@@ -52,6 +53,23 @@ export class AdminFinanceService {
       if (error) throw error;
       for (const row of data || []) if (dayInZone(row.completed_at, timezone) === date) bookings.push(financeBooking(row));
       if (!data || data.length < 500) break;
+    }
+    // Errand shopping reimbursements (non-commissionable): aggregate driver-paid
+    // purchase records per job so the report reconciles them apart from fare earnings.
+    if (bookings.length) {
+      const byJob = new Map<string, number>();
+      const ids = bookings.map(b => b.id);
+      for (let offset = 0; offset < ids.length; offset += 400) {
+        const { data: purchases, error: purchaseError } = await supabaseAdmin.from('errand_purchase_payments')
+          .select('job_id,amount_minor').eq('payer', 'driver').in('status', ['recorded', 'reimbursed'])
+          .in('job_id', ids.slice(offset, offset + 400));
+        if (purchaseError) throw purchaseError;
+        for (const p of purchases || []) byJob.set(p.job_id, (byJob.get(p.job_id) || 0) + Number(p.amount_minor || 0));
+      }
+      for (const b of bookings) {
+        const digits = b.currency === 'UNKNOWN' ? 2 : new Intl.NumberFormat('en', { style: 'currency', currency: b.currency }).resolvedOptions().maximumFractionDigits;
+        b.shoppingReimbursement = (byJob.get(b.id) || 0) / (10 ** digits);
+      }
     }
     const outstandingPayouts: FinancePayout[] = [];
     for (let offset = 0; ; offset += 500) {

@@ -310,6 +310,16 @@ export class DriverService {
         return result;
     }
 
+    async getPurchaseLedger(jobId: string): Promise<{purchases:any[];earnings:any[];payout:any}> {
+        const owner = this.auth.currentUser()?.id;
+        if (!owner) throw new Error('Authentication required');
+        const result = await firstValueFrom(this.http.get<{purchases:any[];earnings:any[];payout:any}>(
+            this.apiUrlService.getApiUrl(`/api/booking/${encodeURIComponent(jobId)}/purchase-ledger`),
+            { headers: await this.authHeaders() }));
+        if (owner !== this.auth.currentUser()?.id) throw new Error('Session changed');
+        return result;
+    }
+
     async previewEarnings(jobId: string, amount?: number): Promise<{gross:number;net:number;deductions:number;currency:string;estimated:boolean}> {
         const owner = this.auth.currentUser()?.id;
         if (!owner) throw new Error('Authentication required');

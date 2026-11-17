@@ -267,6 +267,11 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                     <dl class="earning-details"><dt>Net payout</dt><dd>{{ formatRecordedEarning(earning) }}</dd><dt>Commission</dt><dd>{{ formatRecordedFee(earning) }} @if(earning.commission_rate_used!==null && earning.commission_rate_used!==undefined){({{earning.commission_rate_used}}%)}</dd><dt>Gross earnings</dt><dd>{{ formatRecordedGross(earning) }}</dd>
                     @if($any(earning).stripe_transfer_id){<dt>Stripe transfer</dt><dd>{{ $any(earning).stripe_transfer_id }}</dd>}
                     @if(earning.job_id){<dt>Booking reference</dt><dd>{{earning.job_id}}</dd>}
+                    @if(earning.job_id && ledgerFor(earning.job_id); as ledger) {
+                      @for (p of ledger.purchases; track p.id) {
+                        <dt>Shopping reimbursement</dt><dd>{{ formatMinor(p.amount_minor, p.currency) }} · {{ p.status }}@if(p.reimbursement_transfer_id){ · {{ p.reimbursement_transfer_id }}}<p class="ledger-note">Non-commissionable — repays your purchase, not earnings.</p></dd>
+                      }
+                    }
                     </dl>
                   }
                   @if(earning.job_id){<button type="button" class="earning-booking" (click)="openBooking(earning.job_id)">View booking record</button>}
@@ -281,7 +286,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
       </ion-infinite-scroll>
     </ion-content>
   `,
-    styles: [`.earning-record{background:white;border:1px solid #e2e8f0;border-radius:1.3rem;padding:1rem;min-width:0;max-width:100%;overflow-wrap:anywhere}.earning-summary{display:grid;grid-template-columns:minmax(0,1fr);width:100%;gap:.6rem;text-align:left;white-space:normal;min-width:0;line-height:1.4}.earning-summary>*{min-width:0;max-width:100%}.earning-amount{font-weight:800;color:#047857;font-size:1.2rem}.earning-status{background:#f1f5f9;border-radius:.7rem;padding:.45rem .6rem;line-height:1.4}.earning-details{display:grid;gap:.4rem;margin-top:1rem;border-top:1px solid #e2e8f0;padding-top:1rem}.earning-details dt{font-weight:700;color:#64748b}.earning-details dd{margin:0;margin-bottom:.5rem;overflow-wrap:anywhere}.earning-booking{margin-top:1rem;background:#fef3c7;border-radius:.75rem;padding:.75rem 1rem;font-weight:700;width:100%;white-space:normal;text-align:left}.earning-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;align-items:stretch}.earning-totals>div{min-width:0;padding:.75rem .5rem;border-radius:1rem}.earning-totals>div>div{width:2rem;height:2rem;border-radius:.75rem;margin-bottom:.5rem}.earning-totals>div>div ion-icon{font-size:1.125rem}.earning-totals>div>p:first-of-type{font-size:.6875rem!important;line-height:1.35!important;letter-spacing:.04em!important;margin-bottom:.35rem}.earning-totals>div>p:last-of-type{font-size:.875rem!important;line-height:1.4!important;letter-spacing:normal!important;font-variant-numeric:tabular-nums;white-space:normal;overflow-wrap:anywhere;margin:0}@media(min-width:640px){.earning-totals{gap:.75rem}.earning-totals>div{padding:1rem}.earning-totals>div>p:last-of-type{font-size:1rem!important}}.earning-record button:focus-visible{outline:3px solid #2563eb;outline-offset:3px}`]
+    styles: [`.earning-record{background:white;border:1px solid #e2e8f0;border-radius:1.3rem;padding:1rem;min-width:0;max-width:100%;overflow-wrap:anywhere}.earning-summary{display:grid;grid-template-columns:minmax(0,1fr);width:100%;gap:.6rem;text-align:left;white-space:normal;min-width:0;line-height:1.4}.earning-summary>*{min-width:0;max-width:100%}.earning-amount{font-weight:800;color:#047857;font-size:1.2rem}.earning-status{background:#f1f5f9;border-radius:.7rem;padding:.45rem .6rem;line-height:1.4}.earning-details{display:grid;gap:.4rem;margin-top:1rem;border-top:1px solid #e2e8f0;padding-top:1rem}.earning-details dt{font-weight:700;color:#64748b}.earning-details dd{margin:0;margin-bottom:.5rem;overflow-wrap:anywhere}.ledger-note{font-size:.75rem;color:#64748b;margin:.15rem 0 0}.earning-booking{margin-top:1rem;background:#fef3c7;border-radius:.75rem;padding:.75rem 1rem;font-weight:700;width:100%;white-space:normal;text-align:left}.earning-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;align-items:stretch}.earning-totals>div{min-width:0;padding:.75rem .5rem;border-radius:1rem}.earning-totals>div>div{width:2rem;height:2rem;border-radius:.75rem;margin-bottom:.5rem}.earning-totals>div>div ion-icon{font-size:1.125rem}.earning-totals>div>p:first-of-type{font-size:.6875rem!important;line-height:1.35!important;letter-spacing:.04em!important;margin-bottom:.35rem}.earning-totals>div>p:last-of-type{font-size:.875rem!important;line-height:1.4!important;letter-spacing:normal!important;font-variant-numeric:tabular-nums;white-space:normal;overflow-wrap:anywhere;margin:0}@media(min-width:640px){.earning-totals{gap:.75rem}.earning-totals>div{padding:1rem}.earning-totals>div>p:last-of-type{font-size:1rem!important}}.earning-record button:focus-visible{outline:3px solid #2563eb;outline-offset:3px}`]
 })
 export class EarningsPage implements OnInit {
     openBooking(id:string){void this.nav.navigateForward('/driver/history/'+encodeURIComponent(id));}
@@ -394,6 +399,16 @@ export class EarningsPage implements OnInit {
         }finally{this.withdrawLoading.set(false);}
     }
 
+    // Per-job errand purchase ledger (reimbursement vs commissionable earnings),
+    // fetched lazily when an earnings row is expanded and cached by job id.
+    purchaseLedgers = signal<Record<string, {purchases:any[];earnings:any[];payout:any} | null>>({});
+    ledgerFor(jobId: string) { return this.purchaseLedgers()[String(jobId)] ?? null; }
+    formatMinor(minor: unknown, currency: unknown): string {
+        const code = /^[A-Za-z]{3}$/.test(String(currency || '')) ? String(currency).toUpperCase() : 'GBP';
+        const digits = new Intl.NumberFormat('en', { style: 'currency', currency: code }).resolvedOptions().maximumFractionDigits ?? 2;
+        return new Intl.NumberFormat('en-GB', { style: 'currency', currency: code }).format(Number(minor || 0) / (10 ** digits));
+    }
+
     toggleEarning(earning: any) {
         const key = this.getEarningKey(earning);
         if (!key) return;
@@ -401,6 +416,12 @@ export class EarningsPage implements OnInit {
         this.selectedEarningId.set(
             this.selectedEarningId() === key ? null : key
         );
+        const jobId = String(earning?.job_id || '');
+        if (jobId && !(jobId in this.purchaseLedgers())) {
+            void this.driverService.getPurchaseLedger(jobId)
+                .then(ledger => this.purchaseLedgers.update(m => ({ ...m, [jobId]: ledger })))
+                .catch(() => this.purchaseLedgers.update(m => ({ ...m, [jobId]: null })));
+        }
     }
 
     isSelected(earning: any): boolean {

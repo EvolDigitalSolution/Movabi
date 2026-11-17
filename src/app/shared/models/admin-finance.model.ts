@@ -3,6 +3,9 @@ export interface FinanceBooking {
   completedAt: string; paymentMethod: string; paymentStatus: string;
   customerPayments: number; commission: number; platformFee: number; platformIncome: number;
   driverEarnings: number; serviceRefunds: number; splitValid: boolean;
+  // Non-commissionable errand shopping reimbursement paid to the driver
+  // (errand_purchase_payments, payer='driver'). Separate from driverEarnings.
+  shoppingReimbursement: number;
   transferStatus: string; transferId: string | null;
 }
 export interface FinancePayout {

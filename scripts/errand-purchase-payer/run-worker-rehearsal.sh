@@ -62,7 +62,13 @@ qw -c "CREATE TABLE IF NOT EXISTS auth.job_messages (id uuid); CREATE OR REPLACE
 sed 's/CREATE SCHEMA public;/CREATE SCHEMA IF NOT EXISTS public;/; s/CREATE EXTENSION /CREATE EXTENSION IF NOT EXISTS /' "$root/supabase/baseline/develop_live_public_schema_20261112.sql" > "$tmp/baseline.sql"
 qs "$tmp/baseline.sql"
 qs "$root/supabase/baseline/candidate/001_tenants.sql"
-for m in 20261270500000_errand_purchase_payer 20261270600000_customer_wallet_booking_bridge; do
+# Full pending migration chain, in deploy order: the live-develop drift captures
+# (inspection, completion-PIN effective/acceptance — the Africa/GB PIN work), referral and
+# receivables, then the errand purchase-payer + customer wallet bridge migrations under test.
+for m in 20261270000000_capture_develop_inspection_drift 20261270100000_completion_pin_effective \
+  20261270200000_referral_fare_minor_units 20261270300000_overdue_debt_followup \
+  20261270400000_completion_pin_acceptance_market \
+  20261270500000_errand_purchase_payer 20261270600000_customer_wallet_booking_bridge; do
   qs "$root/supabase/migrations/$m.sql" && echo "APPLIED $m" || { echo "FAILED to apply $m"; exit 1; }
 done
 
@@ -80,6 +86,19 @@ for _ in $(seq 1 90); do [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127
 # Fixtures: three wallet-funded driver-personal errands completed through the
 # real RPC chain (pay -> spend -> complete_job_with_pending_payout), leaving
 # pending queue rows of 2850 minor (850 fare + 2000 reimbursement).
+#
+# HARNESS-ONLY accommodations (never on a real deployment):
+#  * The setup step disables the supabase image's built-in DDL-watch event triggers
+#    (graphql/pgrst/pg_net) — they fire during baseline import and one errors on
+#    missing sequences in a database without those extensions' objects. They are
+#    image-bundled schema-change watchers, not application logic.
+#  * The fixture DO block below disables non-essential AFTER/business triggers on
+#    jobs for the duration of fixture inserts ONLY — needed because the fixture
+#    writes historical job states (requested -> accepted -> in_progress) in a way
+#    a real client never could (e.g. status-transition guards, notification
+#    fan-out that requires live auth context). The two payment-integrity triggers
+#    are deliberately KEPT enabled so the rehearsal still exercises the real
+#    payment-eligibility and cash-credit paths.
 cat > "$tmp/fixtures.sql" <<'SQL'
 DO $d$ DECLARE t text; BEGIN
  FOR t IN SELECT tgname FROM pg_trigger tr JOIN pg_class c ON c.oid=tr.tgrelid WHERE c.relname='jobs' AND NOT tgisinternal

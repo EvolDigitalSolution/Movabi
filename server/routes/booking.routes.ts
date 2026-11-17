@@ -431,11 +431,14 @@ router.get('/:jobId/purchase-ledger', async (req: Request, res: Response) => {
     const userId = await requireAuthenticatedUser(req, res);
     if (!userId) return;
     const { data: job, error } = await supabaseAdmin.from('jobs')
-        .select('customer_id,driver_id').eq('id', String(req.params.jobId)).maybeSingle();
+        .select('customer_id,driver_id,tenant_id').eq('id', String(req.params.jobId)).maybeSingle();
     if (error || !job) return res.status(404).json({ error: 'Booking not found', code: 'JOB_NOT_FOUND' });
     if (job.customer_id !== userId && job.driver_id !== userId) {
-        const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', userId).maybeSingle();
-        if (String(profile?.role || '') !== 'admin') return res.status(403).json({ error: 'Booking access required', code: 'JOB_ACCESS_DENIED' });
+        // Tenant isolation: an admin may only read ledgers inside their own tenant.
+        const { data: profile } = await supabaseAdmin.from('profiles').select('role,tenant_id').eq('id', userId).maybeSingle();
+        if (String(profile?.role || '') !== 'admin' || String(profile?.tenant_id || '') !== String(job.tenant_id || '')) {
+            return res.status(403).json({ error: 'Booking access required', code: 'JOB_ACCESS_DENIED' });
+        }
     }
     const [{ data: purchases, error: purchasesError }, { data: earnings, error: earningsError }, { data: payout }] = await Promise.all([
         supabaseAdmin.from('errand_purchase_payments')
