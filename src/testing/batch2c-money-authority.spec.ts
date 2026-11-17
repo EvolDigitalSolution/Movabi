@@ -20,6 +20,8 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import vm from 'node:vm';
+import ts from 'typescript';
 
 const ROOT = process.cwd();
 // Structural fixtures and line-anchored regexes below are authored against LF
@@ -131,6 +133,46 @@ describe('PHASE C2A.1 — server-owned confirmation & negotiation authority', ()
         expect(BOOKING_ROUTE).toContain('determineJobModes(canonicalService');
         expect(BOOKING_ROUTE).toContain('insertPayload.agreed_fare = null');
         expect(BOOKING_ROUTE).toContain("insertPayload.status = modes.negotiation ? 'pending_fare_confirmation' : 'requested'");
+    });
+
+    it('11b. booking create executes the allow-list and server mode derivation; forged client modes are discarded', async () => {
+        // Behavioural: execute the REAL sliced source (allow-list copy -> modes
+        // -> payment-state overwrite) with a hostile payload, not a re-typed
+        // copy. If the route ever stops overwriting these fields, this fails.
+        const setStart = BOOKING_ROUTE.indexOf('const CREATABLE_BOOKING_FIELDS = new Set<string>([');
+        const setEnd = BOOKING_ROUTE.indexOf(']);', setStart) + 2;
+        const start = BOOKING_ROUTE.indexOf('const insertPayload: Record<string, unknown> = {};');
+        const endMarker = 'insertPayload.tax_amount = null;';
+        const end = BOOKING_ROUTE.indexOf(endMarker, start) + endMarker.length;
+        expect(start).toBeGreaterThan(-1); expect(end).toBeGreaterThan(start);
+        const segment = BOOKING_ROUTE.slice(start, end);
+        const code = `globalThis.__modeSlice = (async (payload, metadata, breakdown, quoteSnapshot, quoteAudit, userId, canonicalService, res, supabaseAdmin, MarketplaceConfigService, NoShowService, console) => {`
+            + BOOKING_ROUTE.slice(setStart, setEnd) + ';' + segment + 'return insertPayload;})';
+        const sandbox: Record<string, unknown> = { Date, Object, Number, String, Set, exports: {} };
+        vm.runInNewContext(ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, sandbox);
+        const fn = sandbox.__modeSlice as (...args: unknown[]) => Promise<Record<string, unknown>>;
+        const payload: Record<string, unknown> = {
+            status: 'completed', payment_status: 'paid', negotiation_mode_enabled: false,
+            bid_mode_enabled: true, is_draft: false, expires_at: '1999-01-01',
+            agreed_fare: 99999, payment_method: 'card', metadata: {}, fare_breakdown: {},
+            hacker_field: 'x', commission_rate_used: 0, platform_fee: 0, driver_payout: 0, tax_amount: 0,
+        };
+        const modesArgs: unknown[][] = [];
+        const MarketplaceConfigService = { determineJobModes: async (...args: unknown[]) => { modesArgs.push(args); return { negotiation: true, bidding: false }; } };
+        const NoShowService = { getEnabledConfig: async () => ({ noShowEnabled: false }) };
+        const res = { status: () => ({ json: () => ({}) }) };
+        const out: Record<string, unknown> = await fn(
+            payload, {}, {}, null, { country_code: 'GB', currency: 'GBP' }, 'user-1',
+            'errand', res, {}, MarketplaceConfigService, NoShowService, { warn() {}, log() {}, error() {} });
+        expect(modesArgs).toHaveLength(1);
+        expect(modesArgs[0][0]).toBe('errand');
+        expect(out.status).toBe('pending_fare_confirmation');
+        expect(out.negotiation_mode_enabled).toBe(true);
+        expect(out.bid_mode_enabled).toBe(false);
+        expect(out.is_draft).toBe(true);
+        expect(out.agreed_fare).toBeNull();
+        expect(out.payment_status).toBe('pending');
+        expect(out.hacker_field).toBeUndefined();
     });
 
     it('12. marketplace negotiation RPCs bind p_driver_id to auth.uid()', () => {
