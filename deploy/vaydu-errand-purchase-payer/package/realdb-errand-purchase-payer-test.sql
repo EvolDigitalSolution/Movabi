@@ -598,7 +598,8 @@ END $t$;
 -- =========================================================================
 -- 11. Kora payout adapter: the reviewed second provider behind the neutral
 --     interface. Same reserve -> submission-marker -> verified-settle state
---     machine; the settle identity is Kora-shaped (KPY-D-...), never numeric.
+--     machine; the settle identity is the frozen submission reference, which
+--     the Kora API echoes back (Kora assigns no separate payout id).
 -- =========================================================================
 DO $t$ DECLARE k_driver uuid:='99999999-dddd-4ddd-8ddd-dddddddddddd'::uuid;
   w public.driver_withdrawals%ROWTYPE; msg text; v_settled boolean; BEGIN
@@ -636,17 +637,21 @@ DO $t$ DECLARE k_driver uuid:='99999999-dddd-4ddd-8ddd-dddddddddddd'::uuid;
  INSERT INTO results VALUES (11,'an unverified kora transfer keeps the reserve held in reconcile state',
    (SELECT w2.status FROM public.driver_withdrawals w2 WHERE w2.id=w.id)='processing'
    AND public.driver_earnings_wallet_balance(k_driver,'11111111-1111-4111-8111-111111111111','NGN')=18000,'held');
- -- A numeric-only transfer id must NOT settle a kora withdrawal (the settle
- -- identity is provider-shaped); the Kora reference settles it once.
+ -- Kora echoes our merchant reference — a numeric id, a different withdrawal's
+ -- reference, or a fabricated KPY-style string can never settle this one.
  INSERT INTO results VALUES (11,'a numeric flutterwave-shaped id cannot settle a kora withdrawal',
    NOT public.finish_driver_withdrawal(w.id,w.lease_token,'999001',0),'refused');
- v_settled:=public.finish_driver_withdrawal(w.id,w.lease_token,'KPY-D-99001',25.50);
- INSERT INTO results VALUES (11,'the verified Kora reference settles held funds to paid_out exactly once',
+ INSERT INTO results VALUES (11,'a foreign submission reference cannot settle this kora withdrawal',
+   NOT public.finish_driver_withdrawal(w.id,w.lease_token,'vaydu-'||gen_random_uuid()::text||'_PMCK',0),'refused');
+ INSERT INTO results VALUES (11,'a KPY-style fixture string cannot settle a real kora withdrawal',
+   NOT public.finish_driver_withdrawal(w.id,w.lease_token,'KPY-D-99001',0),'refused');
+ v_settled:=public.finish_driver_withdrawal(w.id,w.lease_token,w.reference,25.50);
+ INSERT INTO results VALUES (11,'the provider-echoed merchant reference settles held funds to paid_out once',
    v_settled
-   AND (SELECT w2.status='paid' AND w2.provider_transfer_id='KPY-D-99001' AND w2.provider='kora'
+   AND (SELECT w2.status='paid' AND w2.provider_transfer_id=w.reference AND w2.provider='kora'
         FROM public.driver_withdrawals w2 WHERE w2.id=w.id)
    AND public.driver_earnings_wallet_balance(k_driver,'11111111-1111-4111-8111-111111111111','NGN')=18000
-   AND EXISTS(SELECT 1 FROM public.driver_withdrawal_submissions WHERE withdrawal_id=w.id AND provider_transfer_id='KPY-D-99001'),
+   AND EXISTS(SELECT 1 FROM public.driver_withdrawal_submissions WHERE withdrawal_id=w.id AND provider_transfer_id=w.reference),
    'settled='||v_settled||' ref='||(SELECT w2.provider_transfer_id FROM public.driver_withdrawals w2 WHERE w2.id=w.id));
 END $t$;
 

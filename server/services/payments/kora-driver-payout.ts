@@ -19,6 +19,12 @@ const unavailable=()=>new Error('Payment account provider unavailable. Please re
  * lookup() before deciding. The submission marker commits before the POST, so
  * an accepted-but-lost response reconciles instead of re-submitting.
  *
+ * Identity note (verified against the official docs): Kora assigns no
+ * separate payout id. The merchant supplies `reference` (unique, >=5 chars)
+ * and every response echoes it in `data.reference` — that echo, bound to our
+ * frozen submission reference, is the settle identity. `trace_id` is Kora's
+ * internal trace and is not used for settlement.
+ *
  * Scope: NGN bank_account payouts only. No collections (that is KoraSandbox),
  * no bulk/remittance endpoints, no live keys, no mobile money.
  */
@@ -59,21 +65,30 @@ export class KoraDriverPayout {
   if(afterCreated)await afterCreated(beneficiary);
   await this.verifyBeneficiary(beneficiary);return beneficiary;
  }
- async verifyBeneficiary(expected:Beneficiary):Promise<void>{
+ async verifyBeneficiary(expected:Beneficiary):Promise<void>{await this.resolveVerified(expected);}
+ // Re-resolves and re-fingerprints the frozen beneficiary, returning the
+ // verified account name (Kora requires a customer object on disbursement).
+ private async resolveVerified(expected:Beneficiary):Promise<string>{
   if(!/^\d{10}$/.test(expected.id))throw unavailable();
   const data=await this.api('/misc/banks/resolve',{bank:expected.bank_code,account:expected.id,currency:'NG'});
   if(!data||data.account_number!==expected.id||data.bank_code!==expected.bank_code
-   ||this.fingerprint(data.bank_code,data.account_number)!==expected.fingerprint)throw unavailable();
+   ||this.fingerprint(data.bank_code,data.account_number)!==expected.fingerprint
+   ||typeof data.account_name!=='string'||!data.account_name.trim())throw unavailable();
+  return data.account_name.trim().slice(0,120);
  }
  private result(data:any,t:FrozenTransfer):TransferResult{
   // The query returns Kora's own reference; ours is echoed as the merchant
   // reference field. Either must bind before any state is trusted.
-  const ours=data?.merchant_reference===t.reference||data?.customer_reference===t.reference||data?.reference===t.reference;
+  // The query returns our merchant reference echoed in data.reference; a
+  // record that does not carry it is not this transfer and stays unknown.
+  const ours=data?.reference===t.reference||data?.merchant_reference===t.reference||data?.customer_reference===t.reference;
   if(!data||!ours||String(data.currency||'').toUpperCase()!==t.currency)return {state:'unknown'};
   const status=String(data.status||'').toLowerCase();
-  const id=String(data.reference||data.id||'');
+  // The echoed reference is the only provider-side identifier Kora returns —
+  // it is what the settle RPC validates against the frozen submission marker.
+  const id=String(data.reference||'');
   return {state:status==='success'?'completed':status==='failed'?'failed':'pending',
-   id:/^[A-Za-z0-9_-]{4,80}$/.test(id)?id:undefined,
+   id:id===t.reference?id:undefined,
    ...(/^(\d+)(\.\d+)?$/.test(String(data.fee))?{fee:String(data.fee)}:{})};
  }
  async lookup(t:FrozenTransfer):Promise<TransferResult|null>{
@@ -85,9 +100,9 @@ export class KoraDriverPayout {
  async submit(t:FrozenTransfer):Promise<void>{
   if(!this.allowTransfers)throw new Error('Driver payout transfers are disabled; account setup is verification-only.');
   if(t.currency!=='NGN'||!Number.isSafeInteger(t.amountMinor)||t.amountMinor<=0||!/^vaydu-[a-f0-9-]+_PMCK$/.test(t.reference))throw unavailable();
-  await this.verifyBeneficiary(t.beneficiary);
+  const name=await this.resolveVerified(t.beneficiary);
   const amount=(t.amountMinor/100).toFixed(2);
   await this.api('/transactions/disburse',{reference:t.reference,destination:{type:'bank_account',amount:Number(amount),currency:'NGN',
-   narration:'Vaydu driver earnings',bank_account:{bank:t.beneficiary.bank_code,account:t.beneficiary.id}}});
+   narration:'Vaydu driver earnings',bank_account:{bank:t.beneficiary.bank_code,account:t.beneficiary.id},customer:{name}}});
  }
 }

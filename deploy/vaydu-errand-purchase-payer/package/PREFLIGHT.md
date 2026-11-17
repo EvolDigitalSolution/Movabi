@@ -6,10 +6,10 @@ Deploy target: develop only. Production is not authorised.
 
 | Suite | Engine / baseline | Result |
 |---|---|---|
-| `realdb-errand-purchase-payer-test.sql` | `supabase/postgres:15.1.1.78` (host image) + `develop_live_public_schema_20261112.sql` + **full repo migration chain** on a DB named `movabi_develop` | 71/71 — §9 wallet settlement (freeze, once-only credit, provider exclusion, reserve→settle/reverse, **client metadata cannot select wallet**) + §10 separated eligibility (earn without beneficiary, withdrawal needs verified beneficiary, double-spend, lease reclaim, uncertain-held, tenant/currency isolation, beneficiary freeze, **paystack beneficiary refused — no payout adapter**) + §11 Kora payout adapter (provider gate admits kora/refuses unreviewed, malformed beneficiary rejected, reserve→marker→verified `KPY-D-` settle, **numeric flutterwave-shaped id cannot settle a kora withdrawal**) |
+| `realdb-errand-purchase-payer-test.sql` | `supabase/postgres:15.1.1.78` (host image) + `develop_live_public_schema_20261112.sql` + **full repo migration chain** on a DB named `movabi_develop` | 73/73 — §9 wallet settlement (freeze, once-only credit, provider exclusion, reserve→settle/reverse, **client metadata cannot select wallet**) + §10 separated eligibility (earn without beneficiary, withdrawal needs verified beneficiary, double-spend, lease reclaim, uncertain-held, tenant/currency isolation, beneficiary freeze, **paystack beneficiary refused — no payout adapter**) + §11 Kora payout adapter (provider gate admits kora/refuses unreviewed, malformed beneficiary rejected, reserve→marker→settle, **only the provider-echoed merchant reference settles** — numeric ids, foreign references and `KPY-`-style strings all refused) |
 | `realdb-customer-funding-chain-test.sql` | same | 17/17 — adds binding coverage: bound at freeze, route drift never rewrites, direct rebind refused (frozen trigger), missing stripe binding fails closed, retry reuses the same attempt, one-preferred-route invariant |
 | Worker rehearsal (real `JobPayoutService` **and real `DriverWithdrawalService`**, simulated provider boundary) | same | 18/18 — wallet-mode dispatch: zero provider creates, ledger credited exactly once across replays; connected withdrawal journey: reserve → submission marker → reconcile-required (never paid) → verified transfer settles held→paid_out once |
-| **Connected integration journey — simulated provider HTTP** `connected-journey.cjs` | disposable stack: real GoTrue (admin-created users, password sign-in, bearer validation), real PostgREST on migrated `movabi_develop`, real Express routers (`/api/wallet`, `/api/booking`, `/api/driver-withdrawals`, `/api/driver-payment-account`, `/api/market-safety`), real services/RPCs | 15/15 — wallet setup → top-up readiness → quote (provider account bound from the trusted `market_payment_routes` row at freeze) → confirmed checkout → server verify → booking-wallet credit → `pay-job` wallet funding → server-policy settlement preference → driver assignment → completion with the stamped PIN → `JobPayoutService` credits `earnings_payable` once (`wallet:<job>`, zero provider transfers) → withdrawal 202 reserve → submission marker → reconcile (never paid) → verified provider transfer settles held→paid_out (`KPY-D-…` reference) → remaining balance spendable. **Withdrawal leg runs on the Kora provider** (market-configured adapter); only provider HTTP boundaries simulated (Stripe package, Kora adapter, payout-eligibility). **This is an application-journey result, not provider-sandbox verification** — no request ever reached a real provider endpoint |
+| **Connected integration journey — simulated provider HTTP** `connected-journey.cjs` | disposable stack: real GoTrue (admin-created users, password sign-in, bearer validation), real PostgREST on migrated `movabi_develop`, real Express routers (`/api/wallet`, `/api/booking`, `/api/driver-withdrawals`, `/api/driver-payment-account`, `/api/market-safety`), real services/RPCs | 15/15 — wallet setup → top-up readiness → quote (provider account bound from the trusted `market_payment_routes` row at freeze) → confirmed checkout → server verify → booking-wallet credit → `pay-job` wallet funding → server-policy settlement preference → driver assignment → completion with the stamped PIN → `JobPayoutService` credits `earnings_payable` once (`wallet:<job>`, zero provider transfers) → withdrawal 202 reserve → submission marker → reconcile (never paid) → verified provider transfer settles held→paid_out (the provider-echoed merchant reference `vaydu-<id>_PMCK`) → remaining balance spendable. **Withdrawal leg runs on the Kora provider** (market-configured adapter); only provider HTTP boundaries simulated (Stripe package, Kora adapter, payout-eligibility). **This is an application-journey result, not provider-sandbox verification** — no request ever reached a real provider endpoint |
 | Migration chain rehearsal | every `supabase/migrations/*.sql` in version order, one transaction each | 117 applied, 38 rolled back (already reflected in the live dump — reported per file) |
 | Browser `e2e/customer-wallet-collection.spec.ts` | this checkout's dev build | 2/2 — top-up through the real UI: readiness → frozen quote → card confirm → server verify → credit; hidden when collection unavailable |
 | Browser `e2e/driver-earnings-errand-ledger.spec.ts` | this checkout's dev build | 6/6 (3 tests × 2 projects) — reimbursement breakdown, 403 degradation, NG provider routed to the payment-account surface (never Stripe Express) |
@@ -17,7 +17,7 @@ Deploy target: develop only. Production is not authorised.
 | Behavioural money-authority `src/testing/batch2c-money-authority.spec.ts` | executes the real booking-create allow-list + server mode derivation against a hostile payload | 53/53 — forged client payment/negotiation modes are discarded; server-derived modes win |
 | Unit + runtime specs | wallet/errand/payout scope | `check-customer-wallet-collection-runtime` 12/12 (route-seeded binding, missing/mismatched/drifted, retry, cross-tenant) + 89/89 across the touched spec files (batch1a/1h/1i/1l/1m harnesses, wallet-booking-lifecycle, batch2c, wallet-sandbox-ui, admin-campaigns) + 19/19 `status-wallet-browser` |
 | Full suite `npx vitest run` | — | 3663 passed / 21 failed — all remaining failures are Docker-environmental or parallel-load flakes, classified in `docs/roadmap-evidence/full-suite-failures-b09997f.md`; zero regressions |
-| Package integrity | clean Windows checkout (`git worktree`, `core.autocrlf=true`) | `sha256sum -c CHECKSUMS.sha256` → 9/9 OK; `*.sql`/`*.sha256`/`*.md` pinned `-text` so CRLF conversion cannot corrupt checksummed bytes. Checksums are recorded over committed (LF) bytes — verify from a clean checkout, not a CRLF working copy |
+| Package integrity | clean Windows checkout (`git worktree`, `core.autocrlf=true`) | `sha256sum -c CHECKSUMS.sha256` → 10/10 OK; `*.sql`/`*.sha256`/`*.md` pinned `-text` so CRLF conversion cannot corrupt checksummed bytes. Checksums are recorded over committed (LF) bytes — verify from a clean checkout, not a CRLF working copy |
 
 Reproduce:
 `PG_IMAGE=supabase/postgres:15.1.1.78 BASELINE=develop_live_public_schema_20261112.sql PSQL_USER=supabase_admin bash scripts/errand-purchase-payer/run-realdb-tests.sh`
@@ -89,9 +89,15 @@ Apply pending migrations in filename order against
 10. `20261270900000_kora_payout_adapter.sql` — the reviewed second adapter:
    `payout_withdrawal_provider_supported` admits `'kora'` (paystack/fincra
    still refused), `finish_driver_withdrawal` validates the settle identity
-   per provider (flutterwave `^\d+$`, kora `^KPY-[A-Za-z0-9_-]{3,60}$`), and
-   `driver_payment_accounts` accepts provider `'kora'` whose completed
-   beneficiary identity is the verified 10-digit NUBV account number.
+   per provider, and `driver_payment_accounts` accepts provider `'kora'`
+   whose completed beneficiary identity is the verified 10-digit NUBV account
+   number.
+12. `20261271100000_kora_settle_reference.sql` — settle-identity correction:
+   verified against the official Payout API, Kora assigns **no** separate
+   payout id — the merchant `reference` is echoed in every response and is
+   the query key. A kora withdrawal settles only when the provider-confirmed
+   reference equals the frozen submission reference (`vaydu-<id>_PMCK`);
+   `KPY-*` was a doc-sample string, not a returned id.
 
 705/706/707 assert prerequisites in-file. 705's CREATE OR REPLACE functions were
 diff-verified identical between the deployed and live-develop schemas — drift-safe.
@@ -262,7 +268,7 @@ capabilities:
 |---|---|---|
 | **Flutterwave v3** | Full beneficiary model: `POST /beneficiaries` → `GET /beneficiaries/{id}` re-verified by bank-code + HMAC fingerprint → `POST /transfers` (`beneficiary:<id>` + merchant `reference`) → `GET /transfers?reference=` re-validating reference/currency/amount/bank/fingerprint | **Enabled** behind existing sandbox gates + `VAYDU_DRIVER_PAYOUT_TRANSFERS` — never silent |
 | **Paystack** | `PaystackDriverPayout` implements recipient setup/verification only; `submit()` is deliberately unimplemented | **Refused at request time** (`payout_withdrawal_provider_supported` returns false — §10 proves a paystack beneficiary cannot withdraw) |
-| **Kora** | Official Payout API reviewed and implemented in `KoraDriverPayout`: `GET /misc/banks?countryCode=NG` → `POST /misc/banks/resolve` (beneficiary verification — Kora requires no pre-created beneficiary; the resolved account IS the identity, frozen as a 10-digit NUBV `beneficiary_id` + bank/account HMAC fingerprint) → `POST /transactions/disburse` (merchant `reference`, `bank_account` destination) → `GET /transactions/{reference}` — per Kora's guidance 5xx/timeouts are never definitive, so submit throws and the worker verifies via lookup | **Implemented, sandbox-only** — `sk_test_` key enforced at construction, `KORA_PAYOUT_MERCHANT_REF` binding, market-configured dispatch through `sandboxDestinationProvider`, same `VAYDU_DRIVER_PAYOUT_TRANSFERS` flag + test-mode `driver_payout_markets` row. No programme approval or live keys implied. |
+| **Kora** | Official Payout API reviewed and implemented in `KoraDriverPayout`: `GET /misc/banks?countryCode=NG` → `POST /misc/banks/resolve` (beneficiary verification — Kora requires no pre-created beneficiary; the resolved account IS the identity, frozen as a 10-digit NUBV `beneficiary_id` + bank/account HMAC fingerprint) → `POST /transactions/disburse` (our merchant `reference`, `bank_account` destination, required `destination.customer` with the re-resolved account name, amount in **major** units) → `GET /transactions/:reference` — Kora assigns no separate payout id: `data.reference` echoes our reference and is the settle identity; `trace_id` is internal. Statuses `success`/`failed`/`processing`; per Kora's guidance 5xx/timeouts are never definitive, so submit throws and the worker verifies via lookup. Duplicate references are rejected upstream and reconcile through the same lookup-only path | **Implemented, sandbox-only** — `sk_test_` key enforced at construction, `KORA_PAYOUT_MERCHANT_REF` binding, market-configured dispatch through `sandboxDestinationProvider`, same `VAYDU_DRIVER_PAYOUT_TRANSFERS` flag + test-mode `driver_payout_markets` row. No programme approval or live keys implied. |
 | **Fincra** | Reviewed (`POST /disbursements/payouts`, `customerReference` idempotency, `successful`/`processing`/`failed`); **no adapter implemented — not selected** | Not selectable — never claimed |
 
 Adding a provider to `payout_withdrawal_provider_supported` without a verified
@@ -298,7 +304,7 @@ concerns — a row being green never implies another:
 | Concern | State |
 |---|---|
 | Provider **programme approval** (Flutterwave, Kora) | Develop-sandbox scope only: `FLWSECK_TEST-` + `merchant_mode='test'` + sandbox driver/tenant binding, dispatch behind `VAYDU_DRIVER_PAYOUT_TRANSFERS`. No production/live approval exists or is implied. |
-| Adapter **implementation** | Done — `FlutterwaveDriverPayout` (beneficiary create/verify + reference-bound transfer + reconcile-before-create) **and `KoraDriverPayout`** (bank resolve + `transactions/disburse` + `transactions/{ref}` lookup; adapter spec 13/13) behind the neutral `sandboxDestinationProvider`; `payout_withdrawal_provider_supported` gates the DB side. |
+| Adapter **implementation** | Done — `FlutterwaveDriverPayout` (beneficiary create/verify + reference-bound transfer + reconcile-before-create) **and `KoraDriverPayout`** (bank resolve + `transactions/disburse` + `transactions/{ref}` lookup; adapter spec 14/14) behind the neutral `sandboxDestinationProvider`; `payout_withdrawal_provider_supported` gates the DB side. |
 | **Deployment** to `movabi_develop` | Not yet applied — package + instructions below are the artefact. |
 | Connected integration **journey** (simulated provider HTTP) | **Verified** — 15/15 on the disposable stack (`run-connected-journey.sh`): real GoTrue/PostgREST/Express/services with provider HTTP simulated. One run against the deployed stack with live test keys remains a deploy-day check. |
 
@@ -319,9 +325,9 @@ concerns — a row being green never implies another:
    707 raises `'Develop database required'` anywhere else.
 2. Run the compatibility checks above; adjudicate or defer flagged rows.
 3. Apply pending migrations in filename order, one transaction each. This
-   package ships 705, 706, 707, 708, 709, 710 as its tail; apply whatever earlier files
+   package ships 705, 706, 707, 708, 709, 710, 711 as its tail; apply whatever earlier files
    `supabase_migrations.schema_migrations` shows as pending first
-   (rehearsed order ends `…704 → 705 → 706 → 707 → 708 → 709 → 710`).
+   (rehearsed order ends `…704 → 705 → 706 → 707 → 708 → 709 → 710 → 711`).
 11. `20261271000000_customer_collection_account_binding.sql` — customer
     collection provider-account binding: `market_payment_routes` gains
     `provider_account_id` (the approved provider-side account on the merchant
@@ -357,6 +363,6 @@ concerns — a row being green never implies another:
 ## Package
 
 `deploy/vaydu-errand-purchase-payer/package/` contains the five migrations
-(705, 706, 707, 708, 709, 710), this preflight, and `CHECKSUMS.sha256` covering the final
+(705, 706, 707, 708, 709, 710, 711), this preflight, and `CHECKSUMS.sha256` covering the final
 committed bytes (LF-normalized; `-text` pins verified from a clean Windows
 checkout under `core.autocrlf=true`). Re-run the checksums if any file changes.

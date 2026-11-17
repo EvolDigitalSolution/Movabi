@@ -6,7 +6,9 @@ const KEY='sk_test_abc123';
 const FP='synthetic-fingerprint-key-at-least-32-chars';
 const BANKS={status:true,message:'ok',data:[{name:'Access Bank',code:'044'},{name:'Bad Bank',code:'XX1'}]};
 const RESOLVED={status:true,message:'ok',data:{account_number:'0123456789',account_name:'Synthetic Driver',bank_code:'044'}};
-const TX=(status:string,extra:any={})=>({status:true,message:'ok',data:{reference:'KPY-D-99001',merchant_reference:'vaydu-aaaa_PMCK',status,currency:'NGN',amount:120,fee:25,...extra}});
+// The real API echoes the merchant reference back in data.reference and carries
+// no separate payout id (trace_id is Kora-internal only).
+const TX=(status:string,extra:any={})=>({status:true,message:'ok',data:{reference:'vaydu-aaaa_PMCK',trace_id:'14530184957',status,currency:'NGN',amount:120,fee:25,...extra}});
 const responses=(...bodies:any[])=>{
  const calls:RequestInit[]=[];
  const request=vi.fn(async(_url:string,init?:RequestInit)=>{calls.push(init||{});const b=bodies.shift()||{};
@@ -55,27 +57,38 @@ describe('kora driver payout adapter',()=>{
   expect((await make(r1).lookup(t))!.state).toBe('pending');
   const {request:r2}=responses(TX('success'));
   const done=await make(r2).lookup(t);
-  expect(done!.state).toBe('completed');expect(done!.id).toBe('KPY-D-99001');expect(done!.fee).toBe('25');
+  expect(done!.state).toBe('completed');expect(done!.id).toBe('vaydu-aaaa_PMCK');expect(done!.fee).toBe('25');
  });
  it('maps failed to failed — a definitive outcome the worker may reverse',async()=>{
   const a=make(vi.fn());const {request}=responses(TX('failed'));
   expect((await make(request).lookup(transfer(a)))!.state).toBe('failed');
  });
  it('does not trust a record that is not bound to our merchant reference',async()=>{
-  const a=make(vi.fn());const {request}=responses(TX('success',{merchant_reference:'vaydu-OTHER_PMCK'}));
+  const a=make(vi.fn());const {request}=responses(TX('success',{reference:'vaydu-OTHER_PMCK'}));
   expect((await make(request).lookup(transfer(a)))!.state).toBe('unknown');
+ });
+ it('returns no settle id when the echoed reference is foreign even if another field binds',async()=>{
+  const a=make(vi.fn());const {request}=responses(TX('success',{reference:'vaydu-aaaa_PMCK',merchant_reference:'vaydu-aaaa_PMCK'}));
+  const ok=await make(request).lookup(transfer(a));
+  expect(ok!.id).toBe('vaydu-aaaa_PMCK');
+  const {request:r2}=responses(TX('success',{reference:'KPY-D-99001',merchant_reference:'vaydu-aaaa_PMCK'}));
+  const foreign=await make(r2).lookup(transfer(a));
+  expect(foreign!.state).toBe('completed');expect(foreign!.id).toBeUndefined();
  });
  it('keeps transfers disabled unless the explicit flag is set',async()=>{
   await expect(make(vi.fn()).submit(transfer(make(vi.fn())))).rejects.toThrow('transfers are disabled');
  });
  it('disburses the frozen beneficiary with the merchant reference when enabled',async()=>{
-  const {request,calls}=responses(RESOLVED,{status:true,data:{reference:'KPY-D-1'}});
+  const {request,calls}=responses(RESOLVED,{status:true,data:{reference:'vaydu-aaaa_PMCK',status:'processing'}});
   const a=make(request,true);
   await a.submit(transfer(a));
   const post=calls[1];const body=JSON.parse(String(post.body));
   expect(body.reference).toBe('vaydu-aaaa_PMCK');
   expect(body.destination.bank_account).toEqual({bank:'044',account:'0123456789'});
   expect(body.destination.amount).toBe(120);
+  // destination.customer is required by the Kora disburse API; the verified
+  // account name from the fresh re-resolution is what we send.
+  expect(body.destination.customer).toEqual({name:'Synthetic Driver'});
  });
  it('converts upstream rejection and timeout to unavailable — never definitive failure',async()=>{
   const a=make(vi.fn());const t=transfer(a);

@@ -3,8 +3,8 @@
 // DriverWithdrawalService / DriverPaymentAccountService / sandbox provider
 // gates run unmodified while the provider HTTP boundary is simulated.
 // The sim records submitted disbursements by merchant reference; lookup reports
-// them completed (or 'failed'/'pending' when the sim outcome says so), with a
-// Kora-shaped alphanumeric provider reference.
+// them completed (or 'failed'/'pending' when the sim outcome says so), with the
+// merchant reference echoed back exactly as the real Kora API does.
 const sim = (globalThis.__koraSim ||= { transfers: {}, outcome: 'completed', seq: 0 });
 
 class KoraDriverPayout {
@@ -21,10 +21,10 @@ class KoraDriverPayout {
     if (sim.outcome === 'uncertain') {
       // Provider accepted but the response was lost: the disbursement exists
       // even though submit threw. The next lookup must find it — no duplicate.
-      sim.transfers[t.reference] = { id: 'KPY-D-990' + (++sim.seq), fee: '0', state: 'completed' };
+      sim.transfers[t.reference] = { id: t.reference, fee: '0', state: 'completed' };
       throw new Error('timeout');
     }
-    sim.transfers[t.reference] = { id: 'KPY-D-990' + (++sim.seq), fee: '0',
+    sim.transfers[t.reference] = { id: t.reference, fee: '0',
       state: sim.outcome === 'failed' ? 'failed' : 'completed' };
   }
   async banks() { return [{ code: '044', name: 'Access Bank' }]; }
