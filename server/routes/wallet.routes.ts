@@ -3,6 +3,8 @@ import {customerWalletTopupReadiness,WalletTopupReadinessError} from '../service
 import {CustomerWalletCollectionService} from '../services/payments/customer-wallet-collection.service';
 import {PaymentLayerError} from '../services/payments/payment-contracts';
 import {StripeDriverTopupSandbox} from '../services/payments/stripe-driver-topup-sandbox';
+import {KoraWalletCollection} from '../services/payments/kora-wallet-collection';
+import {KoraSandbox,KoraDbAttempts} from '../services/payments/kora-sandbox';
 import {flutterwaveAttemptStore} from './driver-wallet-topup.routes';
 import Stripe from 'stripe';
 import {ensureCustomerWallet,customerWalletSetupError} from '../services/customer-wallet-setup';
@@ -71,6 +73,7 @@ function collectionService(){
  if(!_collectionService){
   _collectionService=new CustomerWalletCollectionService(collectionDb,{callbackUrl:()=>process.env['VAYDU_TOPUP_CALLBACK_URL']||''},(provider,merchant)=>{
    if(provider==='stripe')return new StripeDriverTopupSandbox(new Stripe(process.env['STRIPE_SECRET_KEY']||'',{apiVersion:'2023-10-16' as any}),process.env['STRIPE_SECRET_KEY']||'',merchant,flutterwaveAttemptStore(collectionDb));
+   if(provider==='kora')return new KoraWalletCollection(new KoraSandbox(process.env['KORA_TEST_SECRET_KEY']||'',merchant,new KoraDbAttempts(collectionDb)),merchant);
    throw new PaymentLayerError('PAYMENT_PROVIDER_NOT_READY','Card adapter has not passed sandbox review');
   });
  }
