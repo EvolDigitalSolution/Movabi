@@ -14,3 +14,7 @@ deploy/vaydu-errand-purchase-payer/package/*.sha256 -text
 deploy/vaydu-errand-purchase-payer/package/*.md -text
 # Errand real-DB test fixtures carry byte-exact function bodies for rehearsal.
 deploy/vaydu-errand-purchase-payer/*.sql -text
+# Deploy wrappers and release checksums must stay byte-exact LF on Windows checkouts.
+deploy/vaydu-errand-purchase-payer/*.sh -text
+release/*.sh -text
+release/*.sha256 -text
