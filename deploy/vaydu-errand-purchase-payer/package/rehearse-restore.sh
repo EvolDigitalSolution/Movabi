@@ -40,6 +40,10 @@
 # Env:
 #   PG_IMAGE    postgres image (default supabase/postgres:15.1.1.78 — host engine)
 #   PSQL_USER   superuser      (default supabase_admin for the supabase image)
+#   ROLES_SQL   captured host roles file (capture-roles.sql output — guarded
+#               CREATE ROLE/GRANT DO blocks, no passwords). Applied BEFORE the
+#               restore so every OWNER TO / GRANT TO in a real develop dump
+#               resolves (e.g. supabase_realtime_admin owns realtime.topic()).
 #   KEEP_DB=1   leave container running for inspection (prints its name)
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
@@ -98,6 +102,23 @@ DO $$ DECLARE r text; BEGIN
  END LOOP;
 END $$;
 SQL
+
+# Captured host roles — a per-database dump carries no cluster-level roles, so
+# every role the dump's OWNER TO / GRANT TO statements reference must already
+# exist here. The capture emits existence-guarded DO blocks only: a role the
+# image already bootstrapped is skipped (the explicitly verified conflict
+# case); ANY other error aborts — nothing else is tolerated.
+if [ -n "${ROLES_SQL:-}" ]; then
+  [ -f "$ROLES_SQL" ] || die "ROLES_SQL set but file missing: $ROLES_SQL"
+  step "role preparation — captured host roles (no passwords)"
+  docker exec -i -e PGPASSWORD=isolated-test "$db" psql -X -U "$pguser" -d postgres \
+    -v ON_ERROR_STOP=1 -q < "$ROLES_SQL" > "$tmp/roles.log" 2>&1 \
+    || { tail -20 "$tmp/roles.log"; die "role preparation failed"; }
+  if grep -qE "ERROR:|FATAL:" "$tmp/roles.log"; then
+    tail -20 "$tmp/roles.log"; die "role preparation raised unexpected errors"
+  fi
+  echo "captured roles prepared ($(grep -c 'role:' "$ROLES_SQL" || true) role records)"
+fi
 
 # Clean restore target — template0, not the image's pre-seeded database.
 docker exec -i -e PGPASSWORD=isolated-test "$db" psql -X -U "$pguser" -d postgres -v ON_ERROR_STOP=1 -qAt \
@@ -170,8 +191,17 @@ for r in anon authenticated service_role; do
   printf '%s\n' "$own_out" | grep -qx "schema-grant|$r|true" || die "public-schema USAGE grant missing for $r after restore"
 done
 printf '%s\n' "$own_out" | grep -E '^owner\|' | awk -F'|' '{print $2}' | sort -u > "$tmp/owners.txt"
-if grep -vE '^(postgres|supabase_admin|pg_database_owner)$' "$tmp/owners.txt" | grep -q .; then
-  echo "public-table owners outside the expected set:"; grep -vE '^(postgres|supabase_admin|pg_database_owner)$' "$tmp/owners.txt"
+# Legitimate public-table owners = postgres/bootstrap roles + every role the
+# host capture prepared (parsed from its '-- role: <name>' markers).
+{ printf '%s\n' postgres supabase_admin pg_database_owner \
+    anon authenticated service_role authenticator supabase_auth_admin \
+    supabase_storage_admin supabase_functions_admin supabase_read_only_user \
+    pgbouncer supabase_replication_admin dashboard_user
+  [ -n "${ROLES_SQL:-}" ] && grep -oE -- '-- role: [A-Za-z0-9_]+' "$ROLES_SQL" | awk '{print $3}'
+} | sort -u > "$tmp/allowed-owners.txt"
+if grep -vxF -f "$tmp/allowed-owners.txt" "$tmp/owners.txt" | grep -q .; then
+  echo "public-table owners outside the expected set:"
+  grep -vxF -f "$tmp/allowed-owners.txt" "$tmp/owners.txt"
   die "unexpected object ownership after restore — reconcile before rehearsing"
 fi
 [ "$(q -qAt -c "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r'" 2>/dev/null || echo 0)" -gt 0 ] \

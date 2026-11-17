@@ -1,0 +1,3 @@
+4372658a11e8115414e115629ef22fbc152f13c28c1fe036137e846bd619de99 *./capture-roles.sql
+dbadc8009ea2595cac0eca88b0e1c87589fdb5efe8f76cfdd7ba657660e333ef *./deploy-dfff091.sh
+d08afda5cf03de4b1a8dab60d74060f9bb50eb7fecd3c8744c3826b88ef5f6d2 *./rehearse-restore.sh

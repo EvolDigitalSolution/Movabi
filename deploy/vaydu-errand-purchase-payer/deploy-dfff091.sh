@@ -284,20 +284,45 @@ need docker; need sha256sum; need tar; need curl
 docker compose version >/dev/null 2>&1 || die "docker compose plugin missing"
 docker info >/dev/null 2>&1 || die "docker daemon unreachable"
 
-[ $# -eq 1 ] || die "usage: $0 <vaydu-develop-release-dfff091.tar.gz> | --plan <archive> <capture> | --selftest [archive] | --rollback <dir>"
-ARCH="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+RESUME=0
+if [ "${1:-}" = "--resume" ]; then
+  [ -d "${2:-}" ] || die "usage: $0 --resume <evidence-dir>"
+  E="$2"; RESUME=1
+fi
 
-step "0 archive integrity"
-(cd "$(dirname "$ARCH")" && sha256sum -c --quiet "$(basename "$ARCH").sha256") || die "archive sha256 mismatch"
-E=$(mktemp -d /home/edsadmin/vaydu-release-dfff091.XXXXXX)
-chmod 700 "$E"
-echo "evidence: $E"
-tar -xzf "$ARCH" -C "$E"
-R="$E/vaydu-develop-release-dfff091"
-[ -d "$R" ] || R="$(dirname "$(find "$E" -maxdepth 2 -name CHECKSUMS.sha256 | head -1)")"
+if [ "$RESUME" = 0 ]; then
+  [ $# -eq 1 ] || die "usage: $0 <archive.tar.gz> | --resume <evidence-dir> | --plan <archive> <capture> | --selftest [archive] | --rollback <dir>"
+  ARCH="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+  step "0 archive integrity"
+  (cd "$(dirname "$ARCH")" && sha256sum -c --quiet "$(basename "$ARCH").sha256") || die "archive sha256 mismatch"
+  E=$(mktemp -d /home/edsadmin/vaydu-release-dfff091.XXXXXX)
+  chmod 700 "$E"
+  echo "evidence: $E"
+  tar -xzf "$ARCH" -C "$E"
+else
+  step "0 resume — reuse existing evidence and backup"
+  R="$E/vaydu-develop-release-dfff091"
+fi
+[ -d "$R" ] || R="$(dirname "$(find "$E" -maxdepth 3 -name CHECKSUMS.sha256 | head -1)")"
 (cd "$R" && sha256sum -c --quiet CHECKSUMS.sha256) || die "inner CHECKSUMS.sha256 mismatch"
 
-step "1 record recovery state (images, compose, env)"
+# Corrected tooling (this bundle's rehearse-restore.sh carries the captured-
+# roles preparation the host backup requires) replaces the archived copy
+# before use; both are checksummed so provenance stays auditable.
+TOOLS_DIR="$(cd "$(dirname "$0")" && pwd)"
+[ -f "$TOOLS_DIR/rehearse-restore.sh" ] || die "corrected rehearse-restore.sh missing next to this wrapper"
+[ -f "$TOOLS_DIR/capture-roles.sql" ]   || die "capture-roles.sql missing next to this wrapper"
+if [ -f "$TOOLS_DIR/CHECKSUMS.sha256" ]; then
+  (cd "$TOOLS_DIR" && sha256sum -c --quiet CHECKSUMS.sha256) || die "tooling checksum mismatch"
+fi
+install -m 755 "$TOOLS_DIR/rehearse-restore.sh" "$R/runbook/rehearse-restore.sh"
+
+DBQ() { docker exec -i movabi-develop-db sh -c \
+  'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -U supabase_admin -d movabi_develop -v ON_ERROR_STOP=1 -P pager=off'; }
+DBQT() { docker exec -i movabi-develop-db sh -c \
+  'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -U supabase_admin -d movabi_develop -v ON_ERROR_STOP=1 -P pager=off -qAt -F"|"'; }
+
+step "1 recovery state (images, compose, env)"
 docker ps --format '{{.Names}}' | grep -qx movabi-develop-api || die "movabi-develop-api not running"
 docker ps --format '{{.Names}}' | grep -qx movabi-develop-db  || die "movabi-develop-db not running"
 for svc in api web; do
@@ -322,12 +347,16 @@ grep -qx 'VAYDU_DRIVER_PAYOUT_TRANSFERS=false' "$E/api-env-before.txt" \
   || die "VAYDU_DRIVER_PAYOUT_TRANSFERS is not 'false' on the running API — refusing to proceed"
 
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+if [ -f "$E/api-recovery-tag.txt" ] && [ -f "$E/web-recovery-tag.txt" ]; then
+  echo "reusing recovery tags: $(cat "$E/api-recovery-tag.txt") / $(cat "$E/web-recovery-tag.txt")"
+else
 for svc in api web; do
   tag="movabi-$svc:recovery-dfff091-$STAMP"
   if docker image inspect "$tag" >/dev/null 2>&1; then die "recovery tag already exists: $tag"; fi
   docker image tag "$(cat "$E/$svc-image-id.txt")" "$tag"
   echo "$tag" > "$E/$svc-recovery-tag.txt"
 done
+fi
 
 docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.config_files" }}' \
   "$(cat "$E/api-container.txt")" > "$E/compose-files.txt"
@@ -359,28 +388,40 @@ chmod 700 "$E/rollback.sh"
 echo "recovery tags: $(cat "$E/api-recovery-tag.txt") / $(cat "$E/web-recovery-tag.txt")"
 echo "rollback:      $E/rollback.sh (or: bash $0 --rollback $E)"
 
-step "2 backup movabi_develop (full, custom format)"
-B="$E/develop-before-dfff091-$STAMP.dump"
-docker exec movabi-develop-db sh -c \
-  'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U supabase_admin -d movabi_develop -Fc' > "$B"
-[ -s "$B" ] || die "backup is empty"
-sha256sum "$B" | tee "$B.sha256"
-if ! docker exec -i movabi-develop-db pg_restore --list < "$B" | grep -q 'TABLE DATA'; then
-  die "backup lists no TABLE DATA"
-fi
-echo "backup: $B"
+step "1b capture host roles (read-only, no passwords)"
+DBQT < "$TOOLS_DIR/capture-roles.sql" > "$E/roles.sql" || die "role capture failed"
+[ -s "$E/roles.sql" ] || die "role capture produced no statements"
+echo "captured $(grep -c 'role:' "$E/roles.sql") role records and $(grep -c 'grant:' "$E/roles.sql") grants"
 
-step "3 shipped restore rehearsal against that backup"
-if ! (cd "$R" && bash runbook/rehearse-restore.sh "$B" 2>&1 | tee "$E/rehearsal.log"); then
+step "2 backup movabi_develop (full, custom format)"
+B="$(ls -t "$E"/develop-before-dfff091-*.dump 2>/dev/null | head -1)"
+if [ -n "${B:-}" ] && [ -s "$B" ]; then
+  echo "reusing existing backup: $B"
+else
+  B="$E/develop-before-dfff091-$STAMP.dump"
+  docker exec movabi-develop-db sh -c \
+    'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U supabase_admin -d movabi_develop -Fc' > "$B"
+  [ -s "$B" ] || die "backup is empty"
+  sha256sum "$B" | tee "$B.sha256"
+fi
+# pg_restore cannot seek a custom-format TOC on stdin — stage the file into
+# the container and capture listing output + exit status separately.
+docker exec movabi-develop-db rm -f /tmp/dfff091-list.dump || true
+docker cp "$B" movabi-develop-db:/tmp/dfff091-list.dump || die "docker cp of backup failed"
+docker exec movabi-develop-db pg_restore --list /tmp/dfff091-list.dump \
+  > "$E/pg-restore-list.txt" 2>"$E/pg-restore-list.err" \
+  || { cat "$E/pg-restore-list.err"; die "pg_restore --list failed on the backup"; }
+entries="$(grep -c 'TABLE DATA' "$E/pg-restore-list.txt" || true)"
+docker exec movabi-develop-db rm -f /tmp/dfff091-list.dump || true
+[ "${entries:-0}" -gt 0 ] || die "backup lists no TABLE DATA entries"
+echo "backup verified: $B ($entries TABLE DATA entries)"
+
+step "3 corrected restore rehearsal against that backup"
+if ! (cd "$R" && ROLES_SQL="$E/roles.sql" bash runbook/rehearse-restore.sh "$B" 2>&1 | tee "$E/rehearsal.log"); then
   die "rehearsal failed — see $E/rehearsal.log"
 fi
 grep -q "RESTORE REHEARSAL PASSED" "$E/rehearsal.log" \
   || die "rehearsal did not report RESTORE REHEARSAL PASSED"
-
-DBQ() { docker exec -i movabi-develop-db sh -c \
-  'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -U supabase_admin -d movabi_develop -v ON_ERROR_STOP=1 -P pager=off'; }
-DBQT() { docker exec -i movabi-develop-db sh -c \
-  'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -U supabase_admin -d movabi_develop -v ON_ERROR_STOP=1 -P pager=off -qAt -F"|"'; }
 
 step "4 preflight + reviewed chain via stdin redirect"
 PRE="$E/preflight.txt"
