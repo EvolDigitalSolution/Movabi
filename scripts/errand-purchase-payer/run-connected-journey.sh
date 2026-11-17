@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Connected sandbox journey on disposable infra: REAL GoTrue + PostgREST +
 # migrated movabi_develop DB + REAL Express routers + real services/RPCs.
-# Only provider HTTP boundaries are simulated (stripe package, flutterwave
+# Only provider HTTP boundaries are simulated (stripe package, kora
 # payout adapter, payout-eligibility). One customer-funded errand ends in a
 # driver wallet credit and a confirmed sandbox withdrawal.
 set -euo pipefail

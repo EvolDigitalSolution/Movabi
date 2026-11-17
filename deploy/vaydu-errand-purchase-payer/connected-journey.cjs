@@ -1,6 +1,6 @@
 // Connected sandbox journey: REAL Express routers + real GoTrue auth + real
 // PostgREST/DB functions, with provider HTTP boundaries simulated (stripe
-// package, flutterwave payout adapter, payout-eligibility). One customer-funded
+// package, kora payout adapter, payout-eligibility). One customer-funded
 // errand ends in a driver wallet credit and a confirmed sandbox withdrawal.
 const path = require('path');
 const Module = require('module');
@@ -46,6 +46,7 @@ const DIR = __dirname;
 const stubStripe = path.join(DIR, 'payout-worker-stripe-stub.cjs');
 const stubElig = path.join(DIR, 'payout-worker-eligibility-stub.cjs');
 const stubFlw = path.join(DIR, 'payout-worker-flw-stub.cjs');
+const stubKora = path.join(DIR, 'payout-worker-kora-stub.cjs');
 // Simulated Stripe HTTP client for the customer collection adapter.
 const stripeSim = (globalThis.__stripeSimJourney = { payments: new Map(), seq: 0 });
 const fakeStripeModule = path.join(DIR, 'journey-stripe-sim.cjs');
@@ -67,6 +68,7 @@ Module._resolveFilename = function (request, ...args) {
   if (/(^|[\\/])stripe\.service$/.test(request) || request === './stripe.service') return stubStripe;
   if (/(^|[\\/])payout-eligibility\.service$/.test(request) || request === './payout-eligibility.service') return stubElig;
   if (/(^|[\\/])flutterwave-driver-payout$/.test(request)) return stubFlw;
+  if (/(^|[\\/])kora-driver-payout$/.test(request)) return stubKora;
   return origResolve.call(this, request, ...args);
 };
 require('ts-node').register({ transpileOnly: true,
@@ -111,10 +113,10 @@ function step(name, cond, detail = '') { steps.push({ name, ok: !!cond }); conso
   await must('driver profile', db.from('profiles').upsert({ id: DRIVER, tenant_id: TENANT, role: 'driver', country_code: 'NG', registration_country_code: 'NG', registration_activated_at: new Date().toISOString() }));
   // Driver-bound fixtures need the profile row the auth trigger just created.
   await must('driver account', db.from('driver_payment_accounts').insert({ id: 'aaaaaaaa-0000-4000-8000-0000000000aa', driver_id: DRIVER, tenant_id: TENANT,
-    country_code: 'NG', currency_code: 'NGN', provider: 'flutterwave', merchant_account_ref: 'flw_merchant_ng', state: 'completed',
-    beneficiary_id: '123456', bank_code: '044', last4: '1234', fingerprint: 'a'.repeat(64) }));
+    country_code: 'NG', currency_code: 'NGN', provider: 'kora', merchant_account_ref: 'kora_merchant_ng', state: 'completed',
+    beneficiary_id: '0123456789', bank_code: '044', last4: '6789', fingerprint: 'a'.repeat(64) }));
   await must('market reset', db.from('driver_payout_markets').delete().eq('country_code', 'NG').eq('currency_code', 'NGN'));
-  await must('payout market', db.from('driver_payout_markets').insert({ country_code: 'NG', currency_code: 'NGN', provider: 'flutterwave', merchant_account_ref: 'flw_merchant_ng',
+  await must('payout market', db.from('driver_payout_markets').insert({ country_code: 'NG', currency_code: 'NGN', provider: 'kora', merchant_account_ref: 'kora_merchant_ng',
     enabled: true, merchant_approved: true, adapter_ready: true, capability_verified_at: new Date().toISOString(), capability_evidence_ref: 'cap-evidence-1',
     merchant_mode: 'test', sandbox_driver_id: DRIVER, sandbox_tenant_id: TENANT }));
   step('real GoTrue users created and authenticated', !!customer.jwt && !!driverJwt, `${customer.id}/${DRIVER}`);
@@ -132,6 +134,7 @@ function step(name, cond, detail = '') { steps.push({ name, ok: !!cond }); conso
     FLUTTERWAVE_PAYOUT_MERCHANT_REF: 'flw_merchant_ng', FLUTTERWAVE_TEST_SECRET_KEY: 'FLWSECK_TEST-journey',
     FLUTTERWAVE_PAYOUT_WEBHOOK_SECRET: 'whsec-journey-0123456789abcdef01234567',
     FLUTTERWAVE_PAYOUT_CALLBACK_URL: 'https://movabi-develop.apps.evolsolution.com/api/driver-payment-account/webhook',
+    KORA_PAYOUT_MERCHANT_REF: 'kora_merchant_ng', KORA_TEST_SECRET_KEY: 'sk_test_journey_kora',
     VAYDU_DRIVER_PAYOUT_CALLBACK_APPROVED: 'true', DRIVER_PAYOUT_FINGERPRINT_KEY: 'journey-fingerprint-key',
     STRIPE_SECRET_KEY: 'sk_test_journey', VAYDU_TOPUP_CALLBACK_URL: 'https://movabi-develop.apps.evolsolution.com/wallet-return'
   });

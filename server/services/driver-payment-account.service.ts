@@ -1,9 +1,10 @@
 import {FlutterwaveDriverPayout,payoutMarketReady,payoutTransfersEnabled,type PayoutMarket,type Beneficiary} from './payments/flutterwave-driver-payout';
 import {PaystackDriverPayout} from './payments/paystack-driver-payout';
+import {KoraDriverPayout} from './payments/kora-driver-payout';
 
 /** Private tables are server-only; neither account numbers nor provider payloads are persisted. */
 export class DriverPaymentAccountService {
- constructor(private db:any,private provider:(provider?:string,merchant?:string)=>FlutterwaveDriverPayout|PaystackDriverPayout,private collectionScopeOnly=false){}
+ constructor(private db:any,private provider:(provider?:string,merchant?:string)=>FlutterwaveDriverPayout|PaystackDriverPayout|KoraDriverPayout,private collectionScopeOnly=false){}
  async scope(driverId:string){
   const profile=await this.db.from('profiles').select('*').eq('id',driverId).single();
   const p=profile.data;
@@ -90,9 +91,18 @@ export function sandboxPaystackProvider(expectedMerchant?:string):PaystackDriver
  if(!process.env.PAYSTACK_PAYOUT_MERCHANT_REF||(expectedMerchant&&expectedMerchant!==process.env.PAYSTACK_PAYOUT_MERCHANT_REF))throw new Error('Approved payout merchant binding is missing.');
  return new PaystackDriverPayout(process.env.PAYSTACK_TEST_SECRET_KEY||'',process.env.DRIVER_PAYOUT_FINGERPRINT_KEY||'',fetch,undefined,payoutTransfersEnabled());
 }
+export function sandboxKoraProvider(expectedMerchant?:string):KoraDriverPayout {
+ if(!['test','development'].includes(process.env.NODE_ENV||'')||process.env.VAYDU_DEPLOYMENT_ENV!=='develop'
+  ||process.env.VAYDU_DRIVER_PAYOUT_SANDBOX!=='true')throw new Error('Sandbox payout runtime is disabled.');
+ const target=new URL(process.env.SUPABASE_URL||'');
+ if(!['http://movabi-develop-kong:8000/','https://movabi-supabase-develop.apps.evolsolution.com/'].includes(target.href))throw new Error('Verified develop database target required.');
+ if(!process.env.KORA_PAYOUT_MERCHANT_REF||(expectedMerchant&&expectedMerchant!==process.env.KORA_PAYOUT_MERCHANT_REF))throw new Error('Approved payout merchant binding is missing.');
+ return new KoraDriverPayout(process.env.KORA_TEST_SECRET_KEY||'',process.env.DRIVER_PAYOUT_FINGERPRINT_KEY||'',fetch,payoutTransfersEnabled());
+}
 /** Dispatches on the trusted market provider; the merchant binding is verified per provider. */
-export function sandboxDestinationProvider(provider:string,merchant:string):FlutterwaveDriverPayout|PaystackDriverPayout {
+export function sandboxDestinationProvider(provider:string,merchant:string):FlutterwaveDriverPayout|PaystackDriverPayout|KoraDriverPayout {
  if(provider==='paystack')return sandboxPaystackProvider(merchant);
+ if(provider==='kora')return sandboxKoraProvider(merchant);
  if(provider==='flutterwave')return sandboxPayoutProvider(merchant);
  throw new Error('Unsupported payout destination provider.');
 }

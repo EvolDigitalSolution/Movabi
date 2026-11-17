@@ -73,7 +73,8 @@ describe('provider selection',()=>{
  it('accepts both configured NG payout providers',()=>{
   expect(payoutMarketReady(market('flutterwave'))).toBe(true);
   expect(payoutMarketReady(market('paystack'))).toBe(true);
-  expect(payoutMarketReady(market('kora'))).toBe(false);
+  expect(payoutMarketReady(market('kora'))).toBe(true);
+  expect(payoutMarketReady(market('fincra'))).toBe(false);
  });
  it('dispatches to the matching merchant binding',()=>{
   vi.stubEnv('NODE_ENV','test');vi.stubEnv('VAYDU_DEPLOYMENT_ENV','develop');

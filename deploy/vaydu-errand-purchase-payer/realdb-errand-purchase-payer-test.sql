@@ -595,6 +595,61 @@ DO $t$ DECLARE j uuid; w_driver uuid:='99999999-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uu
    msg LIKE '%Approved payout destination required%',msg);
 END $t$;
 
+-- =========================================================================
+-- 11. Kora payout adapter: the reviewed second provider behind the neutral
+--     interface. Same reserve -> submission-marker -> verified-settle state
+--     machine; the settle identity is Kora-shaped (KPY-D-...), never numeric.
+-- =========================================================================
+DO $t$ DECLARE k_driver uuid:='99999999-dddd-4ddd-8ddd-dddddddddddd'::uuid;
+  w public.driver_withdrawals%ROWTYPE; msg text; v_settled boolean; BEGIN
+ INSERT INTO results VALUES (11,'the withdrawal allow-list admits kora and still refuses unreviewed providers',
+   public.payout_withdrawal_provider_supported('kora') AND public.payout_withdrawal_provider_supported('flutterwave')
+   AND NOT public.payout_withdrawal_provider_supported('paystack') AND NOT public.payout_withdrawal_provider_supported('fincra'),'gate');
+ -- A completed kora beneficiary is the verified 10-digit account itself.
+ BEGIN INSERT INTO public.driver_payment_accounts(id,driver_id,tenant_id,country_code,currency_code,provider,merchant_account_ref,state,beneficiary_id,bank_code,last4,fingerprint)
+   VALUES (gen_random_uuid(),k_driver,'11111111-1111-4111-8111-111111111111','NG','NGN','kora','kora_merchant_ng','completed','123','044','0123',repeat('e',64)); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (11,'a malformed kora beneficiary identity is rejected by the completion check',msg LIKE '%completion_check%',msg);
+ INSERT INTO auth.users(id) VALUES (k_driver);
+ INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code,registration_activated_at)
+  VALUES (k_driver,'11111111-1111-4111-8111-111111111111','driver','NG','NG',now())
+  ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
+    country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code,
+    registration_activated_at=EXCLUDED.registration_activated_at;
+ INSERT INTO public.driver_payment_accounts(id,driver_id,tenant_id,country_code,currency_code,provider,merchant_account_ref,state,beneficiary_id,bank_code,last4,fingerprint)
+  VALUES (gen_random_uuid(),k_driver,'11111111-1111-4111-8111-111111111111','NG','NGN','kora','kora_merchant_ng','completed',
+    '0123456789','044','6789',repeat('e',64));
+ UPDATE public.driver_payout_markets SET provider='kora',merchant_account_ref='kora_merchant_ng',sandbox_driver_id=k_driver
+  WHERE country_code='NG' AND currency_code='NGN';
+ -- Fund the wallet directly through the shared ledger (earning path is proven
+ -- in sections 9-10; this section isolates the provider swap).
+ PERFORM public.post_wallet_event('kora-fund:'||k_driver::text,'driver_earnings_credit','11111111-1111-4111-8111-111111111111',k_driver,'NGN',
+  jsonb_build_array(jsonb_build_object('accountPurpose','earnings_clearing','amountMinor',-30000),
+                    jsonb_build_object('accountPurpose','earnings_payable','amountMinor',30000)));
+ SELECT * INTO w FROM public.request_driver_withdrawal(k_driver,12000);
+ INSERT INTO results VALUES (11,'a kora-bound withdrawal reserves held funds under the same gate',
+   w.status='processing' AND w.provider='kora' AND w.merchant_account_ref='kora_merchant_ng'
+   AND public.driver_earnings_wallet_balance(k_driver,'11111111-1111-4111-8111-111111111111','NGN')=18000,
+   'provider='||w.provider||' spendable='||public.driver_earnings_wallet_balance(k_driver,'11111111-1111-4111-8111-111111111111','NGN'));
+ SELECT * INTO w FROM public.claim_driver_withdrawal(w.id);
+ PERFORM public.claim_withdrawal_submission(w.id,w.lease_token,w.reference);
+ INSERT INTO results VALUES (11,'an unverified kora transfer keeps the reserve held in reconcile state',
+   (SELECT w2.status FROM public.driver_withdrawals w2 WHERE w2.id=w.id)='processing'
+   AND public.driver_earnings_wallet_balance(k_driver,'11111111-1111-4111-8111-111111111111','NGN')=18000,'held');
+ -- A numeric-only transfer id must NOT settle a kora withdrawal (the settle
+ -- identity is provider-shaped); the Kora reference settles it once.
+ INSERT INTO results VALUES (11,'a numeric flutterwave-shaped id cannot settle a kora withdrawal',
+   NOT public.finish_driver_withdrawal(w.id,w.lease_token,'999001',0),'refused');
+ v_settled:=public.finish_driver_withdrawal(w.id,w.lease_token,'KPY-D-99001',25.50);
+ INSERT INTO results VALUES (11,'the verified Kora reference settles held funds to paid_out exactly once',
+   v_settled
+   AND (SELECT w2.status='paid' AND w2.provider_transfer_id='KPY-D-99001' AND w2.provider='kora'
+        FROM public.driver_withdrawals w2 WHERE w2.id=w.id)
+   AND public.driver_earnings_wallet_balance(k_driver,'11111111-1111-4111-8111-111111111111','NGN')=18000
+   AND EXISTS(SELECT 1 FROM public.driver_withdrawal_submissions WHERE withdrawal_id=w.id AND provider_transfer_id='KPY-D-99001'),
+   'settled='||v_settled||' ref='||(SELECT w2.provider_transfer_id FROM public.driver_withdrawals w2 WHERE w2.id=w.id));
+END $t$;
+
 SELECT n, name, CASE WHEN ok THEN 'PASS' ELSE 'FAIL' END AS result, left(detail,90) AS detail FROM results ORDER BY n, name;
 SELECT count(*) FILTER (WHERE NOT ok) AS failures, count(*) AS checks FROM results;
 ROLLBACK;

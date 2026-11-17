@@ -7,7 +7,7 @@
 const sim = (globalThis.__flwSim ||= { transfers: {}, outcome: 'completed', seq: 0 });
 
 function payoutMarketReady(m) {
-  return !!m && m.country_code === 'NG' && m.currency_code === 'NGN' && ['flutterwave','paystack'].includes(m.provider)
+  return !!m && m.country_code === 'NG' && m.currency_code === 'NGN' && ['flutterwave','paystack','kora'].includes(m.provider)
     && m.enabled === true && m.merchant_approved === true && m.adapter_ready === true && !!m.merchant_account_ref
     && !!m.capability_verified_at && m.merchant_mode === 'test' && !!m.capability_evidence_ref;
 }

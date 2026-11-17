@@ -24,8 +24,9 @@ export class DriverWithdrawalService {
     if (this.running) return;
     this.running = true;
     try {
-      // Sandbox-only rail: skip entirely when the payout provider is not configured.
-      try { sandboxDestinationProvider('flutterwave',''); } catch { return; }
+      // Sandbox-only rail: skip entirely when no supported payout provider is configured.
+      const configured = ['flutterwave','kora'].some(p => { try { sandboxDestinationProvider(p,''); return true; } catch { return false; } });
+      if (!configured) return;
       const { data, error } = await supabaseAdmin.from('driver_withdrawals').select('id')
         .in('status', ['processing','reconcile']).lte('retry_at', new Date().toISOString()).order('retry_at').limit(20);
       if (error) throw error;

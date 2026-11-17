@@ -8,7 +8,7 @@ export interface PayoutMarket {
  capability_evidence_ref:string|null;merchant_mode:string;
 }
 export function payoutMarketReady(m:PayoutMarket|null):boolean {
- return !!m && m.country_code==='NG' && m.currency_code==='NGN' && ['flutterwave','paystack'].includes(m.provider)
+ return !!m && m.country_code==='NG' && m.currency_code==='NGN' && ['flutterwave','paystack','kora'].includes(m.provider)
   && m.enabled===true && m.merchant_approved===true && m.adapter_ready===true && !!m.merchant_account_ref && !!m.capability_verified_at
   && m.merchant_mode==='test' && !!m.capability_evidence_ref;
 }
