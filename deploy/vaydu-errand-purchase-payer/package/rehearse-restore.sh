@@ -352,7 +352,7 @@ done
 rfail=0
 while IFS='|' read -r t cols; do
   [ -n "$t" ] || continue
-  acols="$(grep -F "$t|" "$tmp/after.cols.txt" | head -1 | cut -d'|' -f2-)" || true
+  acols="$(grep -E "^${t}\\|" "$tmp/after.cols.txt" | head -1 | cut -d'|' -f2-)" || true
   if ! grep -q "^$t|" "$tmp/after.cols.txt"; then echo "  DROPPED TABLE: $t"; rfail=1; continue; fi
   bset="$(tr ',' '\n' <<<"$cols" | sed 's/"//g' | sort -u)"
   aset="$(tr ',' '\n' <<<"$acols" | sed 's/"//g' | sort -u)"
@@ -364,7 +364,7 @@ while IFS='|' read -r t cols; do
     grep -qxF "$nc" "$allowed_cols" || { echo "  UNREVIEWED NEW COLUMN: $t.$nc"; rfail=1; }
   done < "$tmp/newcols.txt"
   rec="$(rowhash "$t" "$cols")" || die "row hash failed on $t"
-  before_rec="$(grep -F "$t|" "$tmp/before.rows.txt" | head -1 | cut -d'|' -f2-)"
+  before_rec="$(grep -E "^${t}\\|" "$tmp/before.rows.txt" | head -1 | cut -d'|' -f2-)"
   if [ "$rec" != "$before_rec" ]; then
     echo "  ROW CONTENT CHANGED: $t  $before_rec -> $rec"; rfail=1
   fi
@@ -397,7 +397,7 @@ compare_state after final || die "behaviour suites left persistent function chan
 wfail=0
 while IFS='|' read -r t rec; do
   [ -n "$t" ] || continue
-  cols="$(grep -F "$t|" "$tmp/after.cols.txt" | head -1 | cut -d'|' -f2-)"
+  cols="$(grep -E "^${t}\\|" "$tmp/after.cols.txt" | head -1 | cut -d'|' -f2-)"
   frec="$(rowhash "$t" "$cols")" || die "final row hash failed on $t"
   [ "$frec" = "$rec" ] || { echo "  PERSISTENT SUITE WRITE: $t  $rec -> $frec"; wfail=1; }
 done < "$tmp/after.rows.txt"
