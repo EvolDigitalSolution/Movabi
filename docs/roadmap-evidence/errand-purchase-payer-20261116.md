@@ -167,3 +167,29 @@ now includes `errand_purchase_payments`.
   gitignore); baselines and harness files are committed — clean checkout reproduces all suites.
 - **Package**: `deploy/vaydu-errand-purchase-payer/package/` = two migrations + PREFLIGHT +
   `CHECKSUMS.sha256` over final content.
+
+## 2026-11-17 — fresh-schema rehearsal + closure round
+
+- Rehearsal DB renamed `movabi_develop`: database-name-gated migrations execute
+  as on host. Every repo migration attempted in version order inside its own
+  transaction: **116 applied, 38 rolled back** (already reflected in the Nov-12
+  live dump — reported per file, incl. `202612547` flutterwave outbox,
+  `202612548` transfer-method guard, `202612541` fee-policy upgrade).
+- Caught drift: `freeze_wallet_topup_fee` now reads `wallet_topup_fee_policies`
+  (not `schedules`); `handle_new_user` auto-creates profiles+wallets;
+  `guard_job_transfer_method` requires `driver_settlement_method='transfer'`
+  for NG payouts. Fixtures updated; leak check now asserts zero booking balance
+  + no `customer_credit` ledger row (auto-provisioned zero wallet is expected).
+- Kept production triggers enabled in fixtures: payment-eligibility, ride cash
+  credit, errand completion guard, reward reserve, price sync, updated_at.
+  Bypassed list documented in PREFLIGHT (auth-context triggers only).
+- Results: realdb **44/44** (incl. NG `flw:` queue + Stripe-destination refusal
+  for NG terms), funding chain **11/11**, worker rehearsal **10/10** — all on
+  `supabase/postgres:15.1.1.78`.
+- Customer top-up UI e2e **2/2** (`customer-wallet-collection.spec.ts`):
+  readiness → frozen quote → card confirm → server verify → wallet credit;
+  hidden when collection unavailable. Stripe.js stubbed; routes + orchestrator real.
+- Double-pay check: no `wallets`/`wallet_transactions`/`reward_credits`/
+  `driver_cash_credit` write path exists for job earnings — the only channel is
+  `job_payout_queue` → one provider transfer. Documented in PREFLIGHT.
+- Package checksums regenerated over final content.

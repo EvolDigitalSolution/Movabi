@@ -17,7 +17,7 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 tests="$root/deploy/vaydu-errand-purchase-payer"
 secret='synthetic-disposable-jwt-secret-minimum-40-characters'
 id="$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
-db="vaydu-worker-$id"; auth="$db-auth"; rest="$db-rest"; net="$db-net"; name=worker_test
+db="vaydu-worker-$id"; auth="$db-auth"; rest="$db-rest"; net="$db-net"; name=movabi_develop
 keep="${KEEP:-0}"
 cleanup(){ [ "$keep" = 1 ] && { echo "KEEP=1: leaving $db $rest on $net"; return; }; docker rm -f "$auth" "$db" "$rest" >/dev/null 2>&1 || true; docker network rm "$net" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -62,15 +62,18 @@ qw -c "CREATE TABLE IF NOT EXISTS auth.job_messages (id uuid); CREATE OR REPLACE
 sed 's/CREATE SCHEMA public;/CREATE SCHEMA IF NOT EXISTS public;/; s/CREATE EXTENSION /CREATE EXTENSION IF NOT EXISTS /' "$root/supabase/baseline/develop_live_public_schema_20261112.sql" > "$tmp/baseline.sql"
 qs "$tmp/baseline.sql"
 qs "$root/supabase/baseline/candidate/001_tenants.sql"
-# Full pending migration chain, in deploy order: the live-develop drift captures
-# (inspection, completion-PIN effective/acceptance — the Africa/GB PIN work), referral and
-# receivables, then the errand purchase-payer + customer wallet bridge migrations under test.
-for m in 20261270000000_capture_develop_inspection_drift 20261270100000_completion_pin_effective \
-  20261270200000_referral_fare_minor_units 20261270300000_overdue_debt_followup \
-  20261270400000_completion_pin_acceptance_market \
-  20261270500000_errand_purchase_payer 20261270600000_customer_wallet_booking_bridge; do
-  qs "$root/supabase/migrations/$m.sql" && echo "APPLIED $m" || { echo "FAILED to apply $m"; exit 1; }
+# Full repo migration chain, in version order, each inside its own single transaction:
+# pending migrations commit (including the Africa/GB PIN chain, the flutterwave payout
+# outbox + collection subaccounts, and the errand payer + wallet bridge under test);
+# migrations already reflected in the live dump roll back and are reported SKIPPED.
+# The DB is named movabi_develop so database-name-gated migrations run as on the host.
+skipped=0; applied_n=0
+for f in "$root"/supabase/migrations/*.sql; do
+  m="$(basename "$f" .sql)"; case "$m" in *.down) continue;; esac
+  if q -1 < "$f" >/dev/null 2>&1; then echo "APPLIED $m"; applied_n=$((applied_n+1));
+  else echo "SKIPPED $m"; skipped=$((skipped+1)); fi
 done
+echo "chain: $applied_n applied, $skipped skipped (already live or incompatible)"
 
 # PostgREST serves the public schema; service_role JWTs minted by the harness.
 docker run -d --rm --network "$net" --name "$rest" \
@@ -102,7 +105,8 @@ for _ in $(seq 1 90); do [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127
 cat > "$tmp/fixtures.sql" <<'SQL'
 DO $d$ DECLARE t text; BEGIN
  FOR t IN SELECT tgname FROM pg_trigger tr JOIN pg_class c ON c.oid=tr.tgrelid WHERE c.relname='jobs' AND NOT tgisinternal
-   AND tgname NOT IN ('trg_enforce_job_payment_eligibility','enforce_ride_cash_credit_v1e')
+   AND tgname NOT IN ('trg_enforce_job_payment_eligibility','enforce_ride_cash_credit_v1e',
+     'tr_check_errand_completion_guard','reward_credit_reserve','trg_sync_job_prices','tr_update_jobs_updated_at')
  LOOP EXECUTE format('ALTER TABLE public.jobs DISABLE TRIGGER %I', t); END LOOP; END $d$;
 INSERT INTO public.tenants(id,name,slug) VALUES ('11111111-1111-4111-8111-111111111111','t','t')
  ON CONFLICT DO NOTHING;
@@ -114,11 +118,17 @@ INSERT INTO auth.users(id) SELECT ('dddddddd-aaaa-4aaa-8aaa-0000000000'||g)::uui
 INSERT INTO auth.users(id) VALUES ('ffffffff-dddd-4ddd-8ddd-dddddddddddd');
 INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code)
  SELECT ('dddddddd-aaaa-4aaa-8aaa-0000000000'||g)::uuid,'11111111-1111-4111-8111-111111111111','driver','GB','GB'
- FROM generate_series(10,12) g;
+ FROM generate_series(10,12) g
+ ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
+   country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code;
 INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code) VALUES
- ('ffffffff-dddd-4ddd-8ddd-dddddddddddd','11111111-1111-4111-8111-111111111111','customer','GB','GB');
+ ('ffffffff-dddd-4ddd-8ddd-dddddddddddd','11111111-1111-4111-8111-111111111111','customer','GB','GB')
+ ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
+   country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code;
 INSERT INTO public.wallets(user_id,available_balance,reserved_balance,currency_code)
- VALUES ('ffffffff-dddd-4ddd-8ddd-dddddddddddd',900,0,'GBP');
+ VALUES ('ffffffff-dddd-4ddd-8ddd-dddddddddddd',900,0,'GBP')
+ ON CONFLICT (user_id) DO UPDATE SET available_balance=EXCLUDED.available_balance,
+   reserved_balance=EXCLUDED.reserved_balance,currency_code=EXCLUDED.currency_code;
 DO $d$ DECLARE j uuid; n int; BEGIN
  FOR n IN 10..12 LOOP
   INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,

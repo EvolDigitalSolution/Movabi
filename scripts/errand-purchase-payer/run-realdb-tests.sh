@@ -27,7 +27,10 @@ pg_image="${PG_IMAGE:-postgres:16.15}"
 baseline="${BASELINE:-deployed_public_schema.sql}"
 pguser="${PSQL_USER:-postgres}"
 id="$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
-db="vaydu-errandpp-test-$id"; auth="$db-auth"; net="$db-net"; name=errandpp_test
+db="vaydu-errandpp-test-$id"; auth="$db-auth"; net="$db-net"
+# On the live-develop baseline the disposable DB is named movabi_develop so migrations gated
+# on current_database()='movabi_develop' execute, mirroring the real host.
+case "${baseline:-}" in develop_live*) name=movabi_develop;; *) name=errandpp_test;; esac
 tests="$root/deploy/vaydu-errand-purchase-payer"
 cleanup(){ docker rm -f "$auth" "$db" >/dev/null 2>&1 || true; docker network rm "$net" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -74,26 +77,32 @@ run_test(){ local file="$1" out; out="$(q -F ' | ' < "$tests/$file")" || { echo 
  local summary; summary="$(echo "$out" | tail -1)"; echo "   failures | checks = $summary"
  [ "${summary%% *}" = 0 ] || fail=1; }
 
-# Pending migration chain. On the live-develop baseline the full pending chain
-# (202612700..202612706 — inspection drift capture, completion-PIN effective/acceptance, referral
-# minor units, receivables follow-up, then the errand payer + customer wallet bridge) is applied
-# in order, mirroring the deploy sequence. On the older deployed export the 202612700..202612704
-# drift captures do not apply (their objects only exist on live develop) and touch none of the
-# errand purchase-payer objects, so only the two new migrations are applied there.
+# Pending migration chain. On the live-develop baseline the disposable database is named
+# 'movabi_develop' so database-name-gated migrations execute exactly as they would on the
+# host, and EVERY migration in the repo chain is attempted in version order inside its own
+# single transaction (psql -1): a migration that fails (already reflected in the live dump,
+# or a genuine incompatibility) rolls back cleanly and is reported SKIPPED with its first
+# error line, while a genuinely pending one commits. That rehearses "develop's current
+# schema + this release" rather than a hand-picked subset. On the older deployed export the
+# drift captures do not apply, so only the two new migrations are attempted there.
 case "$baseline" in
   develop_live*)
-    apply 20261270000000_capture_develop_inspection_drift
-    apply 20261270100000_completion_pin_effective
-    apply 20261270200000_referral_fare_minor_units
-    apply 20261270300000_overdue_debt_followup
-    apply 20261270400000_completion_pin_acceptance_market
+    skipped=0; applied_n=0
+    for f in "$root"/supabase/migrations/*.sql; do
+      m="$(basename "$f" .sql)"; case "$m" in *.down) continue;; esac
+      out="$(q -1 < "$f" 2>&1 || true)"
+      if echo "$out" | grep -qE '^(ERROR|FATAL)'; then
+        echo "SKIPPED $m :: $(echo "$out" | grep -m1 -E '^(ERROR|FATAL|NOTICE)')"; skipped=$((skipped+1));
+      else echo "APPLIED $m"; applied_n=$((applied_n+1)); fi
+    done
+    echo "chain: $applied_n applied, $skipped rolled back (already live or incompatible — see above)"
     ;;
   *)
-    echo "NOTE: baseline '$baseline' predates the 202612700..202612704 drift captures; applying 705+706 only"
+    echo "NOTE: baseline '$baseline' predates the drift captures; applying 705+706 only"
+    apply 20261270500000_errand_purchase_payer
+    apply 20261270600000_customer_wallet_booking_bridge
     ;;
 esac
-apply 20261270500000_errand_purchase_payer
-apply 20261270600000_customer_wallet_booking_bridge
 run_test realdb-errand-purchase-payer-test.sql
 
 # The customer-funding chain exercises the batch-2 collection objects

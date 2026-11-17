@@ -10,9 +10,17 @@
 -- Everything runs in one transaction and ROLLS BACK.
 \set ON_ERROR_STOP on
 BEGIN;
+-- Fixture-only trigger bypass (disposable DB, never production): jobs triggers that
+-- require live auth context (auth.uid()/notification fan-out/market eligibility) are
+-- disabled for fixture inserts. KEPT ENABLED — the production payment/completion
+-- path is exercised with them on:
+--   trg_enforce_job_payment_eligibility, enforce_ride_cash_credit_v1e (payment integrity)
+--   tr_check_errand_completion_guard (blocks completion with a pending over-budget request)
+--   reward_credit_reserve, trg_sync_job_prices, tr_update_jobs_updated_at (data-only)
 DO $d$ DECLARE t text; BEGIN
  FOR t IN SELECT tgname FROM pg_trigger tr JOIN pg_class c ON c.oid=tr.tgrelid WHERE c.relname='jobs' AND NOT tgisinternal
-   AND tgname NOT IN ('trg_enforce_job_payment_eligibility','enforce_ride_cash_credit_v1e')
+   AND tgname NOT IN ('trg_enforce_job_payment_eligibility','enforce_ride_cash_credit_v1e',
+     'tr_check_errand_completion_guard','reward_credit_reserve','trg_sync_job_prices','tr_update_jobs_updated_at')
  LOOP EXECUTE format('ALTER TABLE public.jobs DISABLE TRIGGER %I', t); END LOOP; END $d$;
 
 INSERT INTO public.tenants(id,name,slug) VALUES ('11111111-1111-4111-8111-111111111111','t','t');
@@ -22,12 +30,18 @@ INSERT INTO public.service_types(id,slug,name) VALUES ('dddddddd-dddd-4ddd-8ddd-
 INSERT INTO auth.users(id) SELECT ('dddddddd-aaaa-4aaa-8aaa-'||lpad(to_hex(g),12,'0'))::uuid FROM generate_series(1,8) g;
 INSERT INTO auth.users(id) VALUES ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc');
 INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code)
- SELECT ('dddddddd-aaaa-4aaa-8aaa-'||lpad(to_hex(g),12,'0'))::uuid,'11111111-1111-4111-8111-111111111111','driver','GB','GB' FROM generate_series(1,8) g;
+ SELECT ('dddddddd-aaaa-4aaa-8aaa-'||lpad(to_hex(g),12,'0'))::uuid,'11111111-1111-4111-8111-111111111111','driver','GB','GB' FROM generate_series(1,8) g
+ ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
+   country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code;
 INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code) VALUES
  ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb','11111111-1111-4111-8111-111111111111','customer','GB','GB'),
- ('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','11111111-1111-4111-8111-111111111111','customer','GB','GB');
+ ('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','11111111-1111-4111-8111-111111111111','customer','GB','GB')
+ ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
+   country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code;
 INSERT INTO public.wallets(user_id,available_balance,reserved_balance,currency_code)
- VALUES ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb',500,0,'GBP'),('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc',300,0,'GBP');
+ VALUES ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb',500,0,'GBP'),('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc',300,0,'GBP')
+ ON CONFLICT (user_id) DO UPDATE SET available_balance=EXCLUDED.available_balance,
+   reserved_balance=EXCLUDED.reserved_balance,currency_code=EXCLUDED.currency_code;
 
 CREATE TEMP TABLE results(n int, name text, ok boolean, detail text);
 
@@ -297,6 +311,58 @@ DO $t$ DECLARE j uuid; BEGIN
   VALUES (j,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc',0,10,0,'pending');
  INSERT INTO results VALUES (7,'an unfunded (zero-reserved) marker cannot be spent against',
    pg_temp.spend(j,5) LIKE '%exceeds the funded budget%','');
+END $t$;
+
+-- =========================================================================
+-- 8. Market-specific settlement: an NG errand completes via the Flutterwave
+--    provider branch, never Stripe Connect. The acct_ destination path and
+--    the flutterwave path are mutually exclusive and provider-verified.
+-- =========================================================================
+DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid;
+  acct uuid:=gen_random_uuid(); msg text; BEGIN
+ INSERT INTO auth.users(id) VALUES (ng_driver);
+ INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code,registration_activated_at)
+  VALUES (ng_driver,'11111111-1111-4111-8111-111111111111','driver','NG','NG',now())
+  ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
+    country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code,
+    registration_activated_at=EXCLUDED.registration_activated_at;
+ INSERT INTO public.market_availability(country_code,launch_status,supported_currency) VALUES ('NG','live','NGN');
+ INSERT INTO public.driver_payment_accounts(id,driver_id,tenant_id,country_code,currency_code,provider,merchant_account_ref,state,beneficiary_id,bank_code,last4,fingerprint)
+  VALUES (acct,ng_driver,'11111111-1111-4111-8111-111111111111','NG','NGN','flutterwave','flw_merchant_ng','completed',
+    '123456','044','1234',repeat('a',64));
+ INSERT INTO public.driver_payout_markets(country_code,currency_code,provider,merchant_account_ref,enabled,merchant_approved,adapter_ready,capability_verified_at,capability_evidence_ref,merchant_mode,sandbox_driver_id,sandbox_tenant_id)
+  VALUES ('NG','NGN','flutterwave','flw_merchant_ng',true,true,true,now(),'cap-evidence-1','test',ng_driver,'11111111-1111-4111-8111-111111111111');
+ -- An NG errand (no purchase spend): completes on the verified flutterwave identity.
+ INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
+   payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
+ VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+   'paid','NG','NGN','in_progress',1000,
+   jsonb_build_object('quote_id',gen_random_uuid(),'quote_expires_at',now()+interval '10 minutes','driver_settlement_method','transfer'),
+   jsonb_build_object('calculationVersion','test-v1'),ng_driver,ng_driver) RETURNING id INTO j;
+ INSERT INTO public.errand_details(job_id,items_list,estimated_budget) VALUES (j,'[]',0);
+ PERFORM public.complete_job_with_pending_payout(j,ng_driver,
+   jsonb_build_object('total',1000,'payout',800,'platformFee',150,'commission',50,'commissionRate',15,
+     'currency','ngn','amountMinor',80000,'destination','flw:'||acct::text,'country','NG',
+     'payout_provider','flutterwave','payout_account_id',acct::text,'payout_merchant','flw_merchant_ng',
+     'payout_tenant','11111111-1111-4111-8111-111111111111'),
+   jsonb_build_object('completion_pin_verified_at',now()));
+ INSERT INTO results VALUES (8,'NG completion queued on the flutterwave provider, not Stripe Connect',
+   (SELECT q.terms->>'payout_provider' FROM public.job_payout_queue q WHERE q.job_id=j)='flutterwave'
+   AND (SELECT q.destination FROM public.job_payout_queue q WHERE q.job_id=j)='flw:'||acct::text,
+   (SELECT q.destination||'/'||coalesce(q.terms->>'payout_provider','?') FROM public.job_payout_queue q WHERE q.job_id=j));
+ -- A stripe-shaped destination with NG terms is refused (provider isolation).
+ INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
+   payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
+ VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+   'paid','NG','NGN','in_progress',1000,jsonb_build_object('quote_id',gen_random_uuid(),'driver_settlement_method','transfer'),'{}'::jsonb,ng_driver,ng_driver) RETURNING id INTO j;
+ INSERT INTO public.errand_details(job_id,items_list,estimated_budget) VALUES (j,'[]',0);
+ BEGIN PERFORM public.complete_job_with_pending_payout(j,ng_driver,
+   jsonb_build_object('total',1000,'payout',800,'platformFee',150,'commission',50,'commissionRate',15,
+     'currency','ngn','amountMinor',80000,'destination','acct_stripe_dest','country','NG'),
+   jsonb_build_object()); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (8,'a Stripe Connect destination is refused for NG terms',
+   msg LIKE '%Invalid payout identity%',msg);
 END $t$;
 
 SELECT n, name, CASE WHEN ok THEN 'PASS' ELSE 'FAIL' END AS result, left(detail,90) AS detail FROM results ORDER BY n, name;

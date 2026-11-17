@@ -1,5 +1,10 @@
 import {CustomerWalletSandbox,WalletSandboxError} from '../services/payments/customer-wallet-sandbox';
 import {customerWalletTopupReadiness,WalletTopupReadinessError} from '../services/customer-wallet-topup-readiness';
+import {CustomerWalletCollectionService} from '../services/payments/customer-wallet-collection.service';
+import {PaymentLayerError} from '../services/payments/payment-contracts';
+import {StripeDriverTopupSandbox} from '../services/payments/stripe-driver-topup-sandbox';
+import {flutterwaveAttemptStore} from './driver-wallet-topup.routes';
+import Stripe from 'stripe';
 import {ensureCustomerWallet,customerWalletSetupError} from '../services/customer-wallet-setup';
 import {rateLimit} from 'express-rate-limit';
 import { dispatchService } from '../services/dispatch.service';
@@ -47,6 +52,60 @@ router.get('/topup-readiness',rateLimit({windowMs:60000,limit:30,standardHeaders
  }
 });
 
+
+// ---- Customer booking-wallet collection (customer_credit) -----------------
+// The verified funding path behind the errand wallet journey: checkout freezes
+// the attempt terms, the provider adapter (Stripe sandbox) issues a PaymentIntent,
+// and verify confirms the provider payment server-side before the ledger credit
+// (which the bridge trigger then lands on the booking wallet).
+const collectionDb={
+ authGetUser: async (token:string)=>{
+  const {data,error}=await supabaseAdmin.auth.getUser(token);
+  return (error||!data?.user?.id)?null:{id:data.user.id,email:data.user.email||'',email_confirmed_at:(data.user as any).email_confirmed_at||null};
+ },
+ rpc: async (fn:string,args:Record<string,unknown>)=>{const {data,error}=await supabaseAdmin.rpc(fn,args);if(error)throw new PaymentLayerError('RPC_'+fn,error.message);return data;},
+ from:(table:string)=>supabaseAdmin.from(table),
+};
+let _collectionService:CustomerWalletCollectionService|null=null;
+function collectionService(){
+ if(!_collectionService){
+  _collectionService=new CustomerWalletCollectionService(collectionDb,{callbackUrl:()=>process.env['VAYDU_TOPUP_CALLBACK_URL']||''},(provider,merchant)=>{
+   if(provider==='stripe')return new StripeDriverTopupSandbox(new Stripe(process.env['STRIPE_SECRET_KEY']||'',{apiVersion:'2023-10-16' as any}),process.env['STRIPE_SECRET_KEY']||'',merchant,flutterwaveAttemptStore(collectionDb));
+   throw new PaymentLayerError('PAYMENT_PROVIDER_NOT_READY','Card adapter has not passed sandbox review');
+  });
+ }
+ return _collectionService;
+}
+const collectionLimiter=rateLimit({windowMs:60000,limit:20,standardHeaders:true,legacyHeaders:false});
+function collectionFailure(res:Response,error:unknown){
+ if(error instanceof PaymentLayerError){
+  const status=error.code==='AUTHENTICATION_REQUIRED'?401
+   :error.code==='TOPUP_NOT_AVAILABLE'?404
+   :['COLLECTION_DISABLED','PAYMENT_RECONCILIATION_REQUIRED','TOPUP_QUOTE_MISMATCH','PAYMENT_PENDING','PAYMENT_ACTION_REQUIRED','PAYMENT_NOT_COMPLETED','PAYMENT_FAILED','PAYMENT_CANCELLED','TOPUP_ALREADY_CREDITED','TOPUP_AMOUNT_LIMIT'].includes(error.code)?409
+   :['PAYMENT_RECEIVED_CREDIT_PENDING'].includes(error.code)?503
+   :400;
+  return res.status(status).json({code:error.code});
+ }
+ return res.status(503).json({code:'TOPUP_RESULT_UNCONFIRMED'});
+}
+const collectionToken=(req:Request)=>{const match=/^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization||''));if(!match)throw new PaymentLayerError('AUTHENTICATION_REQUIRED','Authentication required');return match[1];};
+router.post('/collection/checkout',collectionLimiter,async(req:Request,res:Response)=>{
+ res.setHeader('Cache-Control','private, no-store');res.setHeader('Vary','Authorization');
+ try{
+  const body=req.body||{};
+  if(typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>!['amountMinor','idempotencyKey','confirmedTotalMinor'].includes(k))||typeof body.amountMinor!=='number'||typeof body.idempotencyKey!=='string'||(body.confirmedTotalMinor!==undefined&&typeof body.confirmedTotalMinor!=='number'))
+   throw new PaymentLayerError('INVALID_PAYMENT_INPUT','amountMinor and idempotencyKey are required');
+  return res.json(await collectionService().createCheckout(collectionToken(req),{amountMinor:body.amountMinor,idempotencyKey:body.idempotencyKey,confirmedTotalMinor:body.confirmedTotalMinor}));
+ }catch(error){return collectionFailure(res,error);}
+});
+router.post('/collection/verify',collectionLimiter,async(req:Request,res:Response)=>{
+ res.setHeader('Cache-Control','private, no-store');res.setHeader('Vary','Authorization');
+ try{
+  if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)||Object.keys(req.body).some(k=>k!=='attemptId')||typeof req.body.attemptId!=='string')
+   throw new PaymentLayerError('INVALID_PAYMENT_INPUT','attemptId is required');
+  return res.json(await collectionService().verify(collectionToken(req),req.body.attemptId));
+ }catch(error){return collectionFailure(res,error);}
+});
 
 const sandboxLimiter=rateLimit({windowMs:60000,limit:20,standardHeaders:true,legacyHeaders:false});
 function sandboxHeaders(res:Response){res.setHeader('Cache-Control','private, no-store');res.setHeader('Vary','Authorization');}

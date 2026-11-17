@@ -23,6 +23,11 @@ const Supabase={auth:{async getUser(){return auth;}},rpc(...args){return request
 globalThis.__b1hMocks={
  '../services/payments/customer-wallet-sandbox':{CustomerWalletSandbox:class {},WalletSandboxError:class extends Error {}},
  '../services/customer-wallet-topup-readiness':readiness,
+ '../services/payments/customer-wallet-collection.service':{CustomerWalletCollectionService:class {}},
+ '../services/payments/payment-contracts':{PaymentLayerError:class extends Error {}},
+ '../services/payments/stripe-driver-topup-sandbox':{StripeDriverTopupSandbox:class {}},
+ './driver-wallet-topup.routes':{flutterwaveAttemptStore:()=>({})},
+ 'stripe':{default:class {}},
  '../services/customer-wallet-setup':service,'express-rate-limit':{rateLimit:()=>()=>{}},
  '../services/dispatch.service':{dispatchService:{}},'express':{Router:()=>router},
  '../services/supabase.service':{supabaseAdmin:Supabase},'../services/payment-authority.service':{PaymentAuthorityService:{}},
@@ -30,6 +35,8 @@ globalThis.__b1hMocks={
 };
 let source=stripTypeScriptTypes(read('server/routes/wallet.routes.ts')).replace(/import\s*\{([^}]+)\}\s*from\s*'([^']+)'\s*;/g,(_,names,key)=>{
  assert.ok(globalThis.__b1hMocks[key],key);return `const {${names}}=globalThis.__b1hMocks[${JSON.stringify(key)}];`;
+}).replace(/import\s+([A-Za-z_$][\w$]*)\s+from\s*'([^']+)'\s*;/g,(_,name,key)=>{
+ assert.ok(globalThis.__b1hMocks[key],key);return `const ${name}=globalThis.__b1hMocks[${JSON.stringify(key)}].default;`;
 });
 await import(url(source));
 async function request(header='Bearer valid',body={}){

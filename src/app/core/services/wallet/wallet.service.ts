@@ -48,6 +48,19 @@ export class WalletService {
     };
   }
 
+  async topupReadiness(): Promise<any> {
+    const headers = await this.getAuthHeaders();
+    return firstValueFrom(this.http.get(`${this.walletApiUrl}/topup-readiness`, { headers }).pipe(timeout(15000)));
+  }
+  async collectionCheckout(input: { amountMinor: number; idempotencyKey: string; confirmedTotalMinor?: number }): Promise<any> {
+    const headers = await this.getAuthHeaders();
+    return firstValueFrom(this.http.post(`${this.walletApiUrl}/collection/checkout`, input, { headers }).pipe(timeout(25000)));
+  }
+  async collectionVerify(attemptId: string): Promise<{ creditedEventId: string }> {
+    const headers = await this.getAuthHeaders();
+    return firstValueFrom(this.http.post<{ creditedEventId: string }>(`${this.walletApiUrl}/collection/verify`, { attemptId }, { headers }).pipe(timeout(25000)));
+  }
+
   private readonly storedWallet=signal<Wallet|null>(null);
   readonly wallet=computed(()=>{const user=this.auth.currentUser();const wallet=this.storedWallet();return user&&wallet?.user_id===user.id?wallet:null;});
   readonly walletLoading=signal(false);

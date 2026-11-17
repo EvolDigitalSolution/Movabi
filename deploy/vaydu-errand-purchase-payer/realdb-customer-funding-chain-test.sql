@@ -15,9 +15,13 @@
 -- Everything runs in one transaction and ROLLS BACK.
 \set ON_ERROR_STOP on
 BEGIN;
+-- Fixture-only trigger bypass (disposable DB, never production): same keep-list as
+-- realdb-errand-purchase-payer-test.sql — payment-integrity and the data-only
+-- completion/price/reward triggers stay ENABLED; auth-context triggers are disabled.
 DO $d$ DECLARE t text; BEGIN
  FOR t IN SELECT tgname FROM pg_trigger tr JOIN pg_class c ON c.oid=tr.tgrelid WHERE c.relname='jobs' AND NOT tgisinternal
-   AND tgname NOT IN ('trg_enforce_job_payment_eligibility','enforce_ride_cash_credit_v1e')
+   AND tgname NOT IN ('trg_enforce_job_payment_eligibility','enforce_ride_cash_credit_v1e',
+     'tr_check_errand_completion_guard','reward_credit_reserve','trg_sync_job_prices','tr_update_jobs_updated_at')
  LOOP EXECUTE format('ALTER TABLE public.jobs DISABLE TRIGGER %I', t); END LOOP; END $d$;
 
 INSERT INTO public.tenants(id,name,slug) VALUES ('11111111-1111-4111-8111-111111111111','t','t');
@@ -28,7 +32,9 @@ INSERT INTO auth.users(id) VALUES ('dddddddd-aaaa-4aaa-8aaa-000000000009'),
 INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code) VALUES
  ('dddddddd-aaaa-4aaa-8aaa-000000000009','11111111-1111-4111-8111-111111111111','driver','GB','GB'),
  ('ffffffff-dddd-4ddd-8ddd-dddddddddddd','11111111-1111-4111-8111-111111111111','customer','GB','GB'),
- ('aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee','11111111-1111-4111-8111-111111111111','driver','GB','GB');
+ ('aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee','11111111-1111-4111-8111-111111111111','driver','GB','GB')
+ ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
+   country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code;
 
 -- Collection plumbing: exactly one eligible GB/GBP card collect route on the
 -- platform Stripe merchant, an approved zero-fee schedule, kill switches on.
@@ -36,6 +42,10 @@ INSERT INTO public.market_payment_routes(country_code,currency_code,method,provi
  VALUES ('GB','GBP','card','stripe','acct_vaydu_platform_gb',true,true,true,true,ARRAY['collect']);
 INSERT INTO public.wallet_topup_fee_schedules(version,provider,country_code,currency_code,method,exponent,fee_basis,fee_basis_points,fee_fixed_minor,rounding,approved_by,approved_at,active)
  VALUES ('vaydu-customer-card-0fee-test-v1','stripe','GB','GBP','card',2,'wallet',0,0,'half_up','rehearsal',now(),true);
+-- The batch-2b freeze reads wallet_topup_fee_policies (post-202612541 schema); the older
+-- schedules table is kept above so this fixture works against either function version.
+INSERT INTO public.wallet_topup_fee_policies(version,provider,country_code,currency_code,method,fee_basis_points,fee_fixed_minor,exponent,active)
+ VALUES ('vaydu-customer-card-0fee-test-v1','stripe','GB','GBP','card',0,1,2,true);
 INSERT INTO public.wallet_collection_config(key,value) VALUES ('enabled','true'),('max_amount_minor_GBP','1000000');
 
 CREATE TEMP TABLE results(n int, name text, ok boolean, detail text);
@@ -78,7 +88,7 @@ DO $t$ DECLARE a uuid; ev uuid; ev2 uuid; ok boolean; BEGIN
  INSERT INTO results VALUES (1,'the provider reference binds to the frozen attempt',ok,'');
 
  -- Provider-verified confirm posts the event AND bridges the booking wallet.
- ev:=public.confirm_wallet_topup_with_total(a,'pi_cust_1','acct_vaydu_platform_gb','GBP',30000,'succeeded');
+ ev:=public.confirm_wallet_topup_with_total(a,'pi_cust_1','acct_vaydu_platform_gb','GBP',(SELECT total_charge_minor FROM public.wallet_topup_attempts WHERE id=a),'succeeded');
  INSERT INTO results VALUES (1,'verified collection credits the customer booking wallet (300.00)',
    pg_temp.wbal('ffffffff-dddd-4ddd-8ddd-dddddddddddd')='300.00/0.00'
    AND (SELECT status FROM public.wallet_topup_attempts WHERE id=a)='credited'
@@ -95,7 +105,7 @@ DO $t$ DECLARE a uuid; ev uuid; ev2 uuid; ok boolean; BEGIN
      AND event_key='wallet-topup:'||a::text AND payment_provider='stripe'),'');
 
  -- Replay is idempotent: same event, no second wallet credit.
- ev2:=public.confirm_wallet_topup_with_total(a,'pi_cust_1','acct_vaydu_platform_gb','GBP',30000,'succeeded');
+ ev2:=public.confirm_wallet_topup_with_total(a,'pi_cust_1','acct_vaydu_platform_gb','GBP',(SELECT total_charge_minor FROM public.wallet_topup_attempts WHERE id=a),'succeeded');
  INSERT INTO results VALUES (1,'replayed confirm returns the same credit and does not double-fund',
    ev2=ev AND pg_temp.wbal('ffffffff-dddd-4ddd-8ddd-dddddddddddd')='300.00/0.00','');
 END $t$;
@@ -152,9 +162,12 @@ DO $t$ DECLARE a uuid; ev uuid; BEGIN
      jsonb_build_object('accountPurpose','platform_funding','amountMinor',-5000)),
    'stripe','acct_vaydu_platform_gb','pi_drv_1');
  UPDATE public.wallet_topup_attempts SET status='credited',credited_event_id=ev WHERE id=a;
+ -- handle_new_user auto-provisions a zero wallet row for every auth user; leakage means a
+ -- nonzero booking balance or a customer_credit ledger row, not the row's existence.
  INSERT INTO results VALUES (3,'driver cash credit does not leak into the booking wallet',
-   NOT EXISTS(SELECT 1 FROM public.wallets WHERE user_id='aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee')
-   AND NOT EXISTS(SELECT 1 FROM public.wallet_transactions WHERE user_id='aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee'),'');
+   coalesce((SELECT available_balance+reserved_balance FROM public.wallets WHERE user_id='aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee'),0)=0
+   AND NOT EXISTS(SELECT 1 FROM public.wallet_transactions WHERE user_id='aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee'
+     AND balance_purpose='customer_credit'),'');
 END $t$;
 
 SELECT n, name, CASE WHEN ok THEN 'PASS' ELSE 'FAIL' END AS result, left(detail,90) AS detail FROM results ORDER BY n, name;

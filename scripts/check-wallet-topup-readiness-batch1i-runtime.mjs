@@ -29,7 +29,7 @@ await test('expired markets are unavailable',async()=>{const r=make();r.market_a
 await test('Kora gaps accurately reflect owner preflight',async()=>{const v=await get(make());assert.deepEqual(v.providers,[{provider:'kora',routeReady:false,reasons:['route_disabled','merchant_not_approved','adapter_not_ready','merchant_reference_missing','collection_capability_missing']}]);assert.ok(v.blockers.includes('currency_limit_missing_or_invalid'));});
 function approved(){const r=make();Object.assign(r.market_payment_routes[0],{enabled:true,merchant_approved:true,adapter_ready:true,capabilities:['collect'],merchant_account_ref:'PRIVATE_MERCHANT'});r.wallet_collection_config=[{key:'enabled',value:'true'},{key:'max_amount_minor_NGN',value:'9007199254740993'}];return r;}
 await test('exact limit remains string beyond JS safe integer',async()=>{assert.equal((await get(approved())).maxAmountMinor,'9007199254740993');});
-await test('ready route does not claim collection implementation',async()=>{const v=await get(approved());assert.equal(v.canSubmit,false);assert.equal(v.collectionAvailable,false);assert.deepEqual(v.blockers,['collection_integration_pending']);});
+await test('ready route reports implemented collection honestly',async()=>{const v=await get(approved());assert.equal(v.canSubmit,true);assert.equal(v.collectionAvailable,true);assert.deepEqual(v.blockers,[]);});
 await test('private merchant references never leave service',async()=>{assert.equal(JSON.stringify(await get(approved())).includes('PRIVATE_MERCHANT'),false);});
 await test('ambiguous eligible routes are blocked',async()=>{const r=approved();r.market_payment_routes.push({...r.market_payment_routes[0],provider:'stripe'});assert.ok((await get(r)).blockers.includes('ambiguous_collection_routes'));});
 await test('Stripe and Fincra use identical capability checks',async()=>{for(const provider of ['stripe','fincra']){const r=approved();r.market_payment_routes[0].provider=provider;assert.equal((await get(r)).providers[0].provider,provider);}});
@@ -40,12 +40,19 @@ let rows=make(),auth={data:{user:{id:A}},error:null},d=database(rows),authCalls=
 const supabase={auth:{async getUser(){authCalls++;return auth;}},from(...args){return d.from(...args);}};
 globalThis.__b1iMocks={
  '../services/payments/customer-wallet-sandbox':{CustomerWalletSandbox:class {},WalletSandboxError:class extends Error {}},
+ '../services/payments/customer-wallet-collection.service':{CustomerWalletCollectionService:class {}},
+ '../services/payments/payment-contracts':{PaymentLayerError:class extends Error {}},
+ '../services/payments/stripe-driver-topup-sandbox':{StripeDriverTopupSandbox:class {}},
+ './driver-wallet-topup.routes':{flutterwaveAttemptStore:()=>({})},
+ 'stripe':{default:class {}},
  '../services/customer-wallet-topup-readiness':service,'../services/customer-wallet-setup':{},'express-rate-limit':{rateLimit:()=>()=>{}},
  '../services/dispatch.service':{dispatchService:{}},express:{Router:()=>router},'../services/supabase.service':{supabaseAdmin:supabase},
  '../services/payment-authority.service':{},'../services/issuing-capacity.service':{},'../services/market-availability.service':{}
 };
 const source=stripTypeScriptTypes(read('server/routes/wallet.routes.ts')).replace(/import\s*\{([^}]+)\}\s*from\s*'([^']+)'\s*;/g,(_,names,key)=>{
  assert.ok(globalThis.__b1iMocks[key],key);return `const {${names}}=globalThis.__b1iMocks[${JSON.stringify(key)}];`;
+}).replace(/import\s+([A-Za-z_$][\w$]*)\s+from\s*'([^']+)'\s*;/g,(_,name,key)=>{
+ assert.ok(globalThis.__b1iMocks[key],key);return `const ${name}=globalThis.__b1iMocks[${JSON.stringify(key)}].default;`;
 });
 await import(url(source));
 async function request(header='Bearer valid',query={},body=undefined){const req={headers:{authorization:header},query,body};const res={statusCode:200,headers:{},body:null,setHeader(k,v){this.headers[k]=v;},status(v){this.statusCode=v;return this;},json(v){this.body=v;return this;}};await routes.get('/topup-readiness')(req,res);return res;}

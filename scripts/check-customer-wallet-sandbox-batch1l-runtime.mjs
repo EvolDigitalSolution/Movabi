@@ -43,7 +43,9 @@ let x=setup(),user={id:A,email,email_confirmed_at:'2026-01-01T00:00:00Z'};
 class BoundService extends service.CustomerWalletSandbox{constructor(){super(x.db,x.c);}}
 const routes=new Map(),router={post(p,...f){routes.set('POST '+p,f.at(-1));},get(p,...f){routes.set('GET '+p,f.at(-1));},use(){}};
 globalThis.__lMocks={'../services/payments/customer-wallet-sandbox':{...service,CustomerWalletSandbox:BoundService},express:{Router:()=>router},'express-rate-limit':{rateLimit:()=>()=>{}},'../services/supabase.service':{supabaseAdmin:{auth:{async getUser(){return {data:{user},error:null};}}}}};
-const route=stripTypeScriptTypes(read('server/routes/wallet.routes.ts')).replace(/import\s*\{([^}]+)\}\s*from\s*'([^']+)'\s*;/g,(_,names,key)=>`const {${names}}=globalThis.__lMocks[${JSON.stringify(key)}]||{};`);
+const route=stripTypeScriptTypes(read('server/routes/wallet.routes.ts'))
+ .replace(/import\s*\{([^}]+)\}\s*from\s*'([^']+)'\s*;/g,(_,names,key)=>`const {${names}}=globalThis.__lMocks[${JSON.stringify(key)}]||{};`)
+ .replace(/import\s+([A-Za-z_$][\w$]*)\s+from\s*'([^']+)'\s*;/g,(_,name,key)=>`const ${name}=(globalThis.__lMocks[${JSON.stringify(key)}]||{}).default;`);
 await import(url(route));
 async function request(path='POST /sandbox-topups',header='Bearer valid',body=input,query={}){const req={headers:{authorization:header},body,query,params:{id:ID}};const res={statusCode:200,headers:{},data:null,setHeader(k,v){this.headers[k]=v;},status(v){this.statusCode=v;return this;},json(v){this.data=v;return this;}};await routes.get(path)(req,res);return res;}
 await test('actual route requires Bearer and sets private no-store',async()=>{x=setup();const r=await request(undefined,'');assert.equal(r.statusCode,401);assert.equal(r.headers['Cache-Control'],'private, no-store');assert.equal(x.db.calls.length,0);});

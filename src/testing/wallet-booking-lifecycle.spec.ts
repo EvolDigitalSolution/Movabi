@@ -93,6 +93,12 @@ describe('wallet API activation', () => {
       '../services/market-availability.service': { MarketAvailabilityService: { requireCapability: async () => {} }, MarketAvailabilityError: class extends Error {} },
       // wallet.routes imports the sandbox module at load; /pay-job does not use it (inert stub, no behaviour).
       '../services/payments/customer-wallet-sandbox': { CustomerWalletSandbox: class {}, WalletSandboxError: class extends Error {} },
+      // /pay-job does not reach collection/adapters — inert stubs only.
+      '../services/payments/customer-wallet-collection.service': { CustomerWalletCollectionService: class {} },
+      '../services/payments/payment-contracts': { PaymentLayerError: class extends Error {} },
+      '../services/payments/stripe-driver-topup-sandbox': { StripeDriverTopupSandbox: class {} },
+      './driver-wallet-topup.routes': { flutterwaveAttemptStore: () => ({}) },
+      'stripe': { default: class {} },
       '../services/customer-wallet-topup-readiness': { customerWalletTopupReadiness: async () => ({}), WalletTopupReadinessError: class extends Error {} },
       '../services/customer-wallet-setup': { ensureCustomerWallet: async () => ({}), customerWalletSetupError: () => null },
       'express-rate-limit': { rateLimit: () => (_q: any, _s: any, n: any) => n() }

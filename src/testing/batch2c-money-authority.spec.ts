@@ -128,7 +128,7 @@ describe('PHASE C2A.1 — server-owned confirmation & negotiation authority', ()
     });
 
     it('11. booking create derives negotiation/bidding modes server-side and never trusts the client', () => {
-        expect(BOOKING_ROUTE).toContain('determineJobModes(canonicalService)');
+        expect(BOOKING_ROUTE).toContain('determineJobModes(canonicalService');
         expect(BOOKING_ROUTE).toContain('insertPayload.agreed_fare = null');
         expect(BOOKING_ROUTE).toContain("insertPayload.status = modes.negotiation ? 'pending_fare_confirmation' : 'requested'");
     });

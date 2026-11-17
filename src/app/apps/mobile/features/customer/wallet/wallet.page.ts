@@ -100,11 +100,36 @@ type WalletTransaction = Record<string, unknown>;
       </div>
 
       <div class="space-y-6">
-        <div class="bg-blue-50 p-4 rounded-xl">
-          <p class="text-sm text-blue-800">
-            Wallet top-ups are no longer available. You can use your existing balance for bookings.
-          </p>
-        </div>
+        @if(topupReadiness()?.collectionAvailable) {
+          <div class="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
+            <h2 class="text-sm font-bold text-slate-900">Top up wallet</h2>
+            <div class="flex gap-2">
+              @for (amount of quickAmounts; track amount) {
+                <button type="button" class="px-3 py-1.5 rounded-lg border text-sm font-semibold" [class.border-blue-600]="topUpAmount===amount" (click)="setQuickAmount(amount)">£{{ amount }}</button>
+              }
+            </div>
+            <input type="number" min="1" step="0.01" [(ngModel)]="topUpAmount" placeholder="Amount ({{ topupReadiness()?.currency || 'GBP' }})" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            @if(!collectionQuote()) {<div #cardElementContainer class="border border-slate-300 rounded-lg px-3 py-3"></div>}
+            @if(cardError()) {<p role="alert" class="text-xs text-red-700">{{cardError()}}</p>}
+            @if(collectionQuote(); as quote) {
+              <div class="bg-slate-50 rounded-lg p-3 text-sm space-y-1">
+                <p class="flex justify-between"><span>Wallet credit</span><span class="font-bold">{{ quote.walletAmountMinor/100 | currency:quote.currency }}</span></p>
+                <p class="flex justify-between"><span>{{ quote.feeLabel }}</span><span>{{ quote.feeMinor/100 | currency:quote.currency }}</span></p>
+                <p class="flex justify-between font-bold"><span>Charged to card</span><span>{{ quote.totalChargeMinor/100 | currency:quote.currency }}</span></p>
+              </div>
+            }
+            <button type="button" class="w-full bg-blue-600 text-white rounded-lg py-2.5 font-bold disabled:opacity-40" [disabled]="!canSubmitTopUp || topupBusy()" (click)="handleTopUp()">
+              {{ topupBusy() ? 'Processing…' : (collectionQuote() ? 'Confirm and pay' : 'Top up wallet') }}
+            </button>
+            @if(topupMessage()) {<p class="text-xs" [class.text-emerald-700]="topupSuccess()" [class.text-red-700]="!topupSuccess()">{{topupMessage()}}</p>}
+          </div>
+        } @else {
+          <div class="bg-blue-50 p-4 rounded-xl">
+            <p class="text-sm text-blue-800">
+              Wallet top-ups are not available for your account yet. You can use your existing balance for bookings.
+            </p>
+          </div>
+        }
 
         <app-customer-wallet-sandbox />
         <app-customer-debts class="block mt-4" />
@@ -170,7 +195,6 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
     loadingCtrl = inject(LoadingController);
 
     topUpAmount: number | null = null;
-    quickAmounts = [10, 20, 50];
 
     loading = signal(false);
     cardError = signal<string | null>(null);
@@ -210,19 +234,39 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
         }
     }
 
+    topupReadiness = signal<any>(null);
+    collectionQuote = signal<any>(null);
+    topupBusy = signal(false);
+    topupMessage = signal<string | null>(null);
+    topupSuccess = signal(false);
+    readonly quickAmounts = [10, 20, 50, 100];
+
     get canSubmitTopUp(): boolean {
-        return false;
+        return !!this.topupReadiness()?.collectionAvailable && !!this.topUpAmount && this.topUpAmount > 0
+            && (this.cardReady() || !!this.collectionQuote());
     }
 
     setQuickAmount(amount: number): void {
         this.topUpAmount = amount;
+        this.collectionQuote.set(null);
     }
 
     async refreshWalletData(): Promise<void> {
         await Promise.all([
             this.walletService.fetchWallet(),
-            this.loadTransactions()
+            this.loadTransactions(),
+            this.loadTopupReadiness()
         ]);
+    }
+
+    private async loadTopupReadiness(): Promise<void> {
+        try {
+            const readiness = await this.walletService.topupReadiness();
+            this.topupReadiness.set(readiness);
+            if (readiness?.collectionAvailable) setTimeout(() => void this.initStripeElements(), 0);
+        } catch {
+            this.topupReadiness.set(null);
+        }
     }
 
     async loadTransactions(): Promise<void> {
@@ -302,7 +346,41 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
     }
 
     async handleTopUp(): Promise<void> {
-        await this.showToast('Wallet top-ups are no longer available. Pay directly when booking.', 'warning');
+        if (!this.topupReadiness()?.collectionAvailable || this.topupBusy()) return;
+        this.topupBusy.set(true);
+        this.topupMessage.set(null);
+        try {
+            const amountMinor = Math.round(Number(this.topUpAmount) * 100);
+            if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) throw new Error('Enter a valid amount');
+            const idempotencyKey = crypto.randomUUID();
+            // Stage 1: frozen quote (server returns the immutable terms).
+            let quote = this.collectionQuote();
+            if (!quote) {
+                quote = await this.walletService.collectionCheckout({ amountMinor, idempotencyKey });
+                if (quote?.kind !== 'quote') throw new Error('Top-up quote was unavailable');
+                this.collectionQuote.set(quote);
+                return; // render the confirm step; next click submits payment
+            }
+            // Stage 2: submit the confirmed total, then confirm the card payment.
+            const checkout = await this.walletService.collectionCheckout({ amountMinor, idempotencyKey, confirmedTotalMinor: quote.totalChargeMinor });
+            if (!checkout?.clientSecret) throw new Error('Card checkout was unavailable');
+            if (!this.stripe || !this.card) throw new Error('Card form is not ready');
+            const confirmed = await this.stripe.confirmCardPayment(checkout.clientSecret, { payment_method: { card: this.card } });
+            if (confirmed.error) throw new Error(confirmed.error.message || 'Card payment failed');
+            if (confirmed.paymentIntent?.status !== 'succeeded') throw new Error('Payment did not complete');
+            // Stage 3: server-side verification credits the wallet.
+            await this.walletService.collectionVerify(quote.attemptId);
+            this.topupSuccess.set(true);
+            this.topupMessage.set('Wallet topped up successfully.');
+            this.collectionQuote.set(null);
+            this.topUpAmount = null;
+            await this.refreshWalletData();
+        } catch (error: any) {
+            this.topupSuccess.set(false);
+            this.topupMessage.set(error?.message || 'Top-up could not be completed. Please retry.');
+        } finally {
+            this.topupBusy.set(false);
+        }
     }
 
     isPositiveTransaction(tx: WalletTransaction): boolean {

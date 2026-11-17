@@ -26,7 +26,9 @@ let user={id:A,email_confirmed_at:'2026-01-01'};
 const routes=new Map(),router={get(p,...f){routes.set(p,f.at(-1));},post(){},use(){}};
 class Bound extends service.CustomerWalletSandbox{constructor(){super(db,fakeTransport);}}
 globalThis.__mMocks={'../services/payments/customer-wallet-sandbox':{...service,CustomerWalletSandbox:Bound},express:{Router:()=>router},'express-rate-limit':{rateLimit:()=>()=>{}},'../services/supabase.service':{supabaseAdmin:{auth:{async getUser(){return {data:{user},error:null};}}}}};
-const route=stripTypeScriptTypes(read('server/routes/wallet.routes.ts')).replace(/import\s*\{([^}]+)\}\s*from\s*'([^']+)'\s*;/g,(_,names,key)=>`const {${names}}=globalThis.__mMocks[${JSON.stringify(key)}]||{};`);
+const route=stripTypeScriptTypes(read('server/routes/wallet.routes.ts'))
+ .replace(/import\s*\{([^}]+)\}\s*from\s*'([^']+)'\s*;/g,(_,names,key)=>`const {${names}}=globalThis.__mMocks[${JSON.stringify(key)}]||{};`)
+ .replace(/import\s+([A-Za-z_$][\w$]*)\s+from\s*'([^']+)'\s*;/g,(_,name,key)=>`const ${name}=(globalThis.__mMocks[${JSON.stringify(key)}]||{}).default;`);
 await import(url(route));
 async function request(header='Bearer valid',query={}){const req={headers:{authorization:header},query};const res={statusCode:200,data:null,headers:{},setHeader(k,v){this.headers[k]=v;},status(v){this.statusCode=v;return this;},json(v){this.data=v;return this;}};await routes.get('/sandbox-topups/eligibility')(req,res);return res;}
 await test('actual eligibility route requires Bearer and private no-store',async()=>{const r=await request('');assert.equal(r.statusCode,401);assert.equal(r.headers['Cache-Control'],'private, no-store');assert.equal(calls.length,0);});

@@ -8,3 +8,8 @@ deploy/vaydu-develop-release/*.tsv -text
 deploy/vaydu-develop-release-2/*.sql -text
 deploy/vaydu-develop-release-2/*.sha256 -text
 deploy/vaydu-develop-release-2/*.sh -text
+# Errand purchase-payer package is checksummed: keep bytes.
+deploy/vaydu-errand-purchase-payer/package/*.sql -text
+deploy/vaydu-errand-purchase-payer/package/*.sha256 -text
+# Errand real-DB test fixtures carry byte-exact function bodies for rehearsal.
+deploy/vaydu-errand-purchase-payer/*.sql -text

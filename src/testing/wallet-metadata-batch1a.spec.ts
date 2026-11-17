@@ -51,7 +51,13 @@ describe('Batch 1A wallet metadata migration (source contract)', () => {
   it('contains no INSERT column list that references the new columns', () => {
     const dir = resolve(root, 'supabase/migrations');
     const referenced = new Set<string>();
-    for (const file of readdirSync(dir).filter((x) => x.endsWith('.sql'))) {
+    // 20261270600000_customer_wallet_booking_bridge.sql is the reviewed writer of
+    // the batch-1A columns: its exactly-once bridge dedupes on event_key and
+    // populates tenant/currency/provider metadata on the shared ledger.
+    const approvedWriters = new Set([
+      '20261270600000_customer_wallet_booking_bridge.sql',
+    ]);
+    for (const file of readdirSync(dir).filter((x) => x.endsWith('.sql') && !approvedWriters.has(x))) {
       const src = readFileSync(join(dir, file), 'utf8');
       const re = /INSERT INTO (?:public\.)?wallet_transactions\s*\(([^)]*)\)/g;
       let match: RegExpExecArray | null;

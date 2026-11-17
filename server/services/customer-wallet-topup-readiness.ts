@@ -12,7 +12,7 @@ export async function customerWalletTopupReadiness(db:any,owner:string,now=Date.
  if(!uuid(owner))throw new WalletTopupReadinessError(401,'AUTH_REQUIRED');
  const read=async(q:any)=>{const r=await q;if(r.error)throw unavailable();return r.data;};
  const profile=await read(db.from('profiles').select('id,role,tenant_id,registration_country_code,registration_market_city,registration_activated_at').eq('id',owner).maybeSingle());
- const base={collectionAvailable:false,implementation:'readiness_only',canSubmit:false};
+ const base={collectionAvailable:false,implementation:'collection_endpoints',canSubmit:false};
  const result=(reason:string,fields:any={})=>({...base,reason,...fields});
  if(!object(profile)||profile.id!==owner||profile.role!=='customer'||!uuid(profile.tenant_id)
  ||!profile.registration_activated_at||!Number.isFinite(Date.parse(profile.registration_activated_at))||Date.parse(profile.registration_activated_at)>now
@@ -58,7 +58,9 @@ export async function customerWalletTopupReadiness(db:any,owner:string,now=Date.
  if(!enabled)blockers.push('collection_disabled');
  if(!validLimit)blockers.push('currency_limit_missing_or_invalid');
  if(eligible!==1)blockers.push(eligible===0?'no_eligible_collection_route':'ambiguous_collection_routes');
- // This batch has no collection transport/HTTP writer. Never advertise spendable deposits.
- blockers.push('collection_integration_pending');
- return result(blockers[0],{country,currency,collectionEnabled:enabled,maxAmountMinor:validLimit?limit:null,providers:options,blockers});
+ // The collection transport exists (/api/wallet/collection/*): availability is
+ // honest now — exactly one eligible route, collection enabled, a valid cap.
+ const available=enabled&&validLimit&&eligible===1;
+ return result(blockers[0]||'available',{country,currency,collectionEnabled:enabled,maxAmountMinor:validLimit?limit:null,providers:options,blockers,
+  ...(available?{collectionAvailable:true,canSubmit:true}:{})});
 }

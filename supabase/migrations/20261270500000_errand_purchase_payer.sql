@@ -323,7 +323,25 @@ BEGIN
  total=(p_terms->>'total')::numeric; payout=(p_terms->>'payout')::numeric;
  fee=(p_terms->>'platformFee')::numeric; commission=(p_terms->>'commission')::numeric;
  IF total IS NULL OR payout IS NULL OR fee IS NULL OR commission IS NULL OR total::text='NaN' OR payout::text='NaN' OR fee::text='NaN' OR commission::text='NaN' OR total<=0 OR payout<=0 OR fee<0 OR commission<0 OR abs(total-payout-fee-commission)>0.01 THEN RAISE EXCEPTION 'Invalid frozen payout terms'; END IF;
- IF lower(p_terms->>'currency')<>'gbp' OR (p_terms->>'amountMinor')::bigint<>round(payout*100)::bigint OR coalesce(p_terms->>'destination','') NOT LIKE 'acct_%' THEN RAISE EXCEPTION 'Invalid payout identity'; END IF;
+ -- Provider branch preserved verbatim from 20261254700000_flutterwave_payout_outbox:
+ -- NG sandbox payouts settle through Flutterwave, never Stripe Connect.
+ IF p_terms->>'payout_provider'='flutterwave' THEN
+  IF lower(p_terms->>'currency')<>'ngn' OR p_terms->>'country'<>'NG' OR (p_terms->>'amountMinor')::bigint<>round(payout*100)::bigint
+   OR NOT EXISTS(SELECT 1 FROM public.driver_payment_accounts a JOIN public.driver_payout_markets m USING(country_code,currency_code)
+    JOIN public.profiles p ON p.id=a.driver_id
+    WHERE a.id::text=p_terms->>'payout_account_id' AND a.driver_id=p_driver_id AND a.tenant_id=j.tenant_id
+    AND a.country_code=j.country_code AND upper(j.currency_code)=a.currency_code AND a.state='completed'
+    AND a.tenant_id=p.tenant_id AND p.role='driver' AND p.registration_activated_at IS NOT NULL
+    AND coalesce(p.registration_country_code,p.country_code)=a.country_code
+    AND p_terms->>'destination'='flw:'||a.id::text AND p_terms->>'payout_tenant'=a.tenant_id::text
+    AND a.merchant_account_ref=p_terms->>'payout_merchant' AND m.merchant_account_ref=a.merchant_account_ref
+    AND m.provider='flutterwave' AND m.enabled AND m.merchant_approved AND m.adapter_ready AND m.capability_verified_at IS NOT NULL AND m.capability_evidence_ref IS NOT NULL AND m.merchant_mode='test'
+    AND m.sandbox_driver_id=p_driver_id AND m.sandbox_tenant_id=j.tenant_id)
+  THEN RAISE EXCEPTION 'Invalid sandbox payout identity'; END IF;
+ ELSE
+  IF coalesce(p_terms->>'payout_provider','stripe')<>'stripe' THEN RAISE EXCEPTION 'Unsupported payout provider'; END IF;
+  IF lower(p_terms->>'currency')<>'gbp' OR (p_terms->>'amountMinor')::bigint<>round(payout*100)::bigint OR coalesce(p_terms->>'destination','') NOT LIKE 'acct_%' THEN RAISE EXCEPTION 'Invalid payout identity'; END IF;
+ END IF;
  v_amount_minor := (p_terms->>'amountMinor')::bigint + v_reimb_minor;
  v_terms := p_terms || jsonb_build_object('reimbursementMinor',v_reimb_minor,'purchaseMethod',coalesce(f.purchase_method,'none'));
 
@@ -389,6 +407,43 @@ BEGIN
  RETURN true;
 END $$;
 
+-- The Flutterwave finish (20261254700000) settles NG payouts without Stripe. It
+-- must apply the SAME reimbursement marking as the Stripe finish, or a
+-- driver-personal purchase in an NG errand would stay 'recorded' after the
+-- money has already moved. Body preserved verbatim + purchase marking.
+CREATE OR REPLACE FUNCTION public.finish_flutterwave_job_payout(p_job uuid,p_token uuid,p_reference text,p_transfer text,p_fee numeric)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
+DECLARE q public.job_payout_queue%ROWTYPE; v_reimb_minor bigint; v_done_minor bigint; BEGIN
+ PERFORM 1 FROM public.jobs WHERE id=p_job FOR UPDATE;
+ SELECT * INTO STRICT q FROM public.job_payout_queue WHERE job_id=p_job FOR UPDATE;
+ IF q.status='paid' THEN RETURN q.transfer_id='flw:'||p_transfer; END IF;
+ IF q.token IS DISTINCT FROM p_token OR q.status NOT IN('processing','reconcile') OR (q.terms->>'payout_provider') IS DISTINCT FROM 'flutterwave'
+  OR p_transfer IS NULL OR p_transfer !~ '^\d+$' OR p_reference IS DISTINCT FROM 'vaydu-'||p_job::text||'_PMCK'
+  OR NOT EXISTS(SELECT 1 FROM public.flutterwave_job_submissions WHERE job_id=p_job AND reference=p_reference)
+ THEN RETURN false; END IF;
+ -- Reuse the established settlement writer and single earnings row. Provider
+ -- references occupy separate columns; never disguise a Flutterwave ID as Stripe.
+ PERFORM public.record_job_settlement(p_job,q.driver_id,(q.terms->>'total')::numeric,(q.terms->>'payout')::numeric,
+  (q.terms->>'platformFee')::numeric,(q.terms->>'commission')::numeric,(q.terms->>'commissionRate')::numeric,
+  NULL,upper(q.currency),q.terms->>'country',true);
+ v_reimb_minor := coalesce((q.terms->>'reimbursementMinor')::bigint,0);
+ IF v_reimb_minor>0 THEN
+  WITH upd AS (
+   UPDATE public.errand_purchase_payments
+     SET status='reimbursed',reimbursement_transfer_id='flw:'||p_transfer,updated_at=now()
+   WHERE job_id=p_job AND payer='driver' AND status='recorded'
+   RETURNING amount_minor)
+  SELECT coalesce(sum(amount_minor),0) INTO v_done_minor FROM upd;
+  IF v_done_minor<>v_reimb_minor THEN RAISE EXCEPTION 'Purchase reimbursement requires reconciliation'; END IF;
+ END IF;
+ UPDATE public.jobs SET payout_provider='flutterwave',payout_transfer_id=p_transfer,stripe_transfer_status=NULL,
+  metadata=coalesce(metadata,'{}'::jsonb)||jsonb_build_object('driver_payout_pending',false) WHERE id=p_job;
+ UPDATE public.driver_earnings SET payout_provider='flutterwave',payout_transfer_id=p_transfer WHERE job_id=p_job;
+ UPDATE public.flutterwave_job_submissions SET provider_transfer_id=p_transfer,provider_fee=p_fee WHERE job_id=p_job;
+ UPDATE public.job_payout_queue SET status='paid',transfer_id='flw:'||p_transfer,lease_until=NULL,last_error=NULL,updated_at=now() WHERE job_id=p_job;
+ RETURN true;
+END $$;
+
 -- ---------------------------------------------------------------------------
 -- 8. Cancellation protection: an unresolved driver-paid purchase must not be
 --    silently released back to the customer. Route to review instead.
@@ -437,12 +492,14 @@ REVOKE ALL ON FUNCTION public.activate_job_issuing_control(uuid,text,numeric,jso
  public.record_issuing_transaction(text,text,text,numeric,text,text,jsonb),
  public.complete_job_with_pending_payout(uuid,uuid,jsonb,jsonb),
  public.finish_queued_job_payout(uuid,uuid,text),
+ public.finish_flutterwave_job_payout(uuid,uuid,text,text,numeric),
  public.release_job_wallet_reservation(uuid,text),
  public.enforce_errand_spending_budget() FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.activate_job_issuing_control(uuid,text,numeric,jsonb),
  public.record_issuing_transaction(text,text,text,numeric,text,text,jsonb),
  public.complete_job_with_pending_payout(uuid,uuid,jsonb,jsonb),
  public.finish_queued_job_payout(uuid,uuid,text),
+ public.finish_flutterwave_job_payout(uuid,uuid,text,text,numeric),
  public.release_job_wallet_reservation(uuid,text) TO service_role;
 NOTIFY pgrst,'reload schema';
 COMMIT;
