@@ -1,0 +1,8 @@
+Reviewed prerequisite chain for a develop database that predates the payout
+outbox. Apply ONLY the files preflight-schema-check.sql reports missing, and
+ONLY in this order. 202612547 patches complete_job_with_pending_payout by
+matching its deployed source — verify the definition check reports
+'definition-verified' before applying it; a DIFFERS result means the deployed
+function was changed outside the reviewed chain and nothing may be applied.
+20261254700000_flutterwave_payout_outbox.sql
+20261254800000_flutterwave_collection_subaccounts.sql

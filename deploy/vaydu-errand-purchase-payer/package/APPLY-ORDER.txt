@@ -1,0 +1,8 @@
+Apply strictly in this order. Each file aborts itself if the database is not movabi_develop.
+20261270500000_errand_purchase_payer.sql
+20261270600000_customer_wallet_booking_bridge.sql
+20261270700000_driver_wallet_settlement.sql
+20261270800000_driver_settlement_policy.sql
+20261270900000_kora_payout_adapter.sql
+20261271000000_customer_collection_account_binding.sql
+20261271100000_kora_settle_reference.sql

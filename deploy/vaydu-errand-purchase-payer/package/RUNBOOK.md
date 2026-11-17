@@ -1,8 +1,9 @@
 # Develop deployment runbook — errand purchase-payer + wallet settlement
 
-Pinned code: `34b3a42` on `release/topup-3ds-on-2385da7` (supersedes `6b63e9d`:
-it adds migration 711 and the provider-scoped transfer flags — both required
-before any real Kora call; see §4.2).
+Pinned application code: `ae917eb` on `release/topup-3ds-on-2385da7`
+(feature scope frozen there; packaging commits after it carry only this
+archive's docs and scripts — the archive filename names the packaging
+commit, and `RELEASE-MANIFEST.md` records it).
 
 Scope: one develop package — API build, required app/UI modules, migrations
 `202612705` … `202612711`, this runbook, `PREFLIGHT.md`,
@@ -13,45 +14,74 @@ disabled.
 ## 0. Backup + restore rehearsal (before touching develop)
 
 1. `pg_dump -Fc movabi_develop > movabi_develop_pre_$(date +%Y%m%d%H%M).dump`
-2. Restore rehearsal on a SCRATCH instance:
-   `createdb movabi_restore_rehearsal && pg_restore -d movabi_restore_rehearsal movabi_develop_pre_*.dump`
-   then apply the package migrations in order and re-run
-   `realdb-errand-purchase-payer-test.sql` +
-   `realdb-customer-funding-chain-test.sql` on the restored copy.
-   A rehearsal that cannot restore cleanly means stop — fix backup first.
-   The disposable equivalent is shipped as `rehearse-restore.sh` — it
-   restores a develop schema dump into a throwaway container, runs the
-   shipped `preflight-schema-check.sql`, strict-applies the shipped package
-   files in order, re-runs the preflight, then runs both shipped test
-   scripts. Last run: restore → 16 package objects missing → all 7 applied
-   → preflight clean → 73/73 + 17/17 PASSED.
+   — a FULL database backup, not a schema extract.
+2. Rehearse the exact deployment against that backup, on an isolated
+   disposable container, using only this archive's files:
+
+   ```
+   runbook/rehearse-restore.sh /path/to/movabi_develop_pre_*.dump
+   ```
+
+   The script restores the backup (aborting on any restore error), runs the
+   shipped `db/preflight-schema-check.sql`, applies ONLY the reviewed chain
+   each preflight group requires — `db/prerequisites/` (547, 548) then
+   `db/migrations/` (705-711) — re-runs the preflight, proves every
+   pre-existing table's row count and every public function definition is
+   unchanged outside the applied files' reviewed declarations, asserts the
+   GB Stripe payout identity anchor, then runs BOTH shipped behaviour
+   suites. A rehearsal that cannot restore cleanly, that reports baseline
+   objects missing, or that touches data outside the reviewed chain means
+   STOP — fix the backup or reconcile the schema first. It never sweeps
+   repository migrations and never suppresses an error.
 3. Keep the dump until post-deploy verification is signed off.
 
-## 1. Inspect the develop schema — apply only missing prerequisites
+## 1. Read-only inventory — decide from definitions + records, not presence
 
-Run `preflight-schema-check.sql` on `movabi_develop`. It reports each object
-the package requires and whether it is `present` or `missing`.
+First host step is read-only. Run `db/preflight-schema-check.sql` on
+`movabi_develop`. It reports, per migration group: each required object's
+`present`/`missing` state, the recorded `supabase_migrations.schema_migrations`
+version state, and two deployed-function **definition checks**.
 
-- Objects already present (because an earlier package or the live schema
-  supplied them): **skip that file entirely**. Never replay an applied
-  migration — several are deliberately not idempotent.
-- Apply missing migrations in this exact order, each inside its own psql
-  session so a failure stops the chain:
+Apply decision per file (from definitions + records, not object presence):
 
-  ```
-  psql -v ON_ERROR_STOP=1 -d movabi_develop -f 20261270500000_errand_purchase_payer.sql
-  psql -v ON_ERROR_STOP=1 -d movabi_develop -f 20261270600000_customer_wallet_booking_bridge.sql
-  psql -v ON_ERROR_STOP=1 -d movabi_develop -f 20261270700000_driver_wallet_settlement.sql
-  psql -v ON_ERROR_STOP=1 -d movabi_develop -f 20261270800000_driver_settlement_policy.sql
-  psql -v ON_ERROR_STOP=1 -d movabi_develop -f 20261270900000_kora_payout_adapter.sql
-  psql -v ON_ERROR_STOP=1 -d movabi_develop -f 20261271000000_customer_collection_account_binding.sql
-  psql -v ON_ERROR_STOP=1 -d movabi_develop -f 20261271100000_kora_settle_reference.sql
-  ```
+| objects_missing | recorded | action |
+|---|---|---|
+| >0 | not-recorded / unknown | **apply the file** |
+| 0 | recorded-applied | skip entirely — never replay |
+| >0 | recorded-applied | **DRIFT — stop**, investigate |
+| 0 | not-recorded / unknown | **DRIFT — stop**, reconcile provenance |
+| any `prereq/baseline` missing | — | **STOP** — not the reviewed develop state; no shipped file may fix it |
+| any `DEFINITION-DIFFERS` | — | **STOP** — a deployed function was changed outside the reviewed chain |
 
-- 705 requires `202612547`'s objects (`flutterwave_job_submissions`,
-  `jobs.payout_provider`, `driver_earnings.payout_provider`) — the check script
-  verifies them first. 707 requires the wallet-settlement tables from 705/706
-  lineage; 708–711 chain on 707.
+Then apply only the files the table says to, each in its own psql session so
+a failure stops the chain, in this exact reviewed order:
+
+```
+# prerequisites - only the ones preflight reports missing:
+psql -v ON_ERROR_STOP=1 -d movabi_develop -f db/prerequisites/20261254700000_flutterwave_payout_outbox.sql
+psql -v ON_ERROR_STOP=1 -d movabi_develop -f db/prerequisites/20261254800000_flutterwave_collection_subaccounts.sql
+# release - only the ones preflight reports missing:
+psql -v ON_ERROR_STOP=1 -d movabi_develop -f db/migrations/20261270500000_errand_purchase_payer.sql
+psql -v ON_ERROR_STOP=1 -d movabi_develop -f db/migrations/20261270600000_customer_wallet_booking_bridge.sql
+psql -v ON_ERROR_STOP=1 -d movabi_develop -f db/migrations/20261270700000_driver_wallet_settlement.sql
+psql -v ON_ERROR_STOP=1 -d movabi_develop -f db/migrations/20261270800000_driver_settlement_policy.sql
+psql -v ON_ERROR_STOP=1 -d movabi_develop -f db/migrations/20261270900000_kora_payout_adapter.sql
+psql -v ON_ERROR_STOP=1 -d movabi_develop -f db/migrations/20261271000000_customer_collection_account_binding.sql
+psql -v ON_ERROR_STOP=1 -d movabi_develop -f db/migrations/20261271100000_kora_settle_reference.sql
+```
+
+- 202612547 **patches `complete_job_with_pending_payout` by matching its
+  deployed source** — the preflight definition check must report
+  `definition-verified` before it is applied; on `DEFINITION-DIFFERS`,
+  applying it raises `Completion authority differs; review required`.
+- 202612547 requires `job_payout_queue`, `driver_earnings`,
+  `driver_payment_accounts`, `driver_payout_markets` (baseline objects —
+  checked under `prereq/baseline`).
+- 202612548 creates `job_settlement_methods` (backfilling `transfer` rows
+  from `job_payout_queue`) and requires `driver_payout_markets` +
+  `job_payout_queue`.
+- 707 requires 547's outbox (`flutterwave_job_submissions`) and 548's
+  `job_settlement_methods`; 708-711 chain on 707.
 - Each migration asserts `current_database()='movabi_develop'` — a wrong
   target aborts instead of applying.
 
@@ -71,7 +101,7 @@ modules for review:
 
 Rollback for code: redeploy the previous API/app build. Migrations are
 additive (new columns, tables, functions, guards) — there are no down
-migrations; data rollback is the §0 dump restore.
+migrations; see §6 for what recovery does and does not mean.
 
 ## 3. Trusted configuration — never fixtures
 
@@ -157,13 +187,26 @@ reference == the attempt/withdrawal's frozen reference, amount == quoted
 minor units, currency == market currency, destination == frozen beneficiary,
 and exactly one ledger event per transition.
 
-## 6. Rollback limits
+## 6. Rollback limits — a database restore is NOT routine rollback
 
 - Flags: unset `…_KORA`/`…_FLUTTERWAVE`/master → new dispatches blocked
   immediately; in-flight `processing`/`reconcile` withdrawals stay **held**,
   never auto-paid, until re-armed and reconciled — no money at risk.
 - API/UI: redeploy prior build at any time; the schema remains compatible.
-- Schema: additive only; hard rollback = §0 dump restore.
+- Schema: additive only; there are no down migrations.
+- **Before any new financial activity** (no wallet top-up settled, no
+  purchase recorded, no withdrawal submitted since the migrations ran):
+  restoring the §0 dump is a legitimate hard rollback — nothing committed
+  is lost.
+- **After any new financial activity**: a `pg_restore` is NOT a rollback —
+  it is a data-loss operation that destroys committed ledger, wallet and
+  payout rows written since the backup. Recovery then means
+  **application-level reversal**: unarm the flags, let held withdrawals
+  reconcile or reverse through `reverse_driver_withdrawal`, and reconcile
+  each wallet/topup ledger entry — never replay the backup over live
+  financial state. Treat the restore as disaster recovery requiring
+  explicit sign-off plus a reconciliation plan for provider-side effects
+  (a settled provider transfer does not un-happen when the row does).
 - `driver_payout_preferences` rows are per-driver deletable; removing the
   table reverts everyone to `transfer` — acceptable only while no wallet
   entitlements exist.
