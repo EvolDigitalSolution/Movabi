@@ -11,8 +11,12 @@ Deploy target: develop only. Production is not authorised.
 | Worker rehearsal (real `JobPayoutService`, simulated provider) | same | 10/10 |
 | Migration chain rehearsal | every `supabase/migrations/*.sql` in version order, one transaction each | 116 applied, 38 rolled back (already reflected in the live dump — reported per file) |
 | Browser `e2e/customer-wallet-collection.spec.ts` | this checkout's dev build | 2/2 — top-up through the real UI: readiness → frozen quote → card confirm → server verify → credit; hidden when collection unavailable |
-| Browser `e2e/driver-earnings-errand-ledger.spec.ts` | this checkout's dev build | 4/4 (2 tests × 2 projects) |
-| Unit + runtime specs | wallet/errand/payout/admin-finance scope | 89/89 across the 9 touched spec files (batch1a/1h/1i/1l/1m harnesses, wallet-booking-lifecycle, batch2c money-authority, wallet-sandbox-ui, admin-campaigns) |
+| Browser `e2e/driver-earnings-errand-ledger.spec.ts` | this checkout's dev build | 6/6 (3 tests × 2 projects) — reimbursement breakdown, 403 degradation, NG provider routed to the payment-account surface (never Stripe Express) |
+| Collection route/adapter runtime `src/testing/customer-wallet-collection.spec.ts` | real route + real `CustomerWalletCollectionService` + real Stripe adapter contract + RPC chain | 8-step: readiness → auth/body validation → quote freeze → over-limit refusal → confirmed-quote submission → one-time credit → idempotent replay → fail-closed identity mismatch |
+| Behavioural money-authority `src/testing/batch2c-money-authority.spec.ts` | executes the real booking-create allow-list + server mode derivation against a hostile payload | 53/53 — forged client payment/negotiation modes are discarded; server-derived modes win |
+| Unit + runtime specs | wallet/errand/payout scope | 89/89 across the touched spec files (batch1a/1h/1i/1l/1m harnesses, wallet-booking-lifecycle, batch2c, wallet-sandbox-ui, admin-campaigns) + 19/19 `status-wallet-browser` |
+| Full suite `npx vitest run` | — | 3663 passed / 21 failed — all remaining failures are Docker-environmental or parallel-load flakes, classified in `docs/roadmap-evidence/full-suite-failures-b09997f.md`; zero regressions |
+| Package integrity | clean Windows checkout (`git worktree`, `core.autocrlf=true`) | `sha256sum -c CHECKSUMS.sha256` → 3/3 OK; `*.sql`/`*.sha256`/`*.md` pinned `-text` so CRLF conversion cannot corrupt checksummed bytes. Checksums are recorded over committed (LF) bytes — verify from a clean checkout, not a CRLF working copy |
 
 Reproduce:
 `PG_IMAGE=supabase/postgres:15.1.1.78 BASELINE=develop_live_public_schema_20261112.sql PSQL_USER=supabase_admin bash scripts/errand-purchase-payer/run-realdb-tests.sh`
@@ -131,6 +135,14 @@ created for the same entitlement. Driver cash-credit deposits stay out of the
 customer booking wallet (verified: bridge trigger fires only for
 `customer_credit`).
 
+Driver-facing surface: GB keeps the Stripe Express flow (`withdrawFunds()` →
+`connectService.getDashboardLink`). For any non-Stripe provider (NG
+`flutterwave`) the earnings withdrawal action routes to
+`/driver/settings?section=payouts`, where `app-driver-payment-account` manages
+the verified bank destination the outbox pays to — covered by the new e2e
+case and a unit test in `status-wallet-browser.spec.ts`. Nigeria does not
+depend on Stripe Connect anywhere in this path.
+
 ## Customer funding
 
 The chain test exercises the REAL collection RPCs — `initiate_wallet_topup` →
@@ -139,12 +151,30 @@ The chain test exercises the REAL collection RPCs — `initiate_wallet_topup` �
 (with idempotent replay) — no seeded balances. UI e2e drives the same flow
 through `/api/wallet/topup-readiness` → `/api/wallet/collection/checkout`
 (quote then confirmed total) → `confirmCardPayment` → `/api/wallet/collection/verify`.
-Stripe.js is stubbed in-browser; the server route + orchestrator + RPC chain are
-real. A live Stripe sandbox run requires deployed test keys — marked as a
+`check-customer-wallet-collection-runtime.mjs` (wired into
+`src/testing/customer-wallet-collection.spec.ts`) executes the real
+`/collection/checkout` + `/collection/verify` Express handlers against the real
+`CustomerWalletCollectionService` and the real Stripe adapter contract —
+readiness, auth/body validation, quote freeze, over-limit refusal before any
+provider call, provider-reference binding, one-time ledger credit, idempotent
+replay, and fail-closed identity mismatch. Stripe.js is stubbed in-browser;
+the server route + orchestrator + RPC chain are real. A live Stripe sandbox run
+requires deployed test keys — marked as a
 deploy-day check, not a blocker (same adapter is exercised by the driver card
 collection path). The batch-1A metadata columns are written only by the reviewed
 706 bridge (event_key dedupe); the wallet-metadata source contract spec
 whitelists it and still forbids any other writer.
+
+## Remaining gaps (explicitly unavailable / not yet proven)
+
+| Capability | State |
+|---|---|
+| Direct merchant payment (`vaydu_direct`) | **Unavailable** — no approved payment rail/adapter; a Stripe transfer cannot pay an arbitrary shop. Stays gated until a rail is selected and approved. |
+| Customer-direct payment (`customer_direct`) | **Unavailable** — agreed design retained, but charging semantics/evidence are not integrated. The server never re-charges a customer who already paid the shop. |
+| Cash advances | **Deferred/unavailable** — not part of this release. |
+| Live provider confirmation (Stripe/Kora collection, Flutterwave payout) | Requires deploy-day test keys + configured `market_payment_routes`/`driver_collection_setup_markets` rows; all harness evidence uses mocked or simulated provider transport. Live readiness claims require actual configuration evidence, not test results. |
+| NG driver withdrawable balance | Not implemented **by design** — NG entitlement settles once via the Flutterwave payout outbox to the verified bank destination (payment-account surface on `/driver/settings`). A second withdrawable wallet balance would allow double-pay; if product later wants manual withdrawal it must consume the same single entitlement record, not create a new balance. |
+| Develop deployment | Not yet applied — this package + migration order are the deploy artefact. Legacy ambiguous jobs remain in reconciliation until adjudicated. |
 
 ## Package
 

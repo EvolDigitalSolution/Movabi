@@ -59,4 +59,29 @@ test.describe('Driver earnings — errand purchase ledger',()=>{
     await expect(details.getByText('Net payout')).toBeVisible();
     await expect(details.getByText('Shopping reimbursement')).toHaveCount(0);
   });
+
+  // NG payouts settle through the driver payment-account surface (bank
+  // transfer via the payout outbox), never Stripe Express. The earnings
+  // withdrawal action must route there for non-Stripe providers.
+  test('non-Stripe payout provider opens the payment-account surface, not Stripe Express',async({page})=>{
+    await installMovabiMocks(page,'driver');
+    await page.route('**/rest/v1/driver_earnings*',route=>route.fulfill({json:[earning]}));
+    await page.route('**/api/booking/offer-metrics*',route=>route.fulfill({json:{accepted:0,declined:0,acceptanceRate:0,declineRate:0,windowDays:30}}));
+    await page.route('**/api/market-safety/**',route=>route.fulfill({json:{driverId:ids.driver,tenantId:ids.tenant,country:'NG',currency:'NGN',payoutAvailable:false,balance:{currency:'NGN',consistent:true,availableMinor:'0',heldMinor:'0'}}}));
+    await page.route('**/api/market-safety/driver-wallet*',route=>route.fulfill({json:{
+      country:'NG',currency:'NGN',provider:'flutterwave',payoutIntegrationAvailable:true,payoutAvailable:false,
+      status:'Payment account set up',message:''}}));
+    await page.route('**/api/driver-payment-account/status',route=>route.fulfill({json:{provider:'flutterwave',state:'completed',available:true,last4:'6789'}}));
+    await page.route('**/api/driver-payment-account/**',route=>route.fulfill({json:{provider:'flutterwave',state:'completed',available:true,last4:'6789'}}));
+    await page.goto('/auth/login');
+    await page.getByLabel(/email address/i).fill('driver@movabi.test');
+    await page.getByRole('textbox',{name:/^password$/i}).fill('Password123!');
+    await page.getByRole('button',{name:/sign in/i}).click();
+    await expect(page).toHaveURL(/\/driver/);
+    await page.goto('/driver/earnings');
+    await expect(page.locator('.earning-record')).toHaveCount(1);
+    await page.getByRole('button',{name:'View payment account',exact:true}).click();
+    await expect(page).toHaveURL(/\/driver\/settings\?section=payouts/);
+    await expect(page.getByRole('region',{name:'Payment account'})).toContainText('ending 6789');
+  });
 });

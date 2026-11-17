@@ -384,7 +384,12 @@ export class EarningsPage implements OnInit {
     }
 
     async withdrawFunds() {
-        try{await this.payoutContext.requireStripePayoutMarket();}catch(error:any){this.withdrawError.set(error?.message || 'Payout settings unavailable.');return;}
+        let context;
+        try{context=await this.payoutContext.refreshWallet();}catch(error:any){this.withdrawError.set(error?.message || 'Payout settings unavailable.');return;}
+        // Non-Stripe payout markets settle through the driver payment-account
+        // surface (e.g. NG bank transfer via the payout outbox), not Stripe Express.
+        if(context.provider!=='stripe'){await this.nav.navigateForward('/driver/settings',{queryParams:{section:'payouts'}});return;}
+        if(!context.payoutIntegrationAvailable){this.withdrawError.set(context.message||'Payout settings unavailable.');return;}
         if(this.withdrawLoading())return;
         this.withdrawError.set(null);this.withdrawLoading.set(true);
         let dashboardTab:Window|null=null;
