@@ -193,18 +193,36 @@ DO $t$ DECLARE j uuid; q public.job_payout_queue; n int; e record; tok uuid; ok 
 END $t$;
 
 -- =========================================================================
--- 5. Retry after an uncertain provider outcome.
+-- 5. Legacy spend + retry after an uncertain provider outcome.
+--    A missing purchase row is NOT proof the driver paid:
+--    * issuing-funded records are excluded (Vaydu paid, no reimbursement);
+--    * an already-paid job enters reconciliation;
+--    * ambiguous spend (no driver receipt) enters reconciliation;
+--    * positive driver-paid evidence (the recorded receipt) is reimbursed.
 -- =========================================================================
-DO $t$ DECLARE j uuid; q public.job_payout_queue; tok uuid; ok boolean; BEGIN
- -- Legacy in-flight spend (recorded before payer records existed, simulated by
- -- deleting the payer row the trigger wrote) must still be reimbursed.
+DO $t$ DECLARE j uuid; q public.job_payout_queue; tok uuid; ok boolean; msg text; BEGIN
+ -- 5a. Ambiguous legacy spend: no payer row, no issuing records, no receipt.
  j:=pg_temp.errand_job(10,50,30,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc');
  PERFORM pg_temp.pay(j,40,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc'); PERFORM pg_temp.assign(j,pg_temp.drv(5));
  PERFORM pg_temp.spend(j,20);
  DELETE FROM public.errand_purchase_payments WHERE job_id=j;
+ UPDATE public.errand_funding SET purchase_method=NULL WHERE job_id=j;
  UPDATE public.jobs SET status='in_progress' WHERE id=j;
+ BEGIN
+  PERFORM public.complete_job_with_pending_payout(j,pg_temp.drv(5),pg_temp.job_terms(),
+    jsonb_build_object('completion_pin_verified_at',now())); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (5,'ambiguous legacy spend enters reconciliation, never auto-paid',
+   msg LIKE '%requires reconciliation%' AND (SELECT count(*) FROM public.job_payout_queue WHERE job_id=j)=0,msg);
+
+ -- 5b. Positive driver-paid evidence (the recorded receipt) is backfilled.
+ UPDATE public.errand_details SET receipt_url='receipts/legacy-a.jpg' WHERE job_id=j;
  PERFORM public.complete_job_with_pending_payout(j,pg_temp.drv(5),pg_temp.job_terms(),
    jsonb_build_object('completion_pin_verified_at',now()));
+ INSERT INTO results VALUES (5,'receipt-evidenced legacy spend is backfilled into the outbox',
+   (SELECT amount_minor FROM public.job_payout_queue WHERE job_id=j)=2850
+   AND (SELECT payer FROM public.errand_purchase_payments WHERE job_id=j)='driver',
+   pg_temp.purchases(j)::text);
  SELECT * INTO q FROM public.claim_queued_job_payout(j) LIMIT 1;
  -- Provider outcome was uncertain: worker marks the row 'reconcile'.
  UPDATE public.job_payout_queue SET status='reconcile',lease_until=now()-interval '1 minute' WHERE job_id=j;
@@ -214,6 +232,38 @@ DO $t$ DECLARE j uuid; q public.job_payout_queue; tok uuid; ok boolean; BEGIN
  ok:=public.finish_queued_job_payout(j,tok,'tr_retry_1');
  INSERT INTO results VALUES (5,'the retried transfer reimburses the driver exactly once',
    ok AND (SELECT reimbursement_transfer_id FROM public.errand_purchase_payments WHERE job_id=j)='tr_retry_1','');
+
+ -- 5c. Issuing-funded legacy spend is excluded: Vaydu paid, nothing owed the driver.
+ j:=pg_temp.errand_job(10,50,30,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc');
+ PERFORM pg_temp.pay(j,40,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc'); PERFORM pg_temp.assign(j,pg_temp.drv(6));
+ UPDATE public.errand_details SET actual_spending=20 WHERE job_id=j;
+ DELETE FROM public.errand_purchase_payments WHERE job_id=j;
+ UPDATE public.errand_funding SET purchase_method=NULL,metadata=metadata||'{"shopping_spend_source":"issuing"}' WHERE job_id=j;
+ INSERT INTO public.job_issuing_spend_controls(job_id,driver_id,customer_id,tenant_id,stripe_card_id,amount_limit,currency_code,status)
+  VALUES (j,pg_temp.drv(6),'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','11111111-1111-4111-8111-111111111111','card_leg',50,'GBP','active');
+ UPDATE public.jobs SET status='in_progress' WHERE id=j;
+ PERFORM public.complete_job_with_pending_payout(j,pg_temp.drv(6),pg_temp.job_terms(),
+   jsonb_build_object('completion_pin_verified_at',now()));
+ INSERT INTO results VALUES (5,'issuing-funded legacy spend pays no driver reimbursement',
+   (SELECT amount_minor FROM public.job_payout_queue WHERE job_id=j)=850
+   AND (SELECT purchase_method FROM public.errand_funding WHERE job_id=j)='vaydu_card'
+   AND NOT EXISTS(SELECT 1 FROM public.errand_purchase_payments WHERE job_id=j AND payer='driver'),'');
+
+ -- 5d. An already-paid job with unrecorded spend is an obligation to reconcile.
+ j:=pg_temp.errand_job(10,50,30,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc');
+ PERFORM pg_temp.pay(j,40,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc'); PERFORM pg_temp.assign(j,pg_temp.drv(7));
+ UPDATE public.errand_details SET actual_spending=20 WHERE job_id=j;
+ DELETE FROM public.errand_purchase_payments WHERE job_id=j;
+ UPDATE public.errand_funding SET purchase_method=NULL WHERE job_id=j;
+ INSERT INTO public.driver_earnings(driver_id,job_id,amount,platform_fee,gross_amount,status,currency_code,country_code,stripe_transfer_id)
+  VALUES (pg_temp.drv(7),j,8.5,1,10,'paid','GBP','GB','tr_old_1');
+ UPDATE public.jobs SET status='in_progress' WHERE id=j;
+ BEGIN
+  PERFORM public.complete_job_with_pending_payout(j,pg_temp.drv(7),pg_temp.job_terms(),
+    jsonb_build_object('completion_pin_verified_at',now())); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (5,'already-paid earnings with unrecorded spend requires reconciliation',
+   msg LIKE '%requires reconciliation%' AND (SELECT count(*) FROM public.job_payout_queue WHERE job_id=j)=0,msg);
 END $t$;
 
 -- =========================================================================
@@ -229,7 +279,7 @@ DO $t$ DECLARE j uuid; msg text; BEGIN
  INSERT INTO results VALUES (6,'release with recorded purchases requires reconciliation',
    msg LIKE '%purchase payments require reconciliation%',msg);
  INSERT INTO results VALUES (6,'the reservation is untouched and the purchase stays recorded',
-   pg_temp.wbal('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc')='200.00/40.00'
+   pg_temp.wbal('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc')='130.00/80.00'
    AND (SELECT status FROM public.errand_purchase_payments WHERE job_id=j)='recorded',pg_temp.wbal('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc'));
 END $t$;
 
@@ -239,7 +289,7 @@ END $t$;
 DO $t$ DECLARE j uuid; BEGIN
  j:=pg_temp.errand_job(10,50,NULL,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc');
  UPDATE public.jobs SET payment_method='card',payment_status='authorized',payment_intent_id='pi_nf',status='accepted',
-   driver_id=pg_temp.drv(7) WHERE id=j;
+   driver_id=pg_temp.drv(8) WHERE id=j;
  INSERT INTO results VALUES (7,'no funding row means nothing was funded: spend rejected',
    pg_temp.spend(j,5) LIKE '%exceeds the funded budget%','');
  j:=pg_temp.errand_job(10,50,NULL,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc');

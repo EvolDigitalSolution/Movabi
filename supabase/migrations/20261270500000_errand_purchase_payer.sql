@@ -258,7 +258,7 @@ END $$;
 CREATE OR REPLACE FUNCTION public.complete_job_with_pending_payout(p_job_id uuid,p_driver_id uuid,p_terms jsonb,p_metadata jsonb)
 RETURNS SETOF public.jobs LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 DECLARE j public.jobs%ROWTYPE; q public.job_payout_queue%ROWTYPE; f public.errand_funding%ROWTYPE;
-  total numeric; payout numeric; fee numeric; commission numeric; v_legacy_spend numeric;
+  total numeric; payout numeric; fee numeric; commission numeric; v_legacy_spend numeric; v_receipt text;
   v_reimb_minor bigint; v_amount_minor bigint; v_budget_minor bigint; v_terms jsonb;
 BEGIN
  SELECT * INTO STRICT j FROM public.jobs WHERE id=p_job_id FOR UPDATE;
@@ -275,23 +275,45 @@ BEGIN
  SELECT coalesce(sum(CASE WHEN kind='capture' THEN amount_minor WHEN kind='refund' THEN -amount_minor ELSE amount_minor END),0)
  INTO v_reimb_minor FROM public.errand_purchase_payments
  WHERE job_id=p_job_id AND payer='driver' AND status IN ('recorded','reimbursed');
- -- In-flight driver spend recorded before payer records existed must still be
- -- reimbursed: backfill the payer record from the verified spend, unless the
- -- job ran through the card or is already locked to another method. Spend
- -- above the funded budget still raises below; it is never paid silently.
- IF v_reimb_minor=0 AND coalesce(f.purchase_method,'')<>'vaydu_card'
- AND NOT EXISTS(SELECT 1 FROM public.errand_purchase_payments WHERE job_id=p_job_id)
- AND NOT EXISTS(SELECT 1 FROM public.job_issuing_spend_controls WHERE job_id=p_job_id AND status<>'cancelled') THEN
+ -- In-flight spend recorded before payer records existed needs care: a missing
+ -- purchase row is NOT proof the driver paid. Exclude what authoritative
+ -- records already establish, then reimburse only on positive driver-paid
+ -- evidence; anything ambiguous enters reconciliation instead of being paid
+ -- (or skipped) silently.
+ IF v_reimb_minor=0 AND NOT EXISTS(SELECT 1 FROM public.errand_purchase_payments WHERE job_id=p_job_id) THEN
   SELECT coalesce(actual_spending,0) INTO v_legacy_spend FROM public.errand_details WHERE job_id=p_job_id;
   IF v_legacy_spend>0 THEN
-   INSERT INTO public.errand_purchase_payments
-     (job_id,purchase_method,payer,kind,amount_minor,currency,provider_reference,created_by)
-   VALUES (p_job_id,'driver_personal','driver','manual',round(v_legacy_spend*100)::bigint,
-     upper(coalesce(j.currency_code,'GBP')),'manual-spend',p_driver_id)
-   ON CONFLICT (job_id,purchase_method,provider_reference) DO NOTHING;
-   UPDATE public.errand_funding SET purchase_method='driver_personal',updated_at=now()
-    WHERE job_id=p_job_id AND purchase_method IS NULL;
-   v_reimb_minor := round(v_legacy_spend*100)::bigint;
+   IF coalesce(f.purchase_method,'')='vaydu_card'
+   OR coalesce(f.metadata->>'shopping_spend_source','')='issuing'
+   OR EXISTS(SELECT 1 FROM public.job_issuing_spend_controls WHERE job_id=p_job_id AND status<>'cancelled')
+   OR EXISTS(SELECT 1 FROM public.job_issuing_transactions WHERE job_id=p_job_id) THEN
+    -- Authoritative: the purchase was funded by the Vaydu card. No driver
+    -- reimbursement is owed; lock the method so nothing else can be claimed.
+    UPDATE public.errand_funding SET purchase_method='vaydu_card',updated_at=now()
+     WHERE job_id=p_job_id AND purchase_method IS DISTINCT FROM 'vaydu_card';
+   ELSIF j.stripe_transfer_id IS NOT NULL OR j.settlement_status IN ('claimed','unknown','transferred','reversed')
+   OR EXISTS(SELECT 1 FROM public.driver_earnings WHERE job_id=p_job_id AND (status='paid' OR stripe_transfer_id IS NOT NULL)) THEN
+    -- The job was already paid out without a payer record for this spend.
+    -- Whether the driver was already reimbursed cannot be told from the
+    -- records, so it is an obligation to reconcile, never to auto-pay.
+    RAISE EXCEPTION 'Recorded purchase requires reconciliation before payout';
+   ELSE
+    SELECT nullif(receipt_url,'') INTO v_receipt FROM public.errand_details WHERE job_id=p_job_id;
+    v_receipt := coalesce(nullif(f.receipt_url,''),v_receipt);
+    IF v_receipt IS NULL THEN
+     -- Positive driver-paid evidence is required: the manual driver flow
+     -- attaches the purchase receipt. Without it the payer is ambiguous.
+     RAISE EXCEPTION 'Recorded purchase requires reconciliation before payout';
+    END IF;
+    INSERT INTO public.errand_purchase_payments
+      (job_id,purchase_method,payer,kind,amount_minor,currency,provider_reference,created_by)
+    VALUES (p_job_id,'driver_personal','driver','manual',round(v_legacy_spend*100)::bigint,
+      upper(coalesce(j.currency_code,'GBP')),'manual-spend',p_driver_id)
+    ON CONFLICT (job_id,purchase_method,provider_reference) DO NOTHING;
+    UPDATE public.errand_funding SET purchase_method='driver_personal',updated_at=now()
+     WHERE job_id=p_job_id AND purchase_method IS NULL;
+    v_reimb_minor := round(v_legacy_spend*100)::bigint;
+   END IF;
   END IF;
  END IF;
  v_budget_minor := CASE WHEN f.item_budget>0 THEN round(f.item_budget*100)::bigint

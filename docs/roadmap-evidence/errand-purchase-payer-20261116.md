@@ -70,3 +70,70 @@ shopping-budget-payout-authority automatic-issuing-spend` → **72/72** after th
 - Journey-verified on develop: NO.
 - Customer wallet top-up for GB remains retired/sandbox-only (batch-1 orchestration documented
   separately); wallet reservation → settlement is verified on the funded-wallet path in the test.
+
+
+## Follow-up verification — 2026-11-17
+
+### Legacy reimbursement tightened (`20261270500000` §6)
+
+`complete_job_with_pending_payout` no longer infers "driver paid" from a missing purchase row.
+Backfill now requires positive evidence and honours authoritative exclusions:
+
+- `job_issuing_spend_controls` active → Vaydu card funded, no driver reimbursement.
+- `driver_earnings` already present (paid/pending) → reconciliation, never double-pay.
+- `receipt_url` present → driver-personal evidence, backfill + reimburse.
+- No evidence at all → reconciliation, no silent payout.
+
+Real-PG 42/42 covers each branch.
+
+### Real TypeScript payout worker against migrated DB — 10/10
+
+`deploy/vaydu-errand-purchase-payer/payout-worker-rehearsal.cjs` + Stripe/eligibility stubs
+drive the actual `JobPayoutService` (static import graph, tsx) against the migrated DB
+(disposable supabase postgres + PostgREST). All 10 checks:
+
+- one provider transfer carries fare + reimbursement (850 + 2000 minor)
+- queued row settles paid with the provider reference
+- purchase marked `reimbursed` only after provider confirmation
+- service earnings stay commissionable-fare-only (8.50 of 10.00)
+- replaying a paid job sends no second transfer
+- uncertain transfer outcome leaves the row reconcilable (not paid, no new attempt)
+- reconciliation finishes the uncertain transfer without a duplicate create
+- reconciled purchase reimbursed exactly once
+- pre-existing provider transfer matched and finished, not re-created
+
+### Customer wallet funding restored (`20261270600000`)
+
+Trace: the retired `wallet_topup` endpoint credited `wallets.available_balance` directly. The
+replacement batch-1 collection ledger credits `wallet_business_events` (`customer_credit`
+purpose) but never bridges to `available_balance`, which `pay_job_from_wallet` actually spends —
+verified in the deployed schema.
+
+`20261270600000_customer_wallet_booking_bridge.sql` adds
+`trg_wallet_topup_customer_credit_bridge` on `wallet_topup_attempts`: when an attempt transitions
+to `credited` with `destination_purpose='customer_credit'`, it credits
+`wallets.available_balance` in the same transaction as the ledger event. Driver cash-credit
+attempts (`driver_cash_credit`) are explicitly not bridged — verified.
+
+11/11 customer-funding-chain checks on `supabase/postgres:15.1.1.78` with the live baseline:
+
+- frozen customer collection submission + idempotent replay
+- one wallet business event (`operation='topup'`)
+- customer booking wallet credited 300.00
+- completion + release; driver purchase payer evidence; reservation 40.00
+- one reimbursement; zero driver cash-credit leakage
+
+### Deployment compatibility
+
+Full rehearsal on `supabase/postgres:15.1.1.78` (the host image) with
+`develop_live_public_schema_20261112.sql` as baseline: 42/42 errand + 11/11 funding chain.
+Migration 705's CREATE OR REPLACE functions diff-verified identical between the deployed and
+live-develop schema — drift-safe.
+
+### Ledger visibility (driver + admin)
+
+New endpoint `GET /api/bookings/:jobId/purchase-ledger` (booking.routes.ts) returns
+`errand_purchase_payments` (non-commissionable reimbursement, `reimbursement_transfer_id`)
+alongside `driver_earnings` (commissionable) and the queue row's `terms.reimbursementMinor` —
+so both dimensions reconcile even inside a single provider transfer. Admin accounting export
+now includes `errand_purchase_payments`.

@@ -421,6 +421,49 @@ router.get('/:jobId/customer', async (req: Request, res: Response) => {
         avatar_url: customer.avatar_url || null, phone: customer.phone || customer.phone_number || null } });
 });
 
+/**
+ * Errand purchase ledger for one job: separates the non-commissionable shopping
+ * reimbursement (errand_purchase_payments) from commissionable service earnings
+ * (driver_earnings) even when both travel in the same provider transfer. The
+ * caller must be the booking's customer, its assigned driver, or an admin.
+ */
+router.get('/:jobId/purchase-ledger', async (req: Request, res: Response) => {
+    const userId = await requireAuthenticatedUser(req, res);
+    if (!userId) return;
+    const { data: job, error } = await supabaseAdmin.from('jobs')
+        .select('customer_id,driver_id').eq('id', String(req.params.jobId)).maybeSingle();
+    if (error || !job) return res.status(404).json({ error: 'Booking not found', code: 'JOB_NOT_FOUND' });
+    if (job.customer_id !== userId && job.driver_id !== userId) {
+        const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', userId).maybeSingle();
+        if (String(profile?.role || '') !== 'admin') return res.status(403).json({ error: 'Booking access required', code: 'JOB_ACCESS_DENIED' });
+    }
+    const [{ data: purchases, error: purchasesError }, { data: earnings, error: earningsError }, { data: payout }] = await Promise.all([
+        supabaseAdmin.from('errand_purchase_payments')
+            .select('id,purchase_method,payer,kind,amount_minor,currency,status,reimbursement_transfer_id,provider_reference,created_at')
+            .eq('job_id', String(req.params.jobId)).order('created_at'),
+        supabaseAdmin.from('driver_earnings')
+            .select('id,amount,gross_amount,platform_fee,status,currency_code,stripe_transfer_id,created_at')
+            .eq('job_id', String(req.params.jobId)),
+        supabaseAdmin.from('job_payout_queue')
+            .select('status,amount_minor,currency,transfer_id,terms')
+            .eq('job_id', String(req.params.jobId)).maybeSingle()
+    ]);
+    if (purchasesError || earningsError) return res.status(503).json({ error: 'Purchase ledger is temporarily unavailable', code: 'LEDGER_UNAVAILABLE' });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({
+        purchases: purchases || [],
+        earnings: earnings || [],
+        payout: payout ? {
+            status: payout.status,
+            amount_minor: payout.amount_minor,
+            currency: payout.currency,
+            transfer_id: payout.transfer_id,
+            reimbursement_minor: Number((payout.terms as any)?.reimbursementMinor || 0),
+            purchase_method: (payout.terms as any)?.purchaseMethod || null
+        } : null
+    });
+});
+
 const capturedStatuses = ['paid', 'captured', 'succeeded'];
 const cancellableStripeStatuses = ['requires_payment_method', 'requires_confirmation', 'requires_action', 'processing', 'requires_capture'];
 const bookingCreateLimiter = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: true, legacyHeaders: false });

@@ -602,12 +602,15 @@ router.get('/ops-health', requireAdmin, async (req: Request, res: Response) => {
  */
 router.get('/accounting-export', requireAdmin, async (req: Request, res: Response) => {
   try {
-    const [bookings, payments, refunds, wallet, earnings] = await Promise.all([
+    const [bookings, payments, refunds, wallet, earnings, purchases] = await Promise.all([
       supabaseAdmin.from('jobs').select('*').limit(1000),
       supabaseAdmin.from('wallet_transactions').select('*').eq('type', 'credit').limit(1000),
       supabaseAdmin.from('wallet_transactions').select('*').eq('type', 'refund').limit(1000),
       supabaseAdmin.from('wallets').select('*').limit(1000),
-      supabaseAdmin.from('driver_earnings').select('*').limit(1000)
+      supabaseAdmin.from('driver_earnings').select('*').limit(1000),
+      // Per-purchase payer records: keeps the non-commissionable shopping
+      // reimbursement separately reconcilable from commissionable fare earnings.
+      supabaseAdmin.from('errand_purchase_payments').select('*').limit(1000)
     ]);
 
     res.json({
@@ -616,6 +619,7 @@ router.get('/accounting-export', requireAdmin, async (req: Request, res: Respons
       refunds: refunds.data,
       wallets: wallet.data,
       driver_earnings: earnings.data,
+      errand_purchase_payments: purchases.data,
       exported_at: new Date().toISOString()
     });
   } catch (error: any) {
