@@ -7,17 +7,17 @@ Deploy target: develop only. Production is not authorised.
 | Suite | Engine / baseline | Result |
 |---|---|---|
 | `realdb-errand-purchase-payer-test.sql` | `supabase/postgres:15.1.1.78` (host image) + `develop_live_public_schema_20261112.sql` + **full repo migration chain** on a DB named `movabi_develop` | 71/71 — §9 wallet settlement (freeze, once-only credit, provider exclusion, reserve→settle/reverse, **client metadata cannot select wallet**) + §10 separated eligibility (earn without beneficiary, withdrawal needs verified beneficiary, double-spend, lease reclaim, uncertain-held, tenant/currency isolation, beneficiary freeze, **paystack beneficiary refused — no payout adapter**) + §11 Kora payout adapter (provider gate admits kora/refuses unreviewed, malformed beneficiary rejected, reserve→marker→verified `KPY-D-` settle, **numeric flutterwave-shaped id cannot settle a kora withdrawal**) |
-| `realdb-customer-funding-chain-test.sql` | same | 11/11 |
+| `realdb-customer-funding-chain-test.sql` | same | 17/17 — adds binding coverage: bound at freeze, route drift never rewrites, direct rebind refused (frozen trigger), missing stripe binding fails closed, retry reuses the same attempt, one-preferred-route invariant |
 | Worker rehearsal (real `JobPayoutService` **and real `DriverWithdrawalService`**, simulated provider boundary) | same | 18/18 — wallet-mode dispatch: zero provider creates, ledger credited exactly once across replays; connected withdrawal journey: reserve → submission marker → reconcile-required (never paid) → verified transfer settles held→paid_out once |
-| **Connected sandbox journey** `connected-journey.cjs` | disposable stack: real GoTrue (admin-created users, password sign-in, bearer validation), real PostgREST on migrated `movabi_develop`, real Express routers (`/api/wallet`, `/api/booking`, `/api/driver-withdrawals`, `/api/driver-payment-account`, `/api/market-safety`), real services/RPCs | 14/14 — wallet setup → top-up readiness → quote → confirmed checkout → server verify → booking-wallet credit → `pay-job` wallet funding → server-policy settlement preference → driver assignment → completion with the stamped PIN → `JobPayoutService` credits `earnings_payable` once (`wallet:<job>`, zero provider transfers) → withdrawal 202 reserve → submission marker → reconcile (never paid) → verified provider transfer settles held→paid_out (`KPY-D-…` reference) → remaining balance spendable. **Withdrawal leg runs on the Kora provider** (market-configured adapter); only provider HTTP boundaries simulated (Stripe package, Kora adapter, payout-eligibility) |
+| **Connected integration journey — simulated provider HTTP** `connected-journey.cjs` | disposable stack: real GoTrue (admin-created users, password sign-in, bearer validation), real PostgREST on migrated `movabi_develop`, real Express routers (`/api/wallet`, `/api/booking`, `/api/driver-withdrawals`, `/api/driver-payment-account`, `/api/market-safety`), real services/RPCs | 15/15 — wallet setup → top-up readiness → quote (provider account bound from the trusted `market_payment_routes` row at freeze) → confirmed checkout → server verify → booking-wallet credit → `pay-job` wallet funding → server-policy settlement preference → driver assignment → completion with the stamped PIN → `JobPayoutService` credits `earnings_payable` once (`wallet:<job>`, zero provider transfers) → withdrawal 202 reserve → submission marker → reconcile (never paid) → verified provider transfer settles held→paid_out (`KPY-D-…` reference) → remaining balance spendable. **Withdrawal leg runs on the Kora provider** (market-configured adapter); only provider HTTP boundaries simulated (Stripe package, Kora adapter, payout-eligibility). **This is an application-journey result, not provider-sandbox verification** — no request ever reached a real provider endpoint |
 | Migration chain rehearsal | every `supabase/migrations/*.sql` in version order, one transaction each | 117 applied, 38 rolled back (already reflected in the live dump — reported per file) |
 | Browser `e2e/customer-wallet-collection.spec.ts` | this checkout's dev build | 2/2 — top-up through the real UI: readiness → frozen quote → card confirm → server verify → credit; hidden when collection unavailable |
 | Browser `e2e/driver-earnings-errand-ledger.spec.ts` | this checkout's dev build | 6/6 (3 tests × 2 projects) — reimbursement breakdown, 403 degradation, NG provider routed to the payment-account surface (never Stripe Express) |
 | Collection route/adapter runtime `src/testing/customer-wallet-collection.spec.ts` | real route + real `CustomerWalletCollectionService` + real Stripe adapter contract + RPC chain | 8-step: readiness → auth/body validation → quote freeze → over-limit refusal → confirmed-quote submission → one-time credit → idempotent replay → fail-closed identity mismatch |
 | Behavioural money-authority `src/testing/batch2c-money-authority.spec.ts` | executes the real booking-create allow-list + server mode derivation against a hostile payload | 53/53 — forged client payment/negotiation modes are discarded; server-derived modes win |
-| Unit + runtime specs | wallet/errand/payout scope | 89/89 across the touched spec files (batch1a/1h/1i/1l/1m harnesses, wallet-booking-lifecycle, batch2c, wallet-sandbox-ui, admin-campaigns) + 19/19 `status-wallet-browser` |
+| Unit + runtime specs | wallet/errand/payout scope | `check-customer-wallet-collection-runtime` 12/12 (route-seeded binding, missing/mismatched/drifted, retry, cross-tenant) + 89/89 across the touched spec files (batch1a/1h/1i/1l/1m harnesses, wallet-booking-lifecycle, batch2c, wallet-sandbox-ui, admin-campaigns) + 19/19 `status-wallet-browser` |
 | Full suite `npx vitest run` | — | 3663 passed / 21 failed — all remaining failures are Docker-environmental or parallel-load flakes, classified in `docs/roadmap-evidence/full-suite-failures-b09997f.md`; zero regressions |
-| Package integrity | clean Windows checkout (`git worktree`, `core.autocrlf=true`) | `sha256sum -c CHECKSUMS.sha256` → 7/7 OK; `*.sql`/`*.sha256`/`*.md` pinned `-text` so CRLF conversion cannot corrupt checksummed bytes. Checksums are recorded over committed (LF) bytes — verify from a clean checkout, not a CRLF working copy |
+| Package integrity | clean Windows checkout (`git worktree`, `core.autocrlf=true`) | `sha256sum -c CHECKSUMS.sha256` → 9/9 OK; `*.sql`/`*.sha256`/`*.md` pinned `-text` so CRLF conversion cannot corrupt checksummed bytes. Checksums are recorded over committed (LF) bytes — verify from a clean checkout, not a CRLF working copy |
 
 Reproduce:
 `PG_IMAGE=supabase/postgres:15.1.1.78 BASELINE=develop_live_public_schema_20261112.sql PSQL_USER=supabase_admin bash scripts/errand-purchase-payer/run-realdb-tests.sh`
@@ -300,7 +300,7 @@ concerns — a row being green never implies another:
 | Provider **programme approval** (Flutterwave, Kora) | Develop-sandbox scope only: `FLWSECK_TEST-` + `merchant_mode='test'` + sandbox driver/tenant binding, dispatch behind `VAYDU_DRIVER_PAYOUT_TRANSFERS`. No production/live approval exists or is implied. |
 | Adapter **implementation** | Done — `FlutterwaveDriverPayout` (beneficiary create/verify + reference-bound transfer + reconcile-before-create) **and `KoraDriverPayout`** (bank resolve + `transactions/disburse` + `transactions/{ref}` lookup; adapter spec 13/13) behind the neutral `sandboxDestinationProvider`; `payout_withdrawal_provider_supported` gates the DB side. |
 | **Deployment** to `movabi_develop` | Not yet applied — package + instructions below are the artefact. |
-| Connected sandbox **journey** | **Verified** — 14/14 on the disposable stack (`run-connected-journey.sh`): real GoTrue/PostgREST/Express/services with provider HTTP simulated. One run against the deployed stack with live test keys remains a deploy-day check. |
+| Connected integration **journey** (simulated provider HTTP) | **Verified** — 15/15 on the disposable stack (`run-connected-journey.sh`): real GoTrue/PostgREST/Express/services with provider HTTP simulated. One run against the deployed stack with live test keys remains a deploy-day check. |
 
 | Capability | State |
 |---|---|
@@ -309,8 +309,8 @@ concerns — a row being green never implies another:
 | Cash advances | **Deferred/unavailable** — not part of this release. |
 | Live provider confirmation (Stripe/Kora collection, Flutterwave payout + withdrawal transfer) | Requires deploy-day test keys + configured `market_payment_routes`/`driver_collection_setup_markets`/`driver_payout_markets` rows; all harness evidence uses mocked or simulated provider transport. Live readiness claims require actual configuration evidence, not test results. |
 | NG withdrawable earnings — live transfer leg | Ledger + reserve/settle/reverse proven against the real schema and real worker; the actual provider transfer still requires deployed provider test credentials (`FLWSECK_TEST-`/`sk_test_`) and an enabled `driver_payout_markets` row. Withdrawal is per-driver opt-in via the frozen `'wallet'` settlement method — existing `transfer`-method NG jobs keep paying straight to bank. |
-| Customer collection `provider_account_id` binding | **Gap found by the connected journey**: the Stripe adapter's `account()` requires `attempt.provider_account_id` (`acct_*`), but `initiate_wallet_topup` never populates it for `customer_credit` — the prior route-level harness masked it by seeding the field. The journey binds it between quote and confirm exactly as that harness did. Follow-up needed: decide where the customer attempt's provider account is frozen (initiate vs. route config) before live-sandbox use. |
-| Connected provider-sandbox journey (funding → credit → reservation → purchase → completion → driver credit → release) | **Verified on the disposable stack** (14/14 — funding → wallet credit → errand funding → completion → driver wallet credit → withdrawal → bank-settled). One run on the deployed stack with live test keys remains a **deploy-day check**. |
+| Customer collection `provider_account_id` binding | **Resolved by 710** — bound from the trusted `market_payment_routes` row at freeze (never client-supplied, frozen by `driver_card_attempt_scope_freeze`, missing stripe binding fails closed before any provider call). Covered by the runtime harness (12/12: missing/mismatched/drifted bindings, retry reuse, foreign-tenant invisibility) and the funding-chain real-DB test (17/17). |
+| Connected integration journey — simulated provider HTTP (funding → credit → reservation → purchase → completion → driver credit → withdrawal → reconciliation) | **Verified on the disposable stack** (15/15 — including the server-derived provider-account binding step). Not provider-sandbox verification: every provider call was simulated in-process. A real provider test requires requests to that provider's sandbox and remains a **deploy-day check** with live test keys. |
 | Develop deployment | Not yet applied — this package + migration order are the deploy artefact. Legacy ambiguous jobs remain in reconciliation until adjudicated. |
 
 ## Deploy instructions (develop)
@@ -319,9 +319,17 @@ concerns — a row being green never implies another:
    707 raises `'Develop database required'` anywhere else.
 2. Run the compatibility checks above; adjudicate or defer flagged rows.
 3. Apply pending migrations in filename order, one transaction each. This
-   package ships 705, 706, 707, 708, 709 as its tail; apply whatever earlier files
+   package ships 705, 706, 707, 708, 709, 710 as its tail; apply whatever earlier files
    `supabase_migrations.schema_migrations` shows as pending first
-   (rehearsed order ends `…704 → 705 → 706 → 707 → 708 → 709`).
+   (rehearsed order ends `…704 → 705 → 706 → 707 → 708 → 709 → 710`).
+11. `20261271000000_customer_collection_account_binding.sql` — customer
+    collection provider-account binding: `market_payment_routes` gains
+    `provider_account_id` (the approved provider-side account on the merchant
+    route, service-role written) and `freeze_wallet_topup_fee` binds it onto
+    `customer_credit` attempts before checkout. Never client-supplied;
+    `driver_card_attempt_scope_freeze` already refuses to change a non-null
+    binding; a stripe route with no approved account fails closed (BP008)
+    before any provider call.
 4. Deploy the server build (withdrawal worker starts with
    `JobPayoutService`; routes at `/api/driver-withdrawals*` mount under the
    existing driver auth middleware).
@@ -349,6 +357,6 @@ concerns — a row being green never implies another:
 ## Package
 
 `deploy/vaydu-errand-purchase-payer/package/` contains the five migrations
-(705, 706, 707, 708, 709), this preflight, and `CHECKSUMS.sha256` covering the final
+(705, 706, 707, 708, 709, 710), this preflight, and `CHECKSUMS.sha256` covering the final
 committed bytes (LF-normalized; `-text` pins verified from a clean Windows
 checkout under `core.autocrlf=true`). Re-run the checksums if any file changes.

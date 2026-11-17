@@ -151,11 +151,8 @@ function step(name, cond, detail = '') { steps.push({ name, ok: !!cond }); conso
   step('top-up readiness reports collection submittable', rd.status === 200 && rd.body.canSubmit === true, `${rd.status} ${JSON.stringify(rd.body).slice(0, 120)}`);
   const topupKey = crypto.randomUUID();
   const quote = await call('POST', '/api/wallet/collection/checkout', customer.jwt, { amountMinor: 50000, idempotencyKey: topupKey });
-  // GAP (surfaced by this journey): the Stripe adapter binds the Stripe account
-  // via attempt.provider_account_id, but no code path populates that column for
-  // customer_credit attempts — on the real route preflight would 400. Bound
-  // here exactly as the existing runtime harness seeds it (acct_ + account echo).
-  await must('attempt provider account', db.from('wallet_topup_attempts').update({ provider_account_id: 'acct_ng_journey_1' }).eq('id', quote.body.attemptId));
+  const bound = await db.from('wallet_topup_attempts').select('provider_account_id').eq('id', quote.body.attemptId).single();
+  step('provider account is bound from the trusted market route at freeze', bound.data?.provider_account_id === 'acct_ng_journey_1', `bound=${bound.data && bound.data.provider_account_id}`);
   const checkout = await call('POST', '/api/wallet/collection/checkout', customer.jwt, { amountMinor: 50000, idempotencyKey: topupKey, confirmedTotalMinor: quote.body.totalChargeMinor });
   step('confirmed checkout submits through the real route + adapter', checkout.status === 200 && checkout.body.kind === 'checkout', `${checkout.status} ${JSON.stringify(checkout.body).slice(0, 80)}`);
   const verify = await call('POST', '/api/wallet/collection/verify', customer.jwt, { attemptId: checkout.body.attemptId });

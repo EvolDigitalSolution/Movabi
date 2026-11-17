@@ -70,8 +70,8 @@ INSERT INTO public.market_availability(country_code,launch_status,supported_curr
  VALUES ('NG','live','NGN',true,true,true,true,true) ON CONFLICT DO NOTHING;
 INSERT INTO public.service_types(id,name,slug) VALUES ('dddddddd-dddd-4ddd-8ddd-dddddddddd02','Errand','errand') ON CONFLICT DO NOTHING;
 INSERT INTO public.wallet_collection_config(key,value) VALUES ('enabled','true'),('max_amount_minor_NGN','1000000'),('customer_wallet_setup_enabled','true') ON CONFLICT DO NOTHING;
-INSERT INTO public.market_payment_routes(country_code,currency_code,provider,method,preferred,enabled,merchant_approved,adapter_ready,capabilities,merchant_account_ref)
- VALUES ('NG','NGN','stripe','card',true,true,true,true,'{collect}','MERCHANT_NG_TEST') ON CONFLICT DO NOTHING;
+INSERT INTO public.market_payment_routes(country_code,currency_code,provider,method,preferred,enabled,merchant_approved,adapter_ready,capabilities,merchant_account_ref,provider_account_id)
+ VALUES ('NG','NGN','stripe','card',true,true,true,true,'{collect}','MERCHANT_NG_TEST','acct_ng_journey_1') ON CONFLICT DO NOTHING;
 INSERT INTO public.wallet_topup_fee_schedules(provider,country_code,currency_code,method,active,version,fee_basis,fee_basis_points,fee_fixed_minor,rounding,approved_by,approved_at,exponent)
  VALUES ('stripe','NG','NGN','card',true,'vaydu-customer-card-0fee-test-v1','wallet',0,0,'half_up','journey','2026-01-01T00:00:00Z',2) ON CONFLICT DO NOTHING;
 -- Legacy fee authority (v1 freeze reads this table when the schedule-aware

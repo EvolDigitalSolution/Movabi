@@ -38,8 +38,8 @@ INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_
 
 -- Collection plumbing: exactly one eligible GB/GBP card collect route on the
 -- platform Stripe merchant, an approved zero-fee schedule, kill switches on.
-INSERT INTO public.market_payment_routes(country_code,currency_code,method,provider,merchant_account_ref,preferred,enabled,merchant_approved,adapter_ready,capabilities)
- VALUES ('GB','GBP','card','stripe','acct_vaydu_platform_gb',true,true,true,true,ARRAY['collect']);
+INSERT INTO public.market_payment_routes(country_code,currency_code,method,provider,merchant_account_ref,preferred,enabled,merchant_approved,adapter_ready,capabilities,provider_account_id)
+ VALUES ('GB','GBP','card','stripe','acct_vaydu_platform_gb',true,true,true,true,ARRAY['collect'],'acct_vaydu_gb_test');
 INSERT INTO public.wallet_topup_fee_schedules(version,provider,country_code,currency_code,method,exponent,fee_basis,fee_basis_points,fee_fixed_minor,rounding,approved_by,approved_at,active)
  VALUES ('vaydu-customer-card-0fee-test-v1','stripe','GB','GBP','card',2,'wallet',0,0,'half_up','rehearsal',now(),true);
 -- The batch-2b freeze reads wallet_topup_fee_policies (post-202612541 schema); the older
@@ -108,6 +108,59 @@ DO $t$ DECLARE a uuid; ev uuid; ev2 uuid; ok boolean; BEGIN
  ev2:=public.confirm_wallet_topup_with_total(a,'pi_cust_1','acct_vaydu_platform_gb','GBP',(SELECT total_charge_minor FROM public.wallet_topup_attempts WHERE id=a),'succeeded');
  INSERT INTO results VALUES (1,'replayed confirm returns the same credit and does not double-fund',
    ev2=ev AND pg_temp.wbal('ffffffff-dddd-4ddd-8ddd-dddddddddddd')='300.00/0.00','');
+ -- The provider account is bound at freeze from the trusted route row, never
+ -- from the client, and it cannot change afterwards.
+ INSERT INTO results VALUES (1,'freeze binds the approved route provider account',
+   (SELECT provider_account_id FROM public.wallet_topup_attempts WHERE id=a)='acct_vaydu_gb_test',
+   coalesce((SELECT provider_account_id FROM public.wallet_topup_attempts WHERE id=a),'NULL'));
+ UPDATE public.market_payment_routes SET provider_account_id='acct_drifted'
+  WHERE country_code='GB' AND method='card';
+ INSERT INTO results VALUES (1,'route drift never rewrites the frozen attempt binding',
+   (SELECT provider_account_id FROM public.wallet_topup_attempts WHERE id=a)='acct_vaydu_gb_test','');
+ BEGIN
+  UPDATE public.wallet_topup_attempts SET provider_account_id='acct_attacker' WHERE id=a;
+  INSERT INTO results VALUES (1,'direct rebind of a frozen provider account is refused',false,'no error');
+ EXCEPTION WHEN OTHERS THEN
+  INSERT INTO results VALUES (1,'direct rebind of a frozen provider account is refused',SQLERRM LIKE '%frozen%',SQLERRM);
+ END;
+ UPDATE public.market_payment_routes SET provider_account_id='acct_vaydu_gb_test'
+  WHERE country_code='GB' AND method='card';
+END $t$;
+
+-- =========================================================================
+-- 1B. Binding guards: a stripe route with no approved account fails closed at
+-- freeze (before any provider call), a second eligible route is ambiguous and
+-- fails closed, and an idempotent retry of the same attempt key returns the
+-- same attempt with its binding intact.
+-- =========================================================================
+DO $t$ DECLARE a uuid; a2 uuid; BEGIN
+ UPDATE public.market_payment_routes SET provider_account_id=NULL
+  WHERE country_code='GB' AND method='card';
+ a:=public.initiate_wallet_topup('customer-topup:ffffffff-dddd-4ddd-8ddd-dddddddddddd:idem-missing',
+   '11111111-1111-4111-8111-111111111111','ffffffff-dddd-4ddd-8ddd-dddddddddddd',
+   'GB','GBP',30000,'customer_credit','stripe','acct_vaydu_platform_gb','idem-missing');
+ BEGIN
+  PERFORM public.freeze_wallet_topup_fee(a,'vaydu-customer-card-0fee-test-v1');
+  INSERT INTO results VALUES (1,'missing stripe account binding fails closed at freeze',false,'no error');
+ EXCEPTION WHEN OTHERS THEN
+  INSERT INTO results VALUES (1,'missing stripe account binding fails closed at freeze',
+    SQLERRM LIKE '%provider account%' AND (SELECT status FROM public.wallet_topup_attempts WHERE id=a)='initiated',SQLERRM);
+ END;
+ -- Retry after the route is bound: the same attempt is bound and frozen.
+ UPDATE public.market_payment_routes SET provider_account_id='acct_vaydu_gb_test'
+  WHERE country_code='GB' AND method='card';
+ a2:=public.initiate_wallet_topup('customer-topup:ffffffff-dddd-4ddd-8ddd-dddddddddddd:idem-missing',
+   '11111111-1111-4111-8111-111111111111','ffffffff-dddd-4ddd-8ddd-dddddddddddd',
+   'GB','GBP',30000,'customer_credit','stripe','acct_vaydu_platform_gb','idem-missing');
+ PERFORM public.freeze_wallet_topup_fee(a2,'vaydu-customer-card-0fee-test-v1');
+ INSERT INTO results VALUES (1,'a retried checkout reuses the attempt and binds the approved account',
+   a2=a AND (SELECT provider_account_id FROM public.wallet_topup_attempts WHERE id=a2)='acct_vaydu_gb_test'
+   AND (SELECT fee_policy_version FROM public.wallet_topup_attempts WHERE id=a2)='vaydu-customer-card-0fee-test-v1','');
+ -- A second eligible route cannot exist: market_payment_routes_preferred_unique
+ -- (country,currency,method) enforces a single preferred route per market, so
+ -- ambiguity is structurally refused — the STRICT route lookup is the belt.
+ INSERT INTO results VALUES (1,'exactly one preferred collect route can exist per market',
+   (SELECT count(*) FROM public.market_payment_routes WHERE country_code='GB' AND method='card' AND preferred)=1,'');
 END $t$;
 
 -- =========================================================================

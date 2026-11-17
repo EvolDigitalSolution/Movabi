@@ -35,7 +35,7 @@ const tables={
  market_availability:[{country_code:'GB',supported_currency:'GBP',enabled:true,launch_status:'live',customer_app_enabled:true,market_city:null,zone_id:null,valid_from:null,valid_until:null}],
  wallets:[{id:W,user_id:A,currency_code:'GBP'}],
  wallet_collection_config:[{key:'enabled',value:'true'},{key:'max_amount_minor_GBP',value:'100000'}],
- market_payment_routes:[{country_code:'GB',currency_code:'GBP',provider:'stripe',method:'card',preferred:true,enabled:true,merchant_approved:true,adapter_ready:true,capabilities:['collect'],merchant_account_ref:'MERCHANT_GB_1'}],
+ market_payment_routes:[{country_code:'GB',currency_code:'GBP',provider:'stripe',method:'card',preferred:true,enabled:true,merchant_approved:true,adapter_ready:true,capabilities:['collect'],merchant_account_ref:'MERCHANT_GB_1',provider_account_id:'acct_123'}],
  wallet_topup_fee_schedules:[{provider:'stripe',country_code:'GB',currency_code:'GBP',method:'card',active:true,version:'vaydu-customer-card-0fee-test-v1',fee_basis:'wallet',fee_basis_points:0,fee_fixed_minor:0,fee_cap_minor:null,rounding:'half_up',approved_by:'ops',approved_at:'2026-01-01T00:00:00Z'}],
  wallet_topup_attempts:[],
  payment_checkout_attempts:[],
@@ -58,8 +58,16 @@ function rpc(name,args){
  rpcCalls.push(name);
  const attempt=id=>tables.wallet_topup_attempts.find(a=>a.id===id);
  switch(name){
-  case 'initiate_wallet_topup':{const id=randomUUID();tables.wallet_topup_attempts.push({id,owner_id:args.p_owner_id,tenant_id:args.p_tenant_id,country_code:args.p_country_code,currency_code:args.p_currency_code,payment_provider:args.p_payment_provider,merchant_account_ref:args.p_merchant_account_ref,amount_minor:String(args.p_amount_minor),provider_fee_minor:null,total_charge_minor:null,fee_policy_version:null,fee_exponent:2,destination_account_purpose:args.p_destination_account_purpose,status:'initiated',provider_reference:null,provider_account_id:'acct_123',credited_event_id:null});return Promise.resolve({data:id,error:null});}
-  case 'freeze_wallet_topup_fee':{const a=attempt(args.p_attempt_id);a.fee_policy_version=args.p_fee_policy_version;a.provider_fee_minor='0';a.total_charge_minor=String(BigInt(a.amount_minor));a.status='frozen';return Promise.resolve({data:a.id,error:null});}
+  case 'initiate_wallet_topup':{const id=randomUUID();tables.wallet_topup_attempts.push({id,owner_id:args.p_owner_id,tenant_id:args.p_tenant_id,country_code:args.p_country_code,currency_code:args.p_currency_code,payment_provider:args.p_payment_provider,merchant_account_ref:args.p_merchant_account_ref,amount_minor:String(args.p_amount_minor),provider_fee_minor:null,total_charge_minor:null,fee_policy_version:null,fee_exponent:2,destination_account_purpose:args.p_destination_account_purpose,status:'initiated',provider_reference:null,provider_account_id:null,credited_event_id:null});return Promise.resolve({data:id,error:null});}
+  case 'freeze_wallet_topup_fee':{const a=attempt(args.p_attempt_id);
+   // Mirror 202612710: bind the approved provider account from the eligible
+   // market route before freezing; stripe without a binding raises.
+   if(a.destination_account_purpose==='customer_credit'&&a.provider_account_id==null){
+    const r=tables.market_payment_routes.find(r=>r.country_code===a.country_code&&r.currency_code===a.currency_code&&r.method==='card'&&r.preferred&&r.enabled&&r.merchant_approved&&r.adapter_ready&&r.provider===a.payment_provider&&r.merchant_account_ref===a.merchant_account_ref);
+    if(!r)return Promise.resolve({data:null,error:{code:'P0002',message:'query returned no rows'}});
+    if(r.provider==='stripe'&&r.provider_account_id==null)return Promise.resolve({data:null,error:{code:'BP008',message:'Approved provider account binding required'}});
+    a.provider_account_id=r.provider_account_id;}
+   a.fee_policy_version=args.p_fee_policy_version;a.provider_fee_minor='0';a.total_charge_minor=String(BigInt(a.amount_minor));a.status='frozen';return Promise.resolve({data:a.id,error:null});}
   case 'claim_wallet_topup_submission':{const a=attempt(args.p_attempt_id);if(a.status!=='frozen')return Promise.resolve({data:false,error:null});a.status='submitting';return Promise.resolve({data:true,error:null});}
   case 'record_wallet_topup_provider_reference':{const a=attempt(args.p_attempt_id);a.provider_reference=args.p_provider_reference;return Promise.resolve({data:a.id,error:null});}
   case 'confirm_wallet_topup_with_total':{const a=attempt(args.p_attempt_id);if(a.status==='credited'&&a.provider_reference===args.p_verified_provider_reference&&a.total_charge_minor===String(args.p_verified_total_minor))return Promise.resolve({data:a.credited_event_id,error:null});
@@ -165,6 +173,49 @@ await test('verify replay returns the same credited event, not a second credit',
 });
 await test('identity mismatch fails closed, never credits',async()=>{
  const r=await request('POST','/collection/verify',{body:{attemptId:randomUUID()}});
+ assert.equal(r.statusCode,404);
+});
+await test('a stripe route with no approved account binding refuses before any provider call',async()=>{
+ const route=tables.market_payment_routes[0];const saved=route.provider_account_id;
+ route.provider_account_id=null;
+ const before=stripePayments.size;const key=randomUUID();
+ const r=await request('POST','/collection/checkout',{body:{amountMinor:30000,idempotencyKey:key,confirmedTotalMinor:30000}});
+ assert.equal(r.statusCode,400);assert.equal(r.body.code,'RPC_freeze_wallet_topup_fee');
+ assert.equal(stripePayments.size,before);
+ route.provider_account_id=saved;
+ // Same idempotency key retries the same attempt — which is then bound and submitted.
+ const retry=await request('POST','/collection/checkout',{body:{amountMinor:30000,idempotencyKey:key,confirmedTotalMinor:30000}});
+ assert.equal(retry.statusCode,200);
+ const a=tables.wallet_topup_attempts.find(x=>x.id===retry.body.attemptId);
+ assert.equal(a.provider_account_id,'acct_123');
+});
+await test('a bound attempt keeps its account when the route config changes',async()=>{
+ const r=await request('POST','/collection/checkout',{body:{amountMinor:30000,idempotencyKey:randomUUID(),confirmedTotalMinor:30000}});
+ assert.equal(r.statusCode,200);
+ const a=tables.wallet_topup_attempts.find(x=>x.id===r.body.attemptId);
+ assert.equal(a.provider_account_id,'acct_123');
+ tables.market_payment_routes[0].provider_account_id='acct_drifted';
+ // The frozen attempt retains the binding approved at freeze time — the route
+ // change never rewrites it — and verification still succeeds against it.
+ const v=await request('POST','/collection/verify',{body:{attemptId:r.body.attemptId}});
+ assert.equal(v.statusCode,200);
+ assert.equal(a.provider_account_id,'acct_123');
+ tables.market_payment_routes[0].provider_account_id='acct_123';
+});
+await test('an attempt bound to a different account cannot be verified against this provider',async()=>{
+ const r=await request('POST','/collection/checkout',{body:{amountMinor:30000,idempotencyKey:randomUUID(),confirmedTotalMinor:30000}});
+ assert.equal(r.statusCode,200);
+ const a=tables.wallet_topup_attempts.find(x=>x.id===r.body.attemptId);
+ a.provider_account_id='acct_someone_else';
+ const v=await request('POST','/collection/verify',{body:{attemptId:r.body.attemptId}});
+ assert.equal(v.statusCode,409);assert.equal(a.status,'submitting');
+});
+await test('a foreign-tenant attempt is never visible to this customer',async()=>{
+ tables.wallet_topup_attempts.push({id:randomUUID(),owner_id:A,tenant_id:'33333333-3333-3333-3333-333333333333',country_code:'GB',currency_code:'GBP',
+  payment_provider:'stripe',merchant_account_ref:'MERCHANT_GB_1',amount_minor:'30000',provider_fee_minor:'0',total_charge_minor:'30000',
+  fee_policy_version:'vaydu-customer-card-0fee-test-v1',fee_exponent:2,destination_account_purpose:'customer_credit',status:'submitting',provider_reference:null,provider_account_id:'acct_123',credited_event_id:null});
+ const foreign=tables.wallet_topup_attempts.at(-1);
+ const r=await request('POST','/collection/verify',{body:{attemptId:foreign.id}});
  assert.equal(r.statusCode,404);
 });
 delete globalThis.__cwMocks;
