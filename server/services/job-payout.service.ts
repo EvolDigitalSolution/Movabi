@@ -39,6 +39,13 @@ export class JobPayoutService {
       const result = await supabaseAdmin.rpc('finish_queued_job_payout', { p_job_id: q.job_id, p_token: q.token, p_transfer_id: id });
       if (result.error || result.data !== true) throw new Error('Payout requires local reconciliation');
     };
+    if(q.terms?.payout_provider==='flutterwave'&&q.terms?.settlement_mode==='wallet'){
+      // Wallet settlement credits earnings_payable once via the shared ledger —
+      // no provider transfer is ever submitted for this entitlement.
+      const result=await supabaseAdmin.rpc('finish_wallet_job_payout',{p_job:q.job_id,p_token:q.token});
+      if(result.error||result.data!==true)await update('reconcile','wallet_settlement_failed');
+      return;
+    }
     if(q.terms?.payout_provider==='flutterwave'){
       // Account setup never authorizes money movement. Dispatch requires the
       // separate explicit transfer flag; otherwise the job stays blocked.

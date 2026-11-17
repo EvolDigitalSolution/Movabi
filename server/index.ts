@@ -12,6 +12,8 @@ import { GbMotMonitorService } from './services/gb-mot-monitor.service';
 import { ShoppingBudgetService } from './services/shopping-budget.service';
 import journeyRoutes from './routes/journey.routes';
 import { JobPayoutService } from './services/job-payout.service';
+import { DriverWithdrawalService } from './services/driver-withdrawal.service';
+import driverWithdrawalRoutes from './routes/driver-withdrawal.routes';
 import express, { Request, Response, NextFunction } from 'express';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
@@ -179,6 +181,7 @@ app.use('/api/logistics', logisticsRoutes);
 app.use('/api/journey', journeyRoutes);
 app.use('/api/payment/flutterwave-booking-split', flutterwaveBookingSplitRoutes);
 app.use('/api/driver-payment-account', developDriverPaymentAccountRouter());
+app.use('/api/driver-withdrawals', driverWithdrawalRoutes);
 app.use('/api/connect', connectRoutes);
 app.use('/api/market-safety', marketSafetyRoutes);
 app.use('/api/payment', paymentRoutes);
@@ -227,6 +230,7 @@ try {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     JobPayoutService.start();
+    DriverWithdrawalService.start();
     BookingSupportService.start();
     AdminMessagingService.start();
     GbMotMonitorService.start();

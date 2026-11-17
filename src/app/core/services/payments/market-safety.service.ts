@@ -5,7 +5,7 @@ import {SupabaseService} from '../supabase/supabase.service';
 import {ApiUrlService} from '../api-url.service';
 import {AuthService} from '../auth/auth.service';
 export interface BookingPaymentContext{jobId:string;provider:string|null;quoteState:string;checkoutAvailable:boolean;message:string;}
-export interface DriverWalletContext{marketReviewRequired?:boolean;country:string;currency:string;provider:string|null;payoutIntegrationAvailable:boolean;payoutAvailable:boolean;status:string;message:string;}
+export interface DriverWalletContext{marketReviewRequired?:boolean;country:string;currency:string;provider:string|null;payoutIntegrationAvailable:boolean;payoutAvailable:boolean;status:string;message:string;withdrawableMinor?:number;}
 @Injectable({providedIn:'root'})
 export class MarketSafetyService {
  private http=inject(HttpClient);private supabase=inject(SupabaseService);private api=inject(ApiUrlService);private auth=inject(AuthService);
@@ -21,4 +21,9 @@ export class MarketSafetyService {
   this.walletPending=request;try{return await request;}finally{if(this.walletPending===request)this.walletPending=null;}
  }
  async requireStripePayoutMarket(){const context=await this.refreshWallet();if(context.provider!=='stripe'||!context.payoutIntegrationAvailable)throw Error(context.message);return context;}
+ /** Withdraws reserved-free earnings to the driver's verified payout destination. */
+ async requestWithdrawal(amountMinor:number):Promise<{id:string;status:string;reference:string}>{
+  const {data}=await this.supabase.auth.getSession();const token=data.session?.access_token;if(!token)throw Error('Please sign in again.');
+  return firstValueFrom(this.http.post<{id:string;status:string;reference:string}>(this.api.getApiUrl('/api/driver-withdrawals'),{amountMinor},{headers:{Authorization:'Bearer '+token}}).pipe(timeout(15000)));
+ }
 }

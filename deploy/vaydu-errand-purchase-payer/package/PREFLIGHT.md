@@ -1,4 +1,4 @@
-# Errand purchase payer — develop deploy preflight (2026-11-17)
+# Errand purchase payer + NG wallet settlement — develop deploy preflight (2026-11-17)
 
 Deploy target: develop only. Production is not authorised.
 
@@ -6,17 +6,17 @@ Deploy target: develop only. Production is not authorised.
 
 | Suite | Engine / baseline | Result |
 |---|---|---|
-| `realdb-errand-purchase-payer-test.sql` | `supabase/postgres:15.1.1.78` (host image) + `develop_live_public_schema_20261112.sql` + **full repo migration chain** on a DB named `movabi_develop` | 44/44 |
+| `realdb-errand-purchase-payer-test.sql` | `supabase/postgres:15.1.1.78` (host image) + `develop_live_public_schema_20261112.sql` + **full repo migration chain** on a DB named `movabi_develop` | 53/53 — incl. §9 wallet settlement: method freeze, ledger credit once, provider-path exclusion, reserve→settle/reverse |
 | `realdb-customer-funding-chain-test.sql` | same | 11/11 |
-| Worker rehearsal (real `JobPayoutService`, simulated provider) | same | 10/10 |
-| Migration chain rehearsal | every `supabase/migrations/*.sql` in version order, one transaction each | 116 applied, 38 rolled back (already reflected in the live dump — reported per file) |
+| Worker rehearsal (real `JobPayoutService`, simulated provider) | same | 13/13 — incl. wallet-mode dispatch: zero provider creates, ledger credited exactly once across replays |
+| Migration chain rehearsal | every `supabase/migrations/*.sql` in version order, one transaction each | 117 applied, 38 rolled back (already reflected in the live dump — reported per file) |
 | Browser `e2e/customer-wallet-collection.spec.ts` | this checkout's dev build | 2/2 — top-up through the real UI: readiness → frozen quote → card confirm → server verify → credit; hidden when collection unavailable |
 | Browser `e2e/driver-earnings-errand-ledger.spec.ts` | this checkout's dev build | 6/6 (3 tests × 2 projects) — reimbursement breakdown, 403 degradation, NG provider routed to the payment-account surface (never Stripe Express) |
 | Collection route/adapter runtime `src/testing/customer-wallet-collection.spec.ts` | real route + real `CustomerWalletCollectionService` + real Stripe adapter contract + RPC chain | 8-step: readiness → auth/body validation → quote freeze → over-limit refusal → confirmed-quote submission → one-time credit → idempotent replay → fail-closed identity mismatch |
 | Behavioural money-authority `src/testing/batch2c-money-authority.spec.ts` | executes the real booking-create allow-list + server mode derivation against a hostile payload | 53/53 — forged client payment/negotiation modes are discarded; server-derived modes win |
 | Unit + runtime specs | wallet/errand/payout scope | 89/89 across the touched spec files (batch1a/1h/1i/1l/1m harnesses, wallet-booking-lifecycle, batch2c, wallet-sandbox-ui, admin-campaigns) + 19/19 `status-wallet-browser` |
 | Full suite `npx vitest run` | — | 3663 passed / 21 failed — all remaining failures are Docker-environmental or parallel-load flakes, classified in `docs/roadmap-evidence/full-suite-failures-b09997f.md`; zero regressions |
-| Package integrity | clean Windows checkout (`git worktree`, `core.autocrlf=true`) | `sha256sum -c CHECKSUMS.sha256` → 3/3 OK; `*.sql`/`*.sha256`/`*.md` pinned `-text` so CRLF conversion cannot corrupt checksummed bytes. Checksums are recorded over committed (LF) bytes — verify from a clean checkout, not a CRLF working copy |
+| Package integrity | clean Windows checkout (`git worktree`, `core.autocrlf=true`) | `sha256sum -c CHECKSUMS.sha256` → 4/4 OK; `*.sql`/`*.sha256`/`*.md` pinned `-text` so CRLF conversion cannot corrupt checksummed bytes. Checksums are recorded over committed (LF) bytes — verify from a clean checkout, not a CRLF working copy |
 
 Reproduce:
 `PG_IMAGE=supabase/postgres:15.1.1.78 BASELINE=develop_live_public_schema_20261112.sql PSQL_USER=supabase_admin bash scripts/errand-purchase-payer/run-realdb-tests.sh`
@@ -73,8 +73,13 @@ Apply pending migrations in filename order against
    method lock, reimbursement through the payout outbox (Stripe GB + Flutterwave NG).
 7. `20261270600000_customer_wallet_booking_bridge.sql` — bridges credited
    `customer_credit` top-up attempts to `wallets.available_balance`.
+8. `20261270700000_driver_wallet_settlement.sql` — `'wallet'` becomes a third
+   frozen `job_settlement_methods` mode; `finish_wallet_job_payout` credits
+   `earnings_payable` once; `driver_withdrawals` +
+   `flutterwave_withdrawal_submissions` implement reserve → submit →
+   settle/reverse; mutual exclusion on every finish path.
 
-705/706 assert prerequisites in-file. 705's CREATE OR REPLACE functions were
+705/706/707 assert prerequisites in-file. 705's CREATE OR REPLACE functions were
 diff-verified identical between the deployed and live-develop schemas — drift-safe.
 705 requires `202612547`'s objects (`flutterwave_job_submissions`,
 `jobs.payout_provider`, `driver_earnings.payout_provider`) — apply after 547;
@@ -102,9 +107,19 @@ select count(*) from market_payment_routes where provider<>'stripe' and country_
 
 -- 4. NG jobs settle on their own rail:
 select count(*) from jobs where country_code='NG'
-  and metadata->>'driver_settlement_method' is distinct from 'transfer';
---    Any in-flight NG job missing 'transfer' cannot queue a payout under
---    guard_job_transfer_method — review before deploy.
+  and metadata->>'driver_settlement_method' is distinct from 'transfer'
+  and metadata->>'driver_settlement_method' is distinct from 'wallet';
+--    Any in-flight NG job missing 'transfer'/'wallet' cannot queue a payout
+--    under guard_job_transfer_method — review before deploy. 'wallet' jobs
+--    additionally require terms.settlement_mode='wallet' frozen at completion
+--    (server-side in LogisticsService.completeJob, never client-supplied).
+
+-- 5. Wallet settlement prerequisites present (707's in-file guard also checks):
+select to_regclass('public.job_settlement_methods'),
+       to_regclass('public.driver_payment_accounts'),
+       to_regclass('public.wallet_movements'),
+       to_regclass('public.flutterwave_job_submissions');
+--    Expected: all four non-null (202612410+, 202612450+, 202612547+).
 ```
 
 ## Rollback limits
@@ -118,30 +133,72 @@ select count(*) from jobs where country_code='NG'
 - Legacy ambiguous jobs parked in reconciliation remain until adjudicated —
   intended, not a deploy failure.
 
-## Driver credit → withdrawal reconciliation
+## Driver settlement: two alternative modes, frozen per entitlement
 
-The driver's entitlement flows through ONE channel: `job_payout_queue` → one
-provider transfer (fare entitlement + reimbursement, Stripe `acct_*` on GB,
-`flw:*` on NG) → `driver_earnings` (fare, commissionable) and
-`errand_purchase_payments` (reimbursement, non-commissionable,
-`reimbursement_transfer_id` = same transfer). No `wallets`/`wallet_transactions`
-row, `reward_credits` row, or `driver_cash_credit` balance is credited for job
-earnings anywhere in the schema — `wallets` exists for the **customer booking
-wallet** (auto-provisioned at signup by `handle_new_user`) and the driver
-cash-credit ledger is a separate `driver_cash_credit` purpose that drivers
-pre-fund to take cash rides, not an earnings balance. The automatic transfer
-therefore cannot double-pay with a withdrawable credit: no second balance is
-created for the same entitlement. Driver cash-credit deposits stay out of the
-customer booking wallet (verified: bridge trigger fires only for
-`customer_credit`).
+Automatic bank transfer and wallet withdrawal are **alternative settlement
+modes**. Double payment is prevented structurally — one mode is frozen per
+entitlement — never by making withdrawal impossible:
 
-Driver-facing surface: GB keeps the Stripe Express flow (`withdrawFunds()` →
-`connectService.getDashboardLink`). For any non-Stripe provider (NG
-`flutterwave`) the earnings withdrawal action routes to
-`/driver/settings?section=payouts`, where `app-driver-payment-account` manages
-the verified bank destination the outbox pays to — covered by the new e2e
-case and a unit test in `status-wallet-browser.spec.ts`. Nigeria does not
-depend on Stripe Connect anywhere in this path.
+- `guard_job_transfer_method` (BEFORE INSERT on `job_payout_queue`) derives the
+  method from `jobs.metadata.driver_settlement_method` and freezes it in
+  `job_settlement_methods` (`'transfer' | 'split' | 'wallet'`). NG requires an
+  explicit method; a 'wallet' queue row must carry
+  `terms.settlement_mode='wallet'` (set server-side in
+  `LogisticsService.completeJob`, never client-supplied), and a 'transfer' row
+  carrying wallet terms is refused. Once frozen, a different method claiming
+  the same job raises `Another settlement method owns these earnings`.
+
+- **Transfer mode** (GB Stripe `acct_*`; NG Flutterwave `flw:<account-uuid>`):
+  unchanged. `claim_flutterwave_job_submission`, `finish_flutterwave_job_payout`
+  and `finish_queued_job_payout` all refuse rows whose terms carry
+  `settlement_mode='wallet'` — provider rails cannot pay a wallet-mode
+  entitlement.
+
+- **Wallet mode** (NG only): `JobPayoutService` dispatches wallet terms to
+  `finish_wallet_job_payout`, which posts `earnings_clearing → earnings_payable`
+  once via `post_wallet_event` (`event_key='driver-earnings:<job>'`, replay
+  returns the same event), marks driver-paid purchases reimbursed with the
+  `wallet:<job>` reference, and settles the queue row — **no provider transfer
+  is ever submitted** (worker rehearsal: zero provider creates, balance 850
+  across replays). It refuses any job with a `flutterwave_job_submissions` row.
+
+- **Withdrawal**: `POST /api/driver-withdrawals` →
+  `request_driver_withdrawal` re-checks the spendable `earnings_payable`
+  balance under the account lock, then posts `earnings_payable →
+  earnings_payable_held` (reserve) before returning. `DriverWithdrawalService`
+  (background tick) claims leased rows, writes the irreversible
+  `flutterwave_withdrawal_submissions` marker **before** provider contact,
+  dispatches the transfer, and finishes via `finish_driver_withdrawal`
+  (held → `earnings_paid_out`) on the verified provider transfer id.
+  Uncertain outcomes stay `processing`/`reconcile` — retried against the
+  submission marker, never re-submitted; definitive failure calls
+  `reverse_driver_withdrawal`, which posts the exact negation of the reserve
+  legs (validated by `post_wallet_event`'s reversal check) so funds return to
+  spendable. `jobs.payout_transfer_id`/`driver_earnings`/`errand_purchase_payments`
+  show `wallet:<job>` / `flw:<transfer-id>` — provider references never
+  disguise as Stripe.
+
+`flw:*` payout path, traced end-to-end: provider **Flutterwave v3**
+(`api.flutterwave.com/v3`, `FLWSECK_*` secret); adapter
+`FlutterwaveDriverPayoutProvider` in
+`server/services/payments/flutterwave-driver-payout.ts`; merchant binding is
+cryptographic — `complete_job_with_pending_payout` re-verifies
+`payout_account_id` + `payout_merchant` + `payout_tenant` against
+`driver_payment_accounts` (state `completed`) joined to `driver_payout_markets`
+(`enabled AND merchant_approved AND adapter_ready AND merchant_mode='test'`
+with sandbox driver/tenant binding) before queueing, and the frozen terms are
+re-validated at dispatch. The `flw:` destination prefix is a *derived display
+form* of `driver_payment_accounts.id`, not a provider claim — the binding is
+what proves which provider pays. Dispatch additionally requires
+`VAYDU_DRIVER_PAYOUT_TRANSFERS=true` and a `FLWSECK_TEST-` secret (account
+setup never moves money; sandbox keys are enforced at adapter construction).
+
+Driver-facing surface: GB keeps Stripe Express (`withdrawFunds()` →
+`connectService.getDashboardLink`). For NG, `earnings.page.ts` shows
+"Withdraw earnings" when `withdrawableMinor > 0` (posts
+`/api/driver-withdrawals`, then refreshes the balance) and routes to
+`/driver/settings?section=payouts` (`app-driver-payment-account`) otherwise —
+verified by the e2e suite and `status-wallet-browser.spec.ts` (19/19).
 
 ## Customer funding
 
@@ -172,12 +229,44 @@ whitelists it and still forbids any other writer.
 | Direct merchant payment (`vaydu_direct`) | **Unavailable** — no approved payment rail/adapter; a Stripe transfer cannot pay an arbitrary shop. Stays gated until a rail is selected and approved. |
 | Customer-direct payment (`customer_direct`) | **Unavailable** — agreed design retained, but charging semantics/evidence are not integrated. The server never re-charges a customer who already paid the shop. |
 | Cash advances | **Deferred/unavailable** — not part of this release. |
-| Live provider confirmation (Stripe/Kora collection, Flutterwave payout) | Requires deploy-day test keys + configured `market_payment_routes`/`driver_collection_setup_markets` rows; all harness evidence uses mocked or simulated provider transport. Live readiness claims require actual configuration evidence, not test results. |
-| NG driver withdrawable balance | Not implemented **by design** — NG entitlement settles once via the Flutterwave payout outbox to the verified bank destination (payment-account surface on `/driver/settings`). A second withdrawable wallet balance would allow double-pay; if product later wants manual withdrawal it must consume the same single entitlement record, not create a new balance. |
+| Live provider confirmation (Stripe/Kora collection, Flutterwave payout + withdrawal transfer) | Requires deploy-day test keys + configured `market_payment_routes`/`driver_collection_setup_markets`/`driver_payout_markets` rows; all harness evidence uses mocked or simulated provider transport. Live readiness claims require actual configuration evidence, not test results. |
+| NG withdrawable earnings — live transfer leg | Ledger + reserve/settle/reverse proven against the real schema and real worker; the actual provider transfer still requires deployed `FLWSECK_TEST-` credentials and an enabled `driver_payout_markets` row. Withdrawal is per-driver opt-in via the frozen `'wallet'` settlement method — existing `transfer`-method NG jobs keep paying straight to bank. |
+| Connected provider-sandbox journey (funding → credit → reservation → purchase → completion → driver credit → release) | Proven in layers (UI e2e, route/adapter runtime, real-DB chain, real worker); one connected live-sandbox run remains a **deploy-day check** after keys are configured. |
 | Develop deployment | Not yet applied — this package + migration order are the deploy artefact. Legacy ambiguous jobs remain in reconciliation until adjudicated. |
+
+## Deploy instructions (develop)
+
+1. Confirm target: `select current_database()` must return `movabi_develop`.
+   707 raises `'Develop database required'` anywhere else.
+2. Run the compatibility checks above; adjudicate or defer flagged rows.
+3. Apply pending migrations in filename order, one transaction each. This
+   package ships 705, 706, 707 as its tail; apply whatever earlier files
+   `supabase_migrations.schema_migrations` shows as pending first
+   (rehearsed order ends `…704 → 705 → 706 → 707`).
+4. Deploy the server build (withdrawal worker starts with
+   `JobPayoutService`; routes at `/api/driver-withdrawals*` mount under the
+   existing driver auth middleware).
+5. Verify post-deploy, in order:
+   `select method,count(*) from job_settlement_methods group by 1;`
+   `select proname from pg_proc where proname in ('finish_wallet_job_payout','request_driver_withdrawal','reverse_driver_withdrawal');`
+   (all three present), then one NG wallet-mode errand →
+   `driver_earnings_wallet_balance` increases once; one withdrawal →
+   `driver_withdrawals` reserves, dispatches (with transfer env enabled),
+   settles or reconciles — never both transfers and stays spendable.
+6. Provider env for the NG rails (unchanged from the 546/547 chain):
+   `VAYDU_DEPLOYMENT_ENV=develop`, `VAYDU_DRIVER_PAYOUT_SANDBOX=true`,
+   `FLUTTERWAVE_TEST_SECRET_KEY` (must match `FLWSECK_TEST-`),
+   `FLUTTERWAVE_PAYOUT_MERCHANT_REF`,
+   `FLUTTERWAVE_PAYOUT_CALLBACK_URL` (must be
+   `https://movabi-develop.apps.evolsolution.com/api/driver-payment-account/webhook`)
+   + `VAYDU_DRIVER_PAYOUT_CALLBACK_APPROVED=true`, a 32+-char
+   `FLUTTERWAVE_PAYOUT_WEBHOOK_SECRET` distinct from the provider secret,
+   `DRIVER_PAYOUT_FINGERPRINT_KEY`, and `VAYDU_DRIVER_PAYOUT_TRANSFERS=true`
+   to dispatch bank transfers (job payouts **and** withdrawals share this
+   flag — leave unset to hold all NG transfers safely queued).
 
 ## Package
 
-`deploy/vaydu-errand-purchase-payer/package/` contains the two migrations, this
-preflight, and `CHECKSUMS.sha256` covering final content. Re-run the checksums if
-any file changes.
+`deploy/vaydu-errand-purchase-payer/package/` contains the three migrations
+(705, 706, 707), this preflight, and `CHECKSUMS.sha256` covering final content.
+Re-run the checksums if any file changes.

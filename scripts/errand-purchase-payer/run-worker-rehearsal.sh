@@ -151,16 +151,53 @@ DO $d$ DECLARE j uuid; n int; BEGIN
       'currency','gbp','amountMinor',850,'destination','acct_drv_test','country','GB'),
     jsonb_build_object('completion_pin_verified_at',now()));
  END LOOP; END $d$;
+-- An NG wallet-mode entitlement: same verified flutterwave identity, but its
+-- settlement method freezes 'wallet' — the worker must credit the earnings
+-- ledger and submit no provider transfer.
+INSERT INTO public.market_availability(country_code,launch_status,supported_currency) VALUES ('NG','live','NGN')
+ ON CONFLICT DO NOTHING;
+INSERT INTO auth.users(id) VALUES ('eeeeeeee-aaaa-4aaa-8aaa-0000000000ee');
+INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code,registration_activated_at)
+ VALUES ('eeeeeeee-aaaa-4aaa-8aaa-0000000000ee','11111111-1111-4111-8111-111111111111','driver','NG','NG',now())
+ ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
+   country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code,
+   registration_activated_at=EXCLUDED.registration_activated_at;
+INSERT INTO public.driver_payment_accounts(id,driver_id,tenant_id,country_code,currency_code,provider,merchant_account_ref,state,beneficiary_id,bank_code,last4,fingerprint)
+ VALUES ('aaaaaaaa-0000-4000-8000-0000000000aa','eeeeeeee-aaaa-4aaa-8aaa-0000000000ee','11111111-1111-4111-8111-111111111111',
+   'NG','NGN','flutterwave','flw_merchant_ng','completed','123456','044','1234',repeat('a',64))
+ ON CONFLICT DO NOTHING;
+INSERT INTO public.driver_payout_markets(country_code,currency_code,provider,merchant_account_ref,enabled,merchant_approved,adapter_ready,capability_verified_at,capability_evidence_ref,merchant_mode,sandbox_driver_id,sandbox_tenant_id)
+ VALUES ('NG','NGN','flutterwave','flw_merchant_ng',true,true,true,now(),'cap-evidence-1','test',
+   'eeeeeeee-aaaa-4aaa-8aaa-0000000000ee','11111111-1111-4111-8111-111111111111')
+ ON CONFLICT DO NOTHING;
+DO $d$ DECLARE j uuid; BEGIN
+ INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
+   payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
+ VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','ffffffff-dddd-4ddd-8ddd-dddddddddddd','a','b',now(),
+   'dddddddd-dddd-4ddd-8ddd-dddddddddd02','paid','NG','NGN','in_progress',10,
+   jsonb_build_object('quote_id',gen_random_uuid(),'quote_expires_at',now()+interval '10 minutes','driver_settlement_method','wallet'),
+   jsonb_build_object('calculationVersion','test-v1'),'eeeeeeee-aaaa-4aaa-8aaa-0000000000ee','eeeeeeee-aaaa-4aaa-8aaa-0000000000ee')
+ RETURNING id INTO j;
+ INSERT INTO public.errand_details(job_id,items_list,estimated_budget) VALUES (j,'[]',0);
+ PERFORM public.complete_job_with_pending_payout(j,'eeeeeeee-aaaa-4aaa-8aaa-0000000000ee',
+   jsonb_build_object('total',10,'payout',8.5,'platformFee',1,'commission',0.5,'commissionRate',15,
+     'currency','ngn','amountMinor',850,'destination','flw:aaaaaaaa-0000-4000-8000-0000000000aa','country','NG',
+     'payout_provider','flutterwave','payout_account_id','aaaaaaaa-0000-4000-8000-0000000000aa',
+     'payout_merchant','flw_merchant_ng','payout_tenant','11111111-1111-4111-8111-111111111111','settlement_mode','wallet'),
+   jsonb_build_object('completion_pin_verified_at',now()));
+END $d$;
 SQL
 qs "$tmp/fixtures.sql"
-mapfile -t jobs < <(q -c "select job_id from public.job_payout_queue where status='pending' order by created_at")
+mapfile -t jobs < <(q -c "select job_id from public.job_payout_queue where status='pending' and coalesce(terms->>'settlement_mode','')<>'wallet' order by created_at")
 [ "${#jobs[@]}" = 3 ] || { echo "expected 3 pending payout jobs, got ${#jobs[@]}"; exit 1; }
 export JOB_OK="${jobs[0]}" JOB_UNCERTAIN="${jobs[1]}" JOB_REPLAY="${jobs[2]}"
-echo "rehearsal jobs: $JOB_OK $JOB_UNCERTAIN $JOB_REPLAY"
+export JOB_WALLET="$(q -c "select job_id from public.job_payout_queue where terms->>'settlement_mode'='wallet' and status='pending'")"
+[ -n "$JOB_WALLET" ] || { echo "expected 1 pending wallet-settlement job"; exit 1; }
+echo "rehearsal jobs: $JOB_OK $JOB_UNCERTAIN $JOB_REPLAY wallet:$JOB_WALLET"
 echo "PGRST_URL=http://127.0.0.1:$rest_port"
 
 # The harness runs on the host's node, which needs a native (Windows) path.
 harness="$(cd "$tests" && { pwd -W 2>/dev/null || pwd; })/payout-worker-rehearsal.cjs"
 PGRST_URL="http://127.0.0.1:$rest_port" SUPABASE_JWT_SECRET="$secret" \
-  JOB_OK="$JOB_OK" JOB_UNCERTAIN="$JOB_UNCERTAIN" JOB_REPLAY="$JOB_REPLAY" \
+  JOB_OK="$JOB_OK" JOB_UNCERTAIN="$JOB_UNCERTAIN" JOB_REPLAY="$JOB_REPLAY" JOB_WALLET="$JOB_WALLET" \
   node "$harness"

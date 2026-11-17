@@ -108,6 +108,11 @@ router.get('/driver-wallet',async(req,res)=>{
  const stripeSupported=assignment.provider==='stripe'&&country==='GB'&&market.currency==='GBP'&&PayoutEligibilityService.isSupportedCountry(country);
  const eligibility=stripeSupported?await PayoutEligibilityService.evaluateDriver(id):null;
  const accountStatus=country==='NG'?await new DriverCollectionAccountService(db,new DriverPaymentAccountService(db,sandboxDestinationProvider)).status(id):null;
+ // Wallet-settled NG earnings: spendable balance is the earnings_payable
+ // purpose only; reserved/held and paid-out purposes are never spendable.
+ const withdrawable=country==='NG'
+  ?(await db.rpc('driver_earnings_wallet_balance',{p_driver:id,p_tenant:profile.tenant_id,p_currency:market.currency})):null;
+ if(withdrawable?.error)throw withdrawable.error;
  const {data:activeJobs,error:activeError}=await db.from('jobs').select('id,country_code,tenant_id,metadata')
   .eq('driver_id',id).not('status','in','(completed,settled,cancelled,canceled,expired,failed,no_driver_found)').limit(20);
  if(activeError)throw activeError;
@@ -120,7 +125,7 @@ router.get('/driver-wallet',async(req,res)=>{
  const marketReviewRequired=(leaseJobs.data||[]).length<leaseIds.length||(activeJobs||[]).length>=20||(leases||[]).length>=20||
   [...(activeJobs||[]),...(leaseJobs.data||[])].some(job=>!driverMatchesJobMarket(profile,job));
  return res.json({country,currency:market.currency,marketReviewRequired,provider:stripeSupported?'stripe':assignment.provider,
-  ...(accountStatus?{payoutIntegrationAvailable:accountStatus.available,payoutAvailable:false,collectionSetupCompleted:accountStatus.state==='completed',provider:accountStatus.provider,
+  ...(accountStatus?{payoutIntegrationAvailable:accountStatus.available,payoutAvailable:false,collectionSetupCompleted:accountStatus.state==='completed',provider:accountStatus.provider,withdrawableMinor:Number(withdrawable?.data||0),
    status:accountStatus.state==='completed'?'Payment account set up':accountStatus.available?'Payout setup required':'Payout setup pending',
    message:accountStatus.available?'Complete payment account setup to receive earnings.':'Payouts are not activated for this market yet.'}:driverWalletPayoutState(stripeSupported,eligibility))});
  }catch{return res.status(503).json({error:'Payout availability could not be verified.'});}

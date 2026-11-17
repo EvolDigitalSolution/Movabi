@@ -365,6 +365,107 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
    msg LIKE '%Invalid payout identity%',msg);
 END $t$;
 
+-- =========================================================================
+-- 9. Wallet settlement mode: an NG entitlement can settle to the shared
+--    earnings ledger and withdraw to the verified bank destination — frozen
+--    per entitlement, reserved during withdrawal, never double-paid.
+-- =========================================================================
+DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid;
+  acct uuid; q public.job_payout_queue%ROWTYPE; w public.driver_withdrawals%ROWTYPE;
+  msg text; bal bigint; ev_count int; v_ok boolean; v_ok2 boolean; BEGIN
+ -- The NG sandbox market row binds to section 8's driver (m.sandbox_driver_id);
+ -- its refused-job fixture is still in_progress and idx_jobs_one_active_per_driver
+ -- allows only one active job per driver, so close it first.
+ UPDATE public.jobs SET status='cancelled' WHERE driver_id=ng_driver AND status='in_progress';
+ SELECT a.id INTO acct FROM public.driver_payment_accounts a WHERE a.driver_id=ng_driver;
+ -- An NG errand whose settlement method is 'wallet' completes onto the same
+ -- verified flutterwave identity, but its frozen terms carry settlement_mode.
+ INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
+   payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
+ VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+   'paid','NG','NGN','in_progress',1000,
+   jsonb_build_object('quote_id',gen_random_uuid(),'quote_expires_at',now()+interval '10 minutes','driver_settlement_method','wallet'),
+   jsonb_build_object('calculationVersion','test-v1'),ng_driver,ng_driver) RETURNING id INTO j;
+ INSERT INTO public.errand_details(job_id,items_list,estimated_budget) VALUES (j,'[]',0);
+ PERFORM public.complete_job_with_pending_payout(j,ng_driver,
+   jsonb_build_object('total',1000,'payout',800,'platformFee',150,'commission',50,'commissionRate',15,
+     'currency','ngn','amountMinor',80000,'destination','flw:'||acct::text,'country','NG',
+     'payout_provider','flutterwave','payout_account_id',acct::text,'payout_merchant','flw_merchant_ng',
+     'payout_tenant','11111111-1111-4111-8111-111111111111','settlement_mode','wallet'),
+   jsonb_build_object('completion_pin_verified_at',now()));
+ INSERT INTO results VALUES (9,'wallet method frozen on the entitlement record',
+   (SELECT s.method FROM public.job_settlement_methods s WHERE s.job_id=j)='wallet'
+   AND (SELECT q2.terms->>'settlement_mode' FROM public.job_payout_queue q2 WHERE q2.job_id=j)='wallet',
+   (SELECT s.method||'/'||coalesce(q2.terms->>'settlement_mode','?') FROM public.job_settlement_methods s,public.job_payout_queue q2 WHERE s.job_id=j AND q2.job_id=j));
+ -- Claim then settle through the wallet finish: ledger credit, queue paid with
+ -- the wallet reference, no provider submission row.
+ SELECT * INTO q FROM public.claim_queued_job_payout(j);
+ v_ok:=public.finish_wallet_job_payout(j,q.token);
+ INSERT INTO results VALUES (9,'wallet finish credits earnings_payable once',
+   v_ok
+   AND public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN')=80000
+   AND (SELECT q2.transfer_id FROM public.job_payout_queue q2 WHERE q2.job_id=j)='wallet:'||j::text,
+   'finish='||v_ok||' balance='||public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN'));
+ SELECT count(*) INTO ev_count FROM public.wallet_business_events WHERE event_key='driver-earnings:'||j::text;
+ v_ok:=public.finish_wallet_job_payout(j,q.token);
+ INSERT INTO results VALUES (9,'wallet finish replay does not credit twice',
+   v_ok AND ev_count=1
+   AND public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN')=80000
+   AND (SELECT d.payout_provider FROM public.driver_earnings d WHERE d.job_id=j)='wallet',
+   'events='||ev_count);
+ -- Mutual exclusion: provider paths cannot touch a wallet-mode entitlement.
+ INSERT INTO results VALUES (9,'provider finishes refuse a wallet-mode entitlement',
+   NOT public.claim_flutterwave_job_submission(j,q.token,'vaydu-'||j::text||'_PMCK')
+   AND NOT public.finish_flutterwave_job_payout(j,q.token,'vaydu-'||j::text||'_PMCK','1',0)
+   AND NOT public.finish_queued_job_payout(j,q.token,'tr_fake'),
+   'excluded');
+ -- Withdrawal reserves held funds before any provider contact.
+ SELECT * INTO w FROM public.request_driver_withdrawal(ng_driver,30000);
+ INSERT INTO results VALUES (9,'withdrawal reserves the spendable balance',
+   w.status='processing' AND w.payout_account_id=acct
+   AND public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN')=50000,
+   'spendable='||public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN'));
+ -- Over-balance withdrawal is refused before any reservation.
+ BEGIN PERFORM public.request_driver_withdrawal(ng_driver,999999); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (9,'over-balance withdrawal is refused',
+   msg LIKE '%exceeds the withdrawable%' AND public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN')=50000,msg);
+ -- Settle path: submission marker, then verified transfer moves held→paid_out.
+ SELECT * INTO w FROM public.claim_driver_withdrawal(w.id);
+ v_ok:=public.claim_withdrawal_submission(w.id,w.lease_token,w.reference);
+ v_ok2:=public.finish_driver_withdrawal(w.id,w.lease_token,'777000111',500);
+ INSERT INTO results VALUES (9,'withdrawal settles held funds on verified transfer',
+   v_ok AND v_ok2
+   AND (SELECT w2.status FROM public.driver_withdrawals w2 WHERE w2.id=w.id)='paid'
+   AND public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN')=50000,
+   'claim='||v_ok||' finish='||v_ok2||' status='||(SELECT w2.status FROM public.driver_withdrawals w2 WHERE w2.id=w.id));
+ -- A definitive provider failure reverses the reserve back to spendable.
+ SELECT * INTO w FROM public.request_driver_withdrawal(ng_driver,10000);
+ SELECT * INTO w FROM public.claim_driver_withdrawal(w.id);
+ PERFORM public.claim_withdrawal_submission(w.id,w.lease_token,w.reference);
+ v_ok:=public.reverse_driver_withdrawal(w.id,w.lease_token,'provider_transfer_failed');
+ INSERT INTO results VALUES (9,'failed transfer reverses the reservation',
+   v_ok
+   AND public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN')=50000
+   AND (SELECT w2.status FROM public.driver_withdrawals w2 WHERE w2.id=w.id)='failed',
+   'reverse='||v_ok||' spendable='||public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN'));
+ -- A transfer-method entitlement cannot carry wallet terms (mode confusion).
+ INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
+   payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
+ VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+   'paid','NG','NGN','in_progress',1000,jsonb_build_object('quote_id',gen_random_uuid(),'driver_settlement_method','transfer'),'{}'::jsonb,ng_driver,ng_driver) RETURNING id INTO j;
+ INSERT INTO public.errand_details(job_id,items_list,estimated_budget) VALUES (j,'[]',0);
+ BEGIN PERFORM public.complete_job_with_pending_payout(j,ng_driver,
+   jsonb_build_object('total',1000,'payout',800,'platformFee',150,'commission',50,'commissionRate',15,
+     'currency','ngn','amountMinor',80000,'destination','flw:'||acct::text,'country','NG',
+     'payout_provider','flutterwave','payout_account_id',acct::text,'payout_merchant','flw_merchant_ng',
+     'payout_tenant','11111111-1111-4111-8111-111111111111','settlement_mode','wallet'),
+   jsonb_build_object('completion_pin_verified_at',now())); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (9,'transfer method refuses wallet terms',
+   msg LIKE '%Transfer settlement cannot carry wallet terms%',msg);
+END $t$;
+
 SELECT n, name, CASE WHEN ok THEN 'PASS' ELSE 'FAIL' END AS result, left(detail,90) AS detail FROM results ORDER BY n, name;
 SELECT count(*) FILTER (WHERE NOT ok) AS failures, count(*) AS checks FROM results;
 ROLLBACK;

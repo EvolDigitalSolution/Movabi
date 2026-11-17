@@ -81,6 +81,7 @@ const createsFor = (job) => S.calls.filter(c => c.params.transfer_group === `job
     auth: { autoRefreshToken: false, persistSession: false }
   });
   const JOB_OK = process.env.JOB_OK, JOB_UNCERTAIN = process.env.JOB_UNCERTAIN, JOB_REPLAY = process.env.JOB_REPLAY;
+  const JOB_WALLET = process.env.JOB_WALLET, NG_DRIVER = 'eeeeeeee-aaaa-4aaa-8aaa-0000000000ee', TENANT = '11111111-1111-4111-8111-111111111111';
   const raw = await fetch(`${process.env.PGRST_URL}/job_payout_queue?select=job_id,status,amount_minor&limit=3`, {
     headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` }
   });
@@ -144,6 +145,24 @@ const createsFor = (job) => S.calls.filter(c => c.params.transfer_group === `job
     createsFor(JOB_REPLAY).length === 0 && q && q.status === 'paid'
     && p.every(r => r.status === 'reimbursed'),
     `creates=${createsFor(JOB_REPLAY).length} status=${q && q.status}`);
+
+  // E. Wallet settlement mode: the worker credits the shared earnings ledger
+  //    and submits NO provider transfer for this entitlement — the same
+  //    entitlement can never be both transferred and withdrawable.
+  await JobPayoutService.process(JOB_WALLET);
+  q = await queue(JOB_WALLET);
+  await check('wallet-mode entitlement settles to the ledger with no provider transfer',
+    createsFor(JOB_WALLET).length === 0 && S.transfers.filter(t => t.transfer_group === `job_${JOB_WALLET}`).length === 0
+    && q && q.status === 'paid' && q.transfer_id === `wallet:${JOB_WALLET}`,
+    `creates=${createsFor(JOB_WALLET).length} status=${q && q.status} ref=${q && q.transfer_id}`);
+  const bal = await db.rpc('driver_earnings_wallet_balance', { p_driver: NG_DRIVER, p_tenant: TENANT, p_currency: 'NGN' });
+  await check('the entitlement is withdrawable exactly once in the earnings ledger',
+    Number(bal.data) === 850, `balance=${bal.data}`);
+  // A replay through the worker must not credit the ledger a second time.
+  await JobPayoutService.process(JOB_WALLET);
+  const bal2 = await db.rpc('driver_earnings_wallet_balance', { p_driver: NG_DRIVER, p_tenant: TENANT, p_currency: 'NGN' });
+  await check('worker replay does not double-credit the wallet entitlement',
+    Number(bal2.data) === 850, `balance=${bal2.data}`);
 
   const failed = results.filter(r => !r.ok);
   for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'} | ${r.name}${r.detail ? ' | ' + r.detail : ''}`);

@@ -261,7 +261,8 @@ export class LogisticsService {
 
     let payoutScope:any=null;
     if(String(driverProfile?.registration_country_code||driverProfile?.country_code).toUpperCase()==='NG'){
-      if(job.metadata?.driver_settlement_method!=='transfer')throw new Error('An explicit transfer settlement method is required; collection subaccount setup never selects a transfer.');
+      const settlementMethod=String(job.metadata?.driver_settlement_method||'');
+      if(!['transfer','wallet'].includes(settlementMethod))throw new Error('An explicit settlement method is required; account setup never selects a settlement mode.');
       payoutScope=await new DriverPaymentAccountService(supabaseAdmin,sandboxPayoutProvider).ready(driverId);
       if(job.country_code!==payoutScope.country||job.tenant_id!==payoutScope.tenant||String(job.currency_code).toUpperCase()!==payoutScope.currency)throw new Error('Payout market mismatch');
     }
@@ -361,7 +362,8 @@ export class LogisticsService {
         commission: split.driverCommissionAmount, commissionRate: safeCommissionRate,
         amountMinor: payoutAmountInPence, currency: settlementCurrency,
         destination: payoutScope ? `flw:${payoutScope.account.id}` : stripeAccountId, country: job.country_code || 'GB',
-        ...(payoutScope?{payout_provider:'flutterwave',payout_account_id:payoutScope.account.id,payout_merchant:payoutScope.market.merchant_account_ref,payout_tenant:payoutScope.tenant}:{}) }
+        ...(payoutScope?{payout_provider:'flutterwave',payout_account_id:payoutScope.account.id,payout_merchant:payoutScope.market.merchant_account_ref,payout_tenant:payoutScope.tenant,
+          ...(String(job.metadata?.driver_settlement_method)==='wallet'?{settlement_mode:'wallet'}:{})}:{}) }
     });
     if (settleError) throw new Error(settleError.message || 'Failed to record completion');
     const updatedJob = Array.isArray(settledRows) ? settledRows[0] : settledRows;

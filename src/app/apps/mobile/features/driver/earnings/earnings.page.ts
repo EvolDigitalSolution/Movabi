@@ -109,10 +109,10 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
               <button
                 type="button"
                 (click)="withdrawFunds()"
-                [disabled]="withdrawLoading() || !payoutContext.wallet()?.payoutIntegrationAvailable"
+                [disabled]="withdrawLoading() || (!payoutContext.wallet()?.payoutIntegrationAvailable && !(payoutContext.wallet()?.withdrawableMinor||0))"
                 class="h-12 rounded-2xl bg-blue-600 text-white font-black text-sm shadow-xl shadow-blue-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
               >
-                {{ withdrawLoading() ? 'Opening...' : (payoutContext.wallet()?.payoutIntegrationAvailable ? 'View payment account' : 'Payment account setup') }}
+                {{ withdrawLoading() ? 'Opening...' : ((payoutContext.wallet()?.withdrawableMinor||0) > 0 ? 'Withdraw earnings' : (payoutContext.wallet()?.payoutIntegrationAvailable ? 'View payment account' : 'Payment account setup')) }}
                 <ion-icon [name]="withdrawLoading() ? 'refresh-outline' : 'arrow-forward'" [class.animate-spin]="withdrawLoading()"></ion-icon>
               </button>
 
@@ -125,6 +125,11 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
               </button>
             </div>
 
+            @if (withdrawMessage()) {
+              <p class="mt-3 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-2xl px-3 py-2">
+                {{ withdrawMessage() }}
+              </p>
+            }
             @if (withdrawError()) {
               <p class="mt-3 text-xs font-bold text-red-700 bg-red-50 border border-red-100 rounded-2xl px-3 py-2">
                 {{ withdrawError() }}
@@ -302,6 +307,7 @@ export class EarningsPage implements OnInit {
     loading = signal(false);
     withdrawLoading = signal(false);
     withdrawError = signal<string | null>(null);
+    withdrawMessage = signal<string | null>(null);
     selectedEarningId = signal<string | null>(null);
     period = signal<EarningsPeriod>('all');
 
@@ -386,9 +392,26 @@ export class EarningsPage implements OnInit {
     async withdrawFunds() {
         let context;
         try{context=await this.payoutContext.refreshWallet();}catch(error:any){this.withdrawError.set(error?.message || 'Payout settings unavailable.');return;}
-        // Non-Stripe payout markets settle through the driver payment-account
-        // surface (e.g. NG bank transfer via the payout outbox), not Stripe Express.
-        if(context.provider!=='stripe'){await this.nav.navigateForward('/driver/settings',{queryParams:{section:'payouts'}});return;}
+        // Non-Stripe payout markets: wallet-settled earnings withdraw to the
+        // verified bank destination (funds reserve first, then the provider
+        // transfer verifies before settling). With no balance, the driver
+        // payment-account surface manages the destination instead.
+        if(context.provider!=='stripe'){
+            const minor=Number(context.withdrawableMinor||0);
+            if(minor>0){
+                if(this.withdrawLoading())return;
+                this.withdrawError.set(null);this.withdrawMessage.set(null);this.withdrawLoading.set(true);
+                try{
+                    const result=await this.payoutContext.requestWithdrawal(minor);
+                    this.withdrawMessage.set('Withdrawal submitted. Funds are reserved and transfer once verified.');
+                    await this.payoutContext.refreshWallet(true);
+                }catch(error:any){
+                    this.withdrawError.set(error?.error?.error||error?.message||'Withdrawal could not be submitted. Check its status before retrying.');
+                }finally{this.withdrawLoading.set(false);}
+                return;
+            }
+            await this.nav.navigateForward('/driver/settings',{queryParams:{section:'payouts'}});return;
+        }
         if(!context.payoutIntegrationAvailable){this.withdrawError.set(context.message||'Payout settings unavailable.');return;}
         if(this.withdrawLoading())return;
         this.withdrawError.set(null);this.withdrawLoading.set(true);

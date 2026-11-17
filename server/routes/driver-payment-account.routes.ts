@@ -4,6 +4,7 @@ import {supabaseAdmin} from '../services/supabase.service';
 import {DriverPaymentAccountService,sandboxPayoutProvider} from '../services/driver-payment-account.service';
 import {timingSafeEqual} from 'node:crypto';
 import {JobPayoutService} from '../services/job-payout.service';
+import {DriverWithdrawalService} from '../services/driver-withdrawal.service';
 import rateLimit from 'express-rate-limit';
 import {DriverCollectionAccountService} from '../services/driver-collection-account.service';
 export function driverPaymentAccountRouter(db:any=supabaseAdmin,service:any=new DriverCollectionAccountService(db,new DriverPaymentAccountService(db,sandboxPayoutProvider)),options:{collectionOnly?:boolean}={}){
@@ -19,7 +20,10 @@ export function driverPaymentAccountRouter(db:any=supabaseAdmin,service:any=new 
    sandboxPayoutProvider();
    const queued=await db.from('job_payout_queue').select('job_id').eq('job_id',match[1]).eq('terms->>payout_provider','flutterwave').maybeSingle();
    if(queued.error)return void res.sendStatus(503);
-   if(queued.data)await JobPayoutService.process(match[1]);res.sendStatus(202);
+   if(queued.data){await JobPayoutService.process(match[1]);res.sendStatus(202);return;}
+   const withdrawal=await db.from('driver_withdrawals').select('id').eq('id',match[1]).maybeSingle();
+   if(withdrawal.error)return void res.sendStatus(503);
+   if(withdrawal.data)await DriverWithdrawalService.process(match[1]);res.sendStatus(202);
   }catch{res.sendStatus(503);}
  });
  router.use(rateLimit({windowMs:60000,max:20,standardHeaders:true,legacyHeaders:false,message:{error:'Please wait before retrying payment account setup.'}}));
