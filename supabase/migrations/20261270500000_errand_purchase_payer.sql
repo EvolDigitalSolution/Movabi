@@ -326,7 +326,18 @@ BEGIN
  -- Provider branch preserved verbatim from 20261254700000_flutterwave_payout_outbox:
  -- NG sandbox payouts settle through Flutterwave, never Stripe Connect.
  IF p_terms->>'payout_provider'='flutterwave' THEN
-  IF lower(p_terms->>'currency')<>'ngn' OR p_terms->>'country'<>'NG' OR (p_terms->>'amountMinor')::bigint<>round(payout*100)::bigint
+  IF p_terms->>'settlement_mode'='wallet' THEN
+   -- Earning INTO the wallet needs only the driver's activated identity and
+   -- the NG/NGN market match — a verified beneficiary is a WITHDRAWAL
+   -- requirement, never an earning one. Terms carry no payout account.
+   IF lower(p_terms->>'currency')<>'ngn' OR p_terms->>'country'<>'NG' OR (p_terms->>'amountMinor')::bigint<>round(payout*100)::bigint
+    OR p_terms->>'payout_tenant' IS DISTINCT FROM j.tenant_id::text
+    OR (p_terms->>'destination') IS NULL
+    OR NOT EXISTS(SELECT 1 FROM public.profiles p WHERE p.id=p_driver_id AND p.tenant_id=j.tenant_id
+     AND p.role='driver' AND p.registration_activated_at IS NOT NULL
+     AND coalesce(p.registration_country_code,p.country_code)='NG')
+   THEN RAISE EXCEPTION 'Invalid wallet settlement identity'; END IF;
+  ELSIF lower(p_terms->>'currency')<>'ngn' OR p_terms->>'country'<>'NG' OR (p_terms->>'amountMinor')::bigint<>round(payout*100)::bigint
    OR NOT EXISTS(SELECT 1 FROM public.driver_payment_accounts a JOIN public.driver_payout_markets m USING(country_code,currency_code)
     JOIN public.profiles p ON p.id=a.driver_id
     WHERE a.id::text=p_terms->>'payout_account_id' AND a.driver_id=p_driver_id AND a.tenant_id=j.tenant_id

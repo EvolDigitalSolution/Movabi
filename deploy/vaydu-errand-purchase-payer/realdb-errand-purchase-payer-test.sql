@@ -466,6 +466,100 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
    msg LIKE '%Transfer settlement cannot carry wallet terms%',msg);
 END $t$;
 
+-- =========================================================================
+-- 10. Separated eligibility: earning into the wallet needs only the driver's
+--     activated NG identity — no beneficiary account or payout market row.
+--     Withdrawing still requires the verified beneficiary; the two checks are
+--     independent of each other and of the collection-subaccount surface.
+-- =========================================================================
+DO $t$ DECLARE j uuid; w_driver uuid:='99999999-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid;
+  acct uuid; q public.job_payout_queue%ROWTYPE; w public.driver_withdrawals%ROWTYPE;
+  msg text; bal2 bigint; BEGIN
+ -- A driver with NO driver_payment_accounts row and NO sandbox market binding
+ -- can still earn into the wallet (earning != withdrawing).
+ INSERT INTO auth.users(id) VALUES (w_driver);
+ INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code,registration_activated_at)
+  VALUES (w_driver,'11111111-1111-4111-8111-111111111111','driver','NG','NG',now())
+  ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
+    country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code,
+    registration_activated_at=EXCLUDED.registration_activated_at;
+ INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
+   payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
+ VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+   'paid','NG','NGN','in_progress',1000,
+   jsonb_build_object('quote_id',gen_random_uuid(),'quote_expires_at',now()+interval '10 minutes','driver_settlement_method','wallet'),
+   jsonb_build_object('calculationVersion','test-v1'),w_driver,w_driver) RETURNING id INTO j;
+ INSERT INTO public.errand_details(job_id,items_list,estimated_budget) VALUES (j,'[]',0);
+ -- Wallet terms carry no payout_account_id/payout_merchant — destination is
+ -- the ledger itself.
+ PERFORM public.complete_job_with_pending_payout(j,w_driver,
+   jsonb_build_object('total',1000,'payout',800,'platformFee',150,'commission',50,'commissionRate',15,
+     'currency','ngn','amountMinor',80000,'destination','wallet:'||j::text,'country','NG',
+     'payout_provider','flutterwave','payout_tenant','11111111-1111-4111-8111-111111111111','settlement_mode','wallet'),
+   jsonb_build_object('completion_pin_verified_at',now()));
+ SELECT * INTO q FROM public.claim_queued_job_payout(j);
+ INSERT INTO results VALUES (10,'earning into the wallet needs no verified beneficiary account',
+   public.finish_wallet_job_payout(j,q.token)
+   AND public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN')=80000,
+   'balance='||public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN'));
+ -- Withdrawing is the action that requires the verified beneficiary.
+ BEGIN PERFORM public.request_driver_withdrawal(w_driver,10000); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (10,'withdrawing still requires the verified beneficiary',
+   msg LIKE '%Approved payout destination required%' OR msg LIKE '%no rows%',msg);
+ -- Give the driver a verified beneficiary afterwards — withdrawal then works
+ -- against the SAME wallet balance (no re-earning needed).
+ INSERT INTO public.driver_payment_accounts(id,driver_id,tenant_id,country_code,currency_code,provider,merchant_account_ref,state,beneficiary_id,bank_code,last4,fingerprint)
+  VALUES (gen_random_uuid(),w_driver,'11111111-1111-4111-8111-111111111111','NG','NGN','flutterwave','flw_merchant_ng','completed',
+    '123456','044','9999',repeat('c',64)) RETURNING id INTO acct;
+ UPDATE public.driver_payout_markets SET sandbox_driver_id=w_driver WHERE country_code='NG' AND currency_code='NGN';
+ SELECT * INTO w FROM public.request_driver_withdrawal(w_driver,20000);
+ INSERT INTO results VALUES (10,'withdrawal works once the beneficiary is verified',
+   w.status='processing' AND public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN')=60000,
+   'spendable='||public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN'));
+ -- Double-spend: a second request for MORE than the remaining balance fails
+ -- before reserving (the reservation is serialized on the account row).
+ BEGIN PERFORM public.request_driver_withdrawal(w_driver,80000); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (10,'a second withdrawal cannot exceed the remaining spendable balance',
+   msg LIKE '%exceeds the withdrawable%' AND public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN')=60000,msg);
+ -- Tenant isolation: the balance exists only under this tenant.
+ INSERT INTO results VALUES (10,'balances are tenant- and currency-scoped',
+   public.driver_earnings_wallet_balance(w_driver,'22222222-2222-4222-8222-222222222222','NGN')=0
+   AND public.driver_earnings_wallet_balance('dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb','11111111-1111-4111-8111-111111111111','NGN')=50000,
+   'other-tenant='||public.driver_earnings_wallet_balance(w_driver,'22222222-2222-4222-8222-222222222222','NGN'));
+ -- Lease reclaim: an abandoned claim becomes claimable again after expiry
+ -- without losing the reservation or minting a second row.
+ SELECT * INTO w FROM public.claim_driver_withdrawal(w.id);
+ INSERT INTO results VALUES (10,'a live lease blocks a second claim (exactly-once worker)',
+   (SELECT count(*) FROM public.claim_driver_withdrawal(w.id))=0
+   AND (SELECT count(*) FROM public.driver_withdrawals WHERE driver_id=w_driver)=1,'claims=0');
+ UPDATE public.driver_withdrawals SET lease_until=now()-interval '1 minute' WHERE id=w.id;
+ SELECT * INTO w FROM public.claim_driver_withdrawal(w.id);
+ INSERT INTO results VALUES (10,'an expired lease is reclaimable and still holds the reserve',
+   w.id IS NOT NULL AND w.status='processing'
+   AND public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN')=60000,'reclaimed');
+ -- Uncertain transfer: submission marker lands, no provider outcome yet —
+ -- the row stays reconcile-eligible and funds stay held (not spendable,
+ -- not paid out).
+ PERFORM public.claim_withdrawal_submission(w.id,w.lease_token,w.reference);
+ INSERT INTO results VALUES (10,'an uncertain transfer keeps funds held, never spendable, never paid',
+   EXISTS(SELECT 1 FROM public.flutterwave_withdrawal_submissions WHERE withdrawal_id=w.id)
+   AND public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN')=60000
+   AND (SELECT w2.status FROM public.driver_withdrawals w2 WHERE w2.id=w.id)='processing','held');
+ -- Beneficiary freeze: the frozen withdrawal identity cannot be repointed at
+ -- a different account (e.g. after the driver changes their bank).
+ BEGIN UPDATE public.driver_withdrawals SET payout_account_id=gen_random_uuid() WHERE id=w.id; msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (10,'a frozen withdrawal cannot be repointed at a different beneficiary',
+   msg LIKE '%Frozen withdrawal identity%',msg);
+ -- Currency isolation: only NGN withdrawals are representable.
+ BEGIN INSERT INTO public.driver_withdrawals(id,driver_id,tenant_id,currency_code,amount_minor,payout_account_id,merchant_account_ref,reference,reserve_event_id)
+   VALUES(gen_random_uuid(),w_driver,'11111111-1111-4111-8111-111111111111','GBP',1000,acct,'m','r',gen_random_uuid()); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (10,'non-NGN withdrawals are rejected by the currency check',msg LIKE '%currency_code%',msg);
+END $t$;
+
 SELECT n, name, CASE WHEN ok THEN 'PASS' ELSE 'FAIL' END AS result, left(detail,90) AS detail FROM results ORDER BY n, name;
 SELECT count(*) FILTER (WHERE NOT ok) AS failures, count(*) AS checks FROM results;
 ROLLBACK;

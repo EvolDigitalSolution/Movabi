@@ -6,7 +6,7 @@ Deploy target: develop only. Production is not authorised.
 
 | Suite | Engine / baseline | Result |
 |---|---|---|
-| `realdb-errand-purchase-payer-test.sql` | `supabase/postgres:15.1.1.78` (host image) + `develop_live_public_schema_20261112.sql` + **full repo migration chain** on a DB named `movabi_develop` | 53/53 — incl. §9 wallet settlement: method freeze, ledger credit once, provider-path exclusion, reserve→settle/reverse |
+| `realdb-errand-purchase-payer-test.sql` | `supabase/postgres:15.1.1.78` (host image) + `develop_live_public_schema_20261112.sql` + **full repo migration chain** on a DB named `movabi_develop` | 63/63 — §9 wallet settlement (freeze, once-only credit, provider exclusion, reserve→settle/reverse) + §10 separated eligibility (earn without beneficiary, withdrawal needs verified beneficiary, double-spend, lease reclaim, uncertain-held, tenant/currency isolation, beneficiary freeze) |
 | `realdb-customer-funding-chain-test.sql` | same | 11/11 |
 | Worker rehearsal (real `JobPayoutService`, simulated provider) | same | 13/13 — incl. wallet-mode dispatch: zero provider creates, ledger credited exactly once across replays |
 | Migration chain rehearsal | every `supabase/migrations/*.sql` in version order, one transaction each | 117 applied, 38 rolled back (already reflected in the live dump — reported per file) |
@@ -70,7 +70,9 @@ Apply pending migrations in filename order against
 4. `20261270300000_overdue_debt_followup.sql`
 5. `20261270400000_completion_pin_acceptance_market.sql`
 6. `20261270500000_errand_purchase_payer.sql` — payer records, funded-budget cap,
-   method lock, reimbursement through the payout outbox (Stripe GB + Flutterwave NG).
+   method lock, reimbursement through the payout outbox (Stripe GB + Flutterwave NG);
+   the NG identity check splits: wallet terms need activated-driver identity only,
+   transfer terms still need the full verified-beneficiary binding.
 7. `20261270600000_customer_wallet_booking_bridge.sql` — bridges credited
    `customer_credit` top-up attempts to `wallets.available_balance`.
 8. `20261270700000_driver_wallet_settlement.sql` — `'wallet'` becomes a third
@@ -199,6 +201,36 @@ Driver-facing surface: GB keeps Stripe Express (`withdrawFunds()` →
 `/api/driver-withdrawals`, then refreshes the balance) and routes to
 `/driver/settings?section=payouts` (`app-driver-payment-account`) otherwise —
 verified by the e2e suite and `status-wallet-browser.spec.ts` (19/19).
+
+## Separated eligibility — no single "subaccount ready" gate
+
+Each action checks only what it needs; the checks are independent:
+
+| Action | Required checks | Explicitly NOT required |
+|---|---|---|
+| **Earn** into the wallet (`complete_job_with_pending_payout`, wallet terms) | Activated NG driver profile, tenant match, NGN terms, `wallet` method frozen | Verified bank account, `driver_payout_markets` capability, collection subaccount |
+| **Withdraw** (`request_driver_withdrawal` + worker) | Spendable `earnings_payable` balance (held/paid-out never count), `state='completed'` `driver_payment_accounts` row matching driver/tenant/country/currency, enabled + approved + adapter-ready `driver_payout_markets` (test mode, sandbox driver/tenant binding) | Collection subaccount, any job-level flag |
+| **Transfer settlement** (`payout_provider` terms, no `settlement_mode`) | Full verified-beneficiary identity at completion (existing NG branch) | Wallet balance |
+| **Collection subaccount / split** (`driver_collection_accounts`) | Its own setup state — untouched by this release | Payment-account or wallet state |
+
+`LogisticsService.completeJob` only calls `DriverPaymentAccountService.ready()`
+when `driver_settlement_method='transfer'`; wallet-mode jobs skip it entirely
+and carry no `payout_account_id`/`payout_merchant` — the destination is the
+ledger (`wallet:<job>`). `driver_earnings_wallet_balance` sums only
+`earnings_payable` movements, so a balance is never reported withdrawable while
+funds are held or already paid out.
+
+## Provider capability (beneficiary-payout model)
+
+The withdrawal rail is **Flutterwave only** (`request_driver_withdrawal`
+requires `provider='flutterwave'` + `merchant_mode='test'`). The v3 adapter
+(`server/services/payments/flutterwave-driver-payout.ts`) implements exactly
+this model: `POST /beneficiaries` → `GET /beneficiaries/{id}` re-verified by
+bank-code + HMAC account fingerprint → `POST /transfers` with
+`beneficiary:<id>` + merchant `reference`; lookups re-validate
+reference/currency/amount/bank/fingerprint before any state is trusted, and
+submission responses are never treated as settlement. `paystack` rows cannot
+withdraw (provider check fails) — no unreviewed rail is silently enabled.
 
 ## Customer funding
 

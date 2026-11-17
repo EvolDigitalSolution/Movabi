@@ -259,12 +259,19 @@ export class LogisticsService {
       .eq('id', driverId)
       .maybeSingle();
 
-    let payoutScope:any=null;
+    let payoutScope:any=null;let walletSettlement=false;
     if(String(driverProfile?.registration_country_code||driverProfile?.country_code).toUpperCase()==='NG'){
       const settlementMethod=String(job.metadata?.driver_settlement_method||'');
       if(!['transfer','wallet'].includes(settlementMethod))throw new Error('An explicit settlement method is required; account setup never selects a settlement mode.');
-      payoutScope=await new DriverPaymentAccountService(supabaseAdmin,sandboxPayoutProvider).ready(driverId);
-      if(job.country_code!==payoutScope.country||job.tenant_id!==payoutScope.tenant||String(job.currency_code).toUpperCase()!==payoutScope.currency)throw new Error('Payout market mismatch');
+      // Earning into the wallet needs no verified beneficiary — withdrawal
+      // does. Only the transfer mode resolves the destination up front.
+      walletSettlement=settlementMethod==='wallet';
+      if(!walletSettlement){
+        payoutScope=await new DriverPaymentAccountService(supabaseAdmin,sandboxPayoutProvider).ready(driverId);
+        if(job.country_code!==payoutScope.country||job.tenant_id!==payoutScope.tenant||String(job.currency_code).toUpperCase()!==payoutScope.currency)throw new Error('Payout market mismatch');
+      }else if(job.country_code!=='NG'||String(job.currency_code).toUpperCase()!=='NGN'){
+        throw new Error('Wallet settlement is only defined for NG/NGN earnings');
+      }
     }
     const stripeAccountId =
       driverProfile?.stripe_account_id ||
@@ -272,7 +279,7 @@ export class LogisticsService {
       driverProfile?.stripe_connected_account_id ||
       driverProfile?.stripe_connect_id;
 
-    if (!stripeAccountId && !payoutScope) {
+    if (!stripeAccountId && !payoutScope && !walletSettlement) {
       throw new Error('Driver Stripe Connect account is missing');
     }
 
@@ -361,9 +368,9 @@ export class LogisticsService {
       p_terms: { total: totalPrice, payout: driverPayout, platformFee,
         commission: split.driverCommissionAmount, commissionRate: safeCommissionRate,
         amountMinor: payoutAmountInPence, currency: settlementCurrency,
-        destination: payoutScope ? `flw:${payoutScope.account.id}` : stripeAccountId, country: job.country_code || 'GB',
-        ...(payoutScope?{payout_provider:'flutterwave',payout_account_id:payoutScope.account.id,payout_merchant:payoutScope.market.merchant_account_ref,payout_tenant:payoutScope.tenant,
-          ...(String(job.metadata?.driver_settlement_method)==='wallet'?{settlement_mode:'wallet'}:{})}:{}) }
+        destination: payoutScope ? `flw:${payoutScope.account.id}` : (walletSettlement ? `wallet:${job.id}` : stripeAccountId), country: job.country_code || 'GB',
+        ...(payoutScope?{payout_provider:'flutterwave',payout_account_id:payoutScope.account.id,payout_merchant:payoutScope.market.merchant_account_ref,payout_tenant:payoutScope.tenant}:{})
+        ,...(walletSettlement?{payout_provider:'flutterwave',payout_tenant:job.tenant_id,settlement_mode:'wallet'}:{}) }
     });
     if (settleError) throw new Error(settleError.message || 'Failed to record completion');
     const updatedJob = Array.isArray(settledRows) ? settledRows[0] : settledRows;
