@@ -19,6 +19,12 @@ disabled.
    `realdb-errand-purchase-payer-test.sql` +
    `realdb-customer-funding-chain-test.sql` on the restored copy.
    A rehearsal that cannot restore cleanly means stop — fix backup first.
+   The disposable equivalent is shipped as `rehearse-restore.sh` — it
+   restores a develop schema dump into a throwaway container, runs the
+   shipped `preflight-schema-check.sql`, strict-applies the shipped package
+   files in order, re-runs the preflight, then runs both shipped test
+   scripts. Last run: restore → 16 package objects missing → all 7 applied
+   → preflight clean → 73/73 + 17/17 PASSED.
 3. Keep the dump until post-deploy verification is signed off.
 
 ## 1. Inspect the develop schema — apply only missing prerequisites
@@ -98,11 +104,27 @@ job-payout outbox is gated the same way (`payoutTransfersEnabled('flutterwave')`
 Historical bindings are untouched: provider is frozen on the withdrawal row
 at request time and the settle check is provider-shaped.
 
-Plus the unchanged sandbox bundle: `NODE_ENV=test|development`,
-`VAYDU_DEPLOYMENT_ENV=develop`, `VAYDU_DRIVER_PAYOUT_SANDBOX=true`,
-`SUPABASE_URL` = the verified develop target, per-provider
-`*_TEST_SECRET_KEY` (`FLWSECK_TEST-…` / `sk_test_…`), merchant refs,
-`DRIVER_PAYOUT_FINGERPRINT_KEY`, approved callback for flutterwave.
+Plus the unchanged sandbox bundle — these are the **exact variable names the
+code reads** (verified against source, not paraphrased):
+
+| Variable | Read by | Required shape |
+|---|---|---|
+| `NODE_ENV` | all providers | `test` or `development` |
+| `VAYDU_DEPLOYMENT_ENV` | all providers | `develop` |
+| `VAYDU_DRIVER_PAYOUT_SANDBOX` | all providers | `true` |
+| `SUPABASE_URL` | all providers | verified develop target only |
+| `KORA_TEST_SECRET_KEY` | `sandboxKoraProvider` | `sk_test_…` — **not** `KORA_PAYOUT_SECRET_KEY`, which the code never reads |
+| `KORA_PAYOUT_MERCHANT_REF` | `sandboxKoraProvider` | approved merchant binding |
+| `FLUTTERWAVE_TEST_SECRET_KEY` | `sandboxPayoutProvider` | `FLWSECK_TEST-…` |
+| `FLUTTERWAVE_PAYOUT_MERCHANT_REF` | `sandboxPayoutProvider` | approved merchant binding |
+| `FLUTTERWAVE_PAYOUT_CALLBACK_URL` + `VAYDU_DRIVER_PAYOUT_CALLBACK_APPROVED` + `FLUTTERWAVE_PAYOUT_WEBHOOK_SECRET` | `sandboxPayoutProvider` | approved develop callback, 32+ char webhook secret distinct from the provider key |
+| `PAYSTACK_TEST_SECRET_KEY` + `PAYSTACK_PAYOUT_MERCHANT_REF` | `sandboxPaystackProvider` | setup-only; no payout adapter exists |
+| `STRIPE_SECRET_KEY` | collection route factory (`wallet.routes.ts`) | `sk_test_…` for the sandbox journey |
+| `DRIVER_PAYOUT_FINGERPRINT_KEY` | beneficiary fingerprint | 32+ chars |
+
+Keep ALL payout flags OFF until §5's scoped sandbox configuration check
+passes: the master flag and every `…_<PROVIDER>` flag stay unset until the
+route rows, merchant bindings and secrets above are verified present.
 
 ## 5. Post-deploy verification — statuses kept separate
 
@@ -112,9 +134,28 @@ Plus the unchanged sandbox bundle: `NODE_ENV=test|development`,
 | Provider-sandbox verification | Pending | A real `sk_test_`/`FLWSECK_TEST-` journey on deployed develop: funding → wallet credit → reservation → completion → driver credit → withdrawal → unused-fund release. Credentials live on the host only (`deploy/vaydu-errand-purchase-payer/` scripts accept env-supplied keys; never commit them) |
 | Production approval | Out of scope | Separate programme approval; this package never enables it |
 
+## 5a. Provider test plan — per-market, never borrowed
+
+- **GB funding**: customer wallet top-up through the approved **Stripe** test
+  route — `market_payment_routes` row GB/GBP/card/stripe with
+  `provider_account_id` = the real platform `acct_*` from Stripe config and
+  `STRIPE_SECRET_KEY=sk_test_…` on the host.
+- **NG funding**: through the **approved NG collection route** only — whatever
+  provider `market_payment_routes` holds for NG/NGN with `merchant_approved`
+  + `adapter_ready`. If no approved NG route exists, NG collection stays
+  **unavailable by design** (freeze fails closed). Do **not** seed a Stripe
+  account into NG: `acct_ng_journey_1` was a simulation fixture, and an NG
+  route on an unapproved provider would misrepresent the market.
+- **NG withdrawal**: driver `driver_payment_accounts` (kora provider,
+  completed 10-digit beneficiary) + `driver_payout_markets` row bound to
+  `KORA_PAYOUT_MERCHANT_REF` + `sk_test_…` host secret.
+
 Run the sandbox journey with the master flag + `…_KORA` set (Kora leg) and
 confirm a flutterwave-market withdrawal stays `blocked` — that is the live
-proof the flag cannot leak providers.
+proof the flag cannot leak providers. Reconcile every leg: provider
+reference == the attempt/withdrawal's frozen reference, amount == quoted
+minor units, currency == market currency, destination == frozen beneficiary,
+and exactly one ledger event per transition.
 
 ## 6. Rollback limits
 

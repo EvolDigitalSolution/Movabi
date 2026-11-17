@@ -58,5 +58,42 @@ WITH req(migration,obj) AS (VALUES
      WHERE n.nspname||'.'||p.proname=substring(obj from 10))
   END AS present
  FROM req)
+SELECT * INTO TEMP TABLE _preflight_chk FROM chk;
 SELECT migration,obj,CASE WHEN present THEN 'present' ELSE 'missing' END AS state
-FROM chk ORDER BY migration,obj;
+FROM _preflight_chk ORDER BY migration,obj;
+
+-- Recorded application state, not just object presence: a migration is
+-- APPLY-eligible only when its version is unrecorded AND its objects are
+-- missing. A recorded version with missing objects is schema DRIFT —
+-- investigate before applying anything (never silently replay).
+CREATE TEMP TABLE _preflight_recorded(version text);
+DO $$ BEGIN
+ IF to_regclass('supabase_migrations.schema_migrations') IS NOT NULL THEN
+  EXECUTE 'INSERT INTO _preflight_recorded SELECT version FROM supabase_migrations.schema_migrations';
+ END IF;
+END $$;
+SELECT CASE WHEN to_regclass('supabase_migrations.schema_migrations') IS NULL
+ THEN 'no supabase_migrations.schema_migrations table — inventory by object state only'
+ ELSE 'schema_migrations present' END AS migration_registry;
+
+SELECT v.filename,
+ CASE WHEN to_regclass('supabase_migrations.schema_migrations') IS NULL THEN 'unknown'
+      WHEN EXISTS(SELECT 1 FROM _preflight_recorded r WHERE r.version=v.version)
+      THEN 'recorded-applied' ELSE 'not-recorded' END AS recorded,
+ coalesce(m.cnt,0) AS objects_missing
+FROM (VALUES
+ ('20261270500000','20261270500000_errand_purchase_payer.sql','202612705'),
+ ('20261270600000','20261270600000_customer_wallet_booking_bridge.sql','202612706'),
+ ('20261270700000','20261270700000_driver_wallet_settlement.sql','202612707'),
+ ('20261270800000','20261270800000_driver_settlement_policy.sql','202612708'),
+ ('20261270900000','20261270900000_kora_payout_adapter.sql','202612709'),
+ ('20261271000000','20261271000000_customer_collection_account_binding.sql','202612710'),
+ ('20261271100000','20261271100000_kora_settle_reference.sql','202612711')
+) v(version,filename,mig)
+LEFT JOIN (SELECT migration,count(*) AS cnt FROM _preflight_chk WHERE NOT present GROUP BY migration) m
+ ON m.migration=v.mig
+ORDER BY v.version;
+
+-- Dependency order is defined by the package manifest, not discovered from
+-- objects: apply files strictly in filename order; each file's in-file guard
+-- also raises when its prerequisites are absent.
