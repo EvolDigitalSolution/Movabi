@@ -261,8 +261,11 @@ export class LogisticsService {
 
     let payoutScope:any=null;let walletSettlement=false;
     if(String(driverProfile?.registration_country_code||driverProfile?.country_code).toUpperCase()==='NG'){
-      const settlementMethod=String(job.metadata?.driver_settlement_method||'');
-      if(!['transfer','wallet'].includes(settlementMethod))throw new Error('An explicit settlement method is required; account setup never selects a settlement mode.');
+      // The settlement method is assigned by trusted server policy, never by
+      // client-supplied jobs.metadata. resolve_driver_settlement_method reads
+      // the service-role-owned driver_payout_preferences row.
+      const {data:settlementMethod,error:settleErr}=await supabaseAdmin.rpc('resolve_driver_settlement_method',{p_driver:driverId});
+      if(settleErr||!['transfer','wallet'].includes(String(settlementMethod||'')))throw new Error('An explicit settlement method is required; account setup never selects a settlement mode.');
       // Earning into the wallet needs no verified beneficiary — withdrawal
       // does. Only the transfer mode resolves the destination up front.
       walletSettlement=settlementMethod==='wallet';

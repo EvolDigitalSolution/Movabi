@@ -378,13 +378,33 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
  -- allows only one active job per driver, so close it first.
  UPDATE public.jobs SET status='cancelled' WHERE driver_id=ng_driver AND status='in_progress';
  SELECT a.id INTO acct FROM public.driver_payment_accounts a WHERE a.driver_id=ng_driver;
- -- An NG errand whose settlement method is 'wallet' completes onto the same
- -- verified flutterwave identity, but its frozen terms carry settlement_mode.
+ -- Trusted policy assigns the method: metadata claiming 'wallet' without a
+ -- preference row still freezes 'transfer'.
  INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
    payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
  VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
    'paid','NG','NGN','in_progress',1000,
-   jsonb_build_object('quote_id',gen_random_uuid(),'quote_expires_at',now()+interval '10 minutes','driver_settlement_method','wallet'),
+   jsonb_build_object('quote_id',gen_random_uuid(),'driver_settlement_method','wallet'),
+   '{}'::jsonb,ng_driver,ng_driver) RETURNING id INTO j;
+ INSERT INTO public.errand_details(job_id,items_list,estimated_budget) VALUES (j,'[]',0);
+ PERFORM public.complete_job_with_pending_payout(j,ng_driver,
+   jsonb_build_object('total',1000,'payout',800,'platformFee',150,'commission',50,'commissionRate',15,
+     'currency','ngn','amountMinor',80000,'destination','flw:'||acct::text,'country','NG',
+     'payout_provider','flutterwave','payout_account_id',acct::text,'payout_merchant','flw_merchant_ng',
+     'payout_tenant','11111111-1111-4111-8111-111111111111'),
+   jsonb_build_object('completion_pin_verified_at',now()));
+ INSERT INTO results VALUES (9,'client metadata cannot select the wallet settlement mode',
+   (SELECT s.method FROM public.job_settlement_methods s WHERE s.job_id=j)='transfer',
+   (SELECT s.method FROM public.job_settlement_methods s WHERE s.job_id=j));
+ UPDATE public.jobs SET status='completed' WHERE id=j;
+ -- Server policy flips the driver to wallet; metadata claiming 'transfer' is
+ -- equally inert — the preference row is the only selector.
+ PERFORM public.set_driver_settlement_preference(ng_driver,'wallet');
+ INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
+   payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
+ VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+   'paid','NG','NGN','in_progress',1000,
+   jsonb_build_object('quote_id',gen_random_uuid(),'quote_expires_at',now()+interval '10 minutes','driver_settlement_method','transfer'),
    jsonb_build_object('calculationVersion','test-v1'),ng_driver,ng_driver) RETURNING id INTO j;
  INSERT INTO public.errand_details(job_id,items_list,estimated_budget) VALUES (j,'[]',0);
  PERFORM public.complete_job_with_pending_payout(j,ng_driver,
@@ -450,6 +470,9 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
    AND (SELECT w2.status FROM public.driver_withdrawals w2 WHERE w2.id=w.id)='failed',
    'reverse='||v_ok||' spendable='||public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN'));
  -- A transfer-method entitlement cannot carry wallet terms (mode confusion).
+ -- Policy is flipped back to transfer first — the guard derives the method
+ -- from the preference row, so wallet terms now mismatch the frozen method.
+ PERFORM public.set_driver_settlement_preference(ng_driver,'transfer');
  INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
    payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
  VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
@@ -490,6 +513,8 @@ DO $t$ DECLARE j uuid; w_driver uuid:='99999999-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uu
    jsonb_build_object('quote_id',gen_random_uuid(),'quote_expires_at',now()+interval '10 minutes','driver_settlement_method','wallet'),
    jsonb_build_object('calculationVersion','test-v1'),w_driver,w_driver) RETURNING id INTO j;
  INSERT INTO public.errand_details(job_id,items_list,estimated_budget) VALUES (j,'[]',0);
+ -- Server policy (not the metadata key) selects wallet for this driver.
+ PERFORM public.set_driver_settlement_preference(w_driver,'wallet');
  -- Wallet terms carry no payout_account_id/payout_merchant — destination is
  -- the ledger itself.
  PERFORM public.complete_job_with_pending_payout(j,w_driver,
@@ -544,7 +569,7 @@ DO $t$ DECLARE j uuid; w_driver uuid:='99999999-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uu
  -- not paid out).
  PERFORM public.claim_withdrawal_submission(w.id,w.lease_token,w.reference);
  INSERT INTO results VALUES (10,'an uncertain transfer keeps funds held, never spendable, never paid',
-   EXISTS(SELECT 1 FROM public.flutterwave_withdrawal_submissions WHERE withdrawal_id=w.id)
+   EXISTS(SELECT 1 FROM public.driver_withdrawal_submissions WHERE withdrawal_id=w.id)
    AND public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN')=60000
    AND (SELECT w2.status FROM public.driver_withdrawals w2 WHERE w2.id=w.id)='processing','held');
  -- Beneficiary freeze: the frozen withdrawal identity cannot be repointed at
@@ -554,10 +579,20 @@ DO $t$ DECLARE j uuid; w_driver uuid:='99999999-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uu
  INSERT INTO results VALUES (10,'a frozen withdrawal cannot be repointed at a different beneficiary',
    msg LIKE '%Frozen withdrawal identity%',msg);
  -- Currency isolation: only NGN withdrawals are representable.
- BEGIN INSERT INTO public.driver_withdrawals(id,driver_id,tenant_id,currency_code,amount_minor,payout_account_id,merchant_account_ref,reference,reserve_event_id)
-   VALUES(gen_random_uuid(),w_driver,'11111111-1111-4111-8111-111111111111','GBP',1000,acct,'m','r',gen_random_uuid()); msg:='NO ERROR';
+ BEGIN INSERT INTO public.driver_withdrawals(id,driver_id,tenant_id,currency_code,amount_minor,provider,payout_account_id,merchant_account_ref,reference,reserve_event_id)
+   VALUES(gen_random_uuid(),w_driver,'11111111-1111-4111-8111-111111111111','GBP',1000,'flutterwave',acct,'m','r',gen_random_uuid()); msg:='NO ERROR';
  EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
  INSERT INTO results VALUES (10,'non-NGN withdrawals are rejected by the currency check',msg LIKE '%currency_code%',msg);
+ -- Provider neutrality without invented capability: a paystack beneficiary is
+ -- a valid account row, but no adapter can pay it — withdrawal is refused at
+ -- request time, not after funds are held.
+ INSERT INTO public.driver_payment_accounts(id,driver_id,tenant_id,country_code,currency_code,provider,merchant_account_ref,state,beneficiary_id,bank_code,last4,fingerprint,updated_at)
+  VALUES (gen_random_uuid(),w_driver,'11111111-1111-4111-8111-111111111111','NG','NGN','paystack','pstk_merchant','completed',
+    'RCP_test','044','8888',repeat('d',64),now()+interval '1 minute');
+ BEGIN PERFORM public.request_driver_withdrawal(w_driver,10000); msg:='NO ERROR';
+ EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
+ INSERT INTO results VALUES (10,'a provider without a payout adapter cannot be withdrawn to',
+   msg LIKE '%Approved payout destination required%',msg);
 END $t$;
 
 SELECT n, name, CASE WHEN ok THEN 'PASS' ELSE 'FAIL' END AS result, left(detail,90) AS detail FROM results ORDER BY n, name;

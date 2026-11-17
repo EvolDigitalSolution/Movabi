@@ -71,7 +71,11 @@ export function recordedPayoutLabel(row: any): string {
   const status = String(row?.status || '').toLowerCase();
   if (row?.settlement_purpose === 'cash_ride') return 'Cash collected · no payout';
   if (status === 'failed') return 'Payout failed';
+  // Wallet-settled earnings were credited to the Vaydu balance, not paid to a
+  // bank — the label must never imply money already moved to the bank.
+  if (row?.payout_provider === 'wallet' || String(row?.payout_reference || '').startsWith('wallet:')) return 'Credited to Vaydu wallet';
   if (row?.stripe_transfer_id) return 'Transferred to Stripe account';
+  if (row?.flutterwave_transfer_id) return 'Transferred to bank account';
   if (status === 'paid') return 'Paid (recorded)';
   if (['pending','processing','queued','claimed'].includes(status)) return 'Pending payout';
   if (['unknown','requires_review','review'].includes(status)) return 'Payout needs reconciliation';

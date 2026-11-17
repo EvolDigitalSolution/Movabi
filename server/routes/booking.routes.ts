@@ -501,9 +501,13 @@ async function requirePayoutEligible(driverId: string, res: Response, job:any): 
         await assertInspectionApproved(supabaseAdmin,driverId);
         if (await cashRideAcquisitionApproved(supabaseAdmin,driverId,job)) return true;
         if(String(job.country_code).toUpperCase()==='NG'){
-            if(job.metadata?.driver_settlement_method!=='transfer')throw new Error('Booking settlement method/timing must be approved before acquiring paid work.');
-            const payout=await new DriverPaymentAccountService(supabaseAdmin,sandboxDestinationProvider).ready(driverId);
-            if(String(job.currency_code).toUpperCase()!==payout.currency)throw new Error('Payout currency mismatch');
+            // Settlement method comes from server policy, never job metadata.
+            const {data:method}=await supabaseAdmin.rpc('resolve_driver_settlement_method',{p_driver:driverId});
+            if(!['transfer','wallet'].includes(String(method||'')))throw new Error('Booking settlement method/timing must be approved before acquiring paid work.');
+            if(method==='transfer'){
+                const payout=await new DriverPaymentAccountService(supabaseAdmin,sandboxDestinationProvider).ready(driverId);
+                if(String(job.currency_code).toUpperCase()!==payout.currency)throw new Error('Payout currency mismatch');
+            }else if(String(job.currency_code).toUpperCase()!=='NGN')throw new Error('Wallet settlement is only defined for NGN earnings');
         }else await PayoutEligibilityService.assertEligible(driverId);
         return true;
     } catch (error: any) {
@@ -896,6 +900,9 @@ router.post('/create', bookingCreateLimiter, async (req: Request, res: Response)
         delete safeMetadata.completion_pin_effective;
         delete safeMetadata.completion_pin_driver_id;
         delete safeMetadata.completion_pin_source;
+        // Settlement method is assigned by server policy
+        // (resolve_driver_settlement_method); a client key can never choose it.
+        delete safeMetadata.driver_settlement_method;
         insertPayload.metadata = { ...safeMetadata, ...bookingPinMetadata(marketPin) };
         // Reward-credit claim rides INSIDE the job insert via metadata —
         // the reserve_job_reward_credit trigger calls apply_reward_credit in

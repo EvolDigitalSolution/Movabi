@@ -41,10 +41,12 @@ const workerReady = new Promise((resolve) => proxy.listen(0, '127.0.0.1', () => 
 const DIR = __dirname;
 const stubStripe = path.join(DIR, 'payout-worker-stripe-stub.cjs');
 const stubElig = path.join(DIR, 'payout-worker-eligibility-stub.cjs');
+const stubFlw = path.join(DIR, 'payout-worker-flw-stub.cjs');
 const origResolve = Module._resolveFilename;
 Module._resolveFilename = function (request, ...args) {
   if (/(^|[\\/])stripe\.service$/.test(request) || request === './stripe.service') return stubStripe;
   if (/(^|[\\/])payout-eligibility\.service$/.test(request) || request === './payout-eligibility.service') return stubElig;
+  if (/(^|[\\/])flutterwave-driver-payout$/.test(request) || request.endsWith('payments/flutterwave-driver-payout')) return stubFlw;
   return origResolve.call(this, request, ...args);
 };
 require('ts-node').register({
@@ -163,6 +165,50 @@ const createsFor = (job) => S.calls.filter(c => c.params.transfer_group === `job
   const bal2 = await db.rpc('driver_earnings_wallet_balance', { p_driver: NG_DRIVER, p_tenant: TENANT, p_currency: 'NGN' });
   await check('worker replay does not double-credit the wallet entitlement',
     Number(bal2.data) === 850, `balance=${bal2.data}`);
+
+  // F. Connected withdrawal journey: the real DriverWithdrawalService +
+  //    real RPC chain (reserve → submission marker → provider submit →
+  //    reconcile → settle) with the provider boundary simulated.
+  process.env.NODE_ENV = 'test';
+  process.env.VAYDU_DEPLOYMENT_ENV = 'develop';
+  process.env.VAYDU_DRIVER_PAYOUT_SANDBOX = 'true';
+  process.env.VAYDU_DRIVER_PAYOUT_TRANSFERS = 'true';
+  process.env.FLUTTERWAVE_PAYOUT_MERCHANT_REF = 'flw_merchant_ng';
+  process.env.FLUTTERWAVE_TEST_SECRET_KEY = 'FLWSECK_TEST-rehearsal';
+  process.env.FLUTTERWAVE_PAYOUT_WEBHOOK_SECRET = 'whsec-rehearsal-0123456789abcdef0123456789';
+  process.env.FLUTTERWAVE_PAYOUT_CALLBACK_URL = 'https://movabi-develop.apps.evolsolution.com/api/driver-payment-account/webhook';
+  process.env.VAYDU_DRIVER_PAYOUT_CALLBACK_APPROVED = 'true';
+  process.env.DRIVER_PAYOUT_FINGERPRINT_KEY = 'rehearsal-fingerprint-key';
+  // sandboxPayoutProvider() pins SUPABASE_URL to the develop kong origin; the
+  // cached supabaseAdmin client keeps the proxy address set at import time.
+  process.env.SUPABASE_URL = 'http://movabi-develop-kong:8000/';
+  const { DriverWithdrawalService } = require(path.join(root, 'server/services/driver-withdrawal.service.ts'));
+  const req = await db.rpc('request_driver_withdrawal', { p_driver: NG_DRIVER, p_amount_minor: 500 });
+  const reqRow = Array.isArray(req.data) ? req.data[0] : req.data;
+  await check('a withdrawal reserves spendable wallet funds before provider contact',
+    !req.error && reqRow?.status === 'processing' && reqRow?.provider === 'flutterwave',
+    req.error ? JSON.stringify(req.error) : `status=${reqRow && reqRow.status}`);
+  const bal3 = await db.rpc('driver_earnings_wallet_balance', { p_driver: NG_DRIVER, p_tenant: TENANT, p_currency: 'NGN' });
+  await check('the reserved amount leaves the spendable balance immediately',
+    Number(bal3.data) === 350, `balance=${bal3.data}`);
+  await DriverWithdrawalService.process(reqRow.id);
+  let w = (await db.from('driver_withdrawals').select('*').eq('id', reqRow.id).single()).data;
+  await check('submission marks the outcome reconcile-required, never paid',
+    w && w.status === 'reconcile' && w.last_error === 'transfer_accepted_verification_required',
+    w && `${w.status}/${w.last_error}`);
+  // Reclaim after the retry window — the worker finds the provider transfer
+  // and settles held→paid_out without submitting a second transfer.
+  await db.from('driver_withdrawals').update({ retry_at: new Date(0).toISOString() }).eq('id', reqRow.id);
+  const F = globalThis.__flwSim;
+  const submitsBefore = Object.keys(F.transfers).length;
+  await DriverWithdrawalService.process(reqRow.id);
+  w = (await db.from('driver_withdrawals').select('*').eq('id', reqRow.id).single()).data;
+  await check('reconciliation settles the verified provider transfer once',
+    w && w.status === 'paid' && w.provider_transfer_id && Object.keys(F.transfers).length === submitsBefore,
+    w && `${w.status}/transfers=${Object.keys(F.transfers).length}`);
+  const bal4 = await db.rpc('driver_earnings_wallet_balance', { p_driver: NG_DRIVER, p_tenant: TENANT, p_currency: 'NGN' });
+  await check('settled withdrawal leaves the remaining earnings spendable',
+    Number(bal4.data) === 350, `balance=${bal4.data}`);
 
   const failed = results.filter(r => !r.ok);
   for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'} | ${r.name}${r.detail ? ' | ' + r.detail : ''}`);

@@ -271,6 +271,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                   @if(isSelected(earning)) {
                     <dl class="earning-details"><dt>Net payout</dt><dd>{{ formatRecordedEarning(earning) }}</dd><dt>Commission</dt><dd>{{ formatRecordedFee(earning) }} @if(earning.commission_rate_used!==null && earning.commission_rate_used!==undefined){({{earning.commission_rate_used}}%)}</dd><dt>Gross earnings</dt><dd>{{ formatRecordedGross(earning) }}</dd>
                     @if($any(earning).stripe_transfer_id){<dt>Stripe transfer</dt><dd>{{ $any(earning).stripe_transfer_id }}</dd>}
+                    @if($any(earning).payout_provider==='wallet'){<dt>Settlement</dt><dd>Credited to your Vaydu wallet — not yet paid to a bank. Use Withdraw once a verified bank destination is set up.</dd>}
                     @if(earning.job_id){<dt>Booking reference</dt><dd>{{earning.job_id}}</dd>}
                     @if(earning.job_id && ledgerFor(earning.job_id); as ledger) {
                       @for (p of ledger.purchases; track p.id) {

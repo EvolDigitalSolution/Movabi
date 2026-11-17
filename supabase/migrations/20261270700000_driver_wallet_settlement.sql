@@ -176,6 +176,7 @@ CREATE TABLE public.driver_withdrawals(
  tenant_id uuid NOT NULL,
  currency_code text NOT NULL CHECK(currency_code='NGN'),
  amount_minor bigint NOT NULL CHECK(amount_minor>0),
+ provider text NOT NULL,
  payout_account_id uuid NOT NULL REFERENCES public.driver_payment_accounts(id),
  merchant_account_ref text NOT NULL,
  reference text NOT NULL UNIQUE,
@@ -188,25 +189,37 @@ CREATE TABLE public.driver_withdrawals(
  lease_until timestamptz,lease_token uuid,
  created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE TABLE public.flutterwave_withdrawal_submissions(
+CREATE TABLE public.driver_withdrawal_submissions(
  withdrawal_id uuid PRIMARY KEY REFERENCES public.driver_withdrawals(id),
+ provider text NOT NULL,
  reference text NOT NULL UNIQUE,
  submitted_at timestamptz NOT NULL DEFAULT now(),
  provider_transfer_id text UNIQUE,provider_fee numeric CHECK(provider_fee>=0)
 );
 ALTER TABLE public.driver_withdrawals ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.flutterwave_withdrawal_submissions ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.driver_withdrawals,public.flutterwave_withdrawal_submissions FROM PUBLIC,anon,authenticated,service_role;
-GRANT SELECT ON public.driver_withdrawals,public.flutterwave_withdrawal_submissions TO service_role;
+ALTER TABLE public.driver_withdrawal_submissions ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.driver_withdrawals,public.driver_withdrawal_submissions FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT ON public.driver_withdrawals,public.driver_withdrawal_submissions TO service_role;
 
 CREATE FUNCTION public.guard_withdrawal_identity() RETURNS trigger LANGUAGE plpgsql SET search_path=public,pg_temp AS $$
 BEGIN
- IF (NEW.driver_id,NEW.tenant_id,NEW.currency_code,NEW.amount_minor,NEW.payout_account_id,NEW.merchant_account_ref,NEW.reference,NEW.reserve_event_id)
-  IS DISTINCT FROM (OLD.driver_id,OLD.tenant_id,OLD.currency_code,OLD.amount_minor,OLD.payout_account_id,OLD.merchant_account_ref,OLD.reference,OLD.reserve_event_id)
+ IF (NEW.driver_id,NEW.tenant_id,NEW.currency_code,NEW.amount_minor,NEW.provider,NEW.payout_account_id,NEW.merchant_account_ref,NEW.reference,NEW.reserve_event_id)
+  IS DISTINCT FROM (OLD.driver_id,OLD.tenant_id,OLD.currency_code,OLD.amount_minor,OLD.provider,OLD.payout_account_id,OLD.merchant_account_ref,OLD.reference,OLD.reserve_event_id)
  THEN RAISE EXCEPTION 'Frozen withdrawal identity cannot change';END IF;RETURN NEW;
 END $$;
 CREATE TRIGGER guard_withdrawal_identity BEFORE UPDATE ON public.driver_withdrawals FOR EACH ROW EXECUTE FUNCTION public.guard_withdrawal_identity();
 REVOKE ALL ON FUNCTION public.guard_withdrawal_identity() FROM PUBLIC,anon,authenticated,service_role;
+
+-- Providers whose server adapter implements the verified beneficiary-payout
+-- model (beneficiary create + fingerprint verify + reference-bound transfer +
+-- reconcile-before-create). 'flutterwave' is the only adapter with that
+-- capability today: the paystack adapter deliberately lacks transfer support
+-- and collection-only providers (kora/fincra) are never payout rails. Adding
+-- a provider here without a verified adapter invents a capability — do not.
+CREATE FUNCTION public.payout_withdrawal_provider_supported(p_provider text)
+RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path=public,pg_temp AS $$
+ SELECT p_provider='flutterwave';
+$$;
 
 -- Spendable earnings: only the earnings_payable purpose counts; held and
 -- paid-out purposes are never spendable.
@@ -227,9 +240,12 @@ BEGIN
  SELECT * INTO STRICT pr FROM public.profiles WHERE id=p_driver AND role='driver' AND registration_activated_at IS NOT NULL FOR UPDATE;
  SELECT * INTO STRICT a FROM public.driver_payment_accounts WHERE driver_id=p_driver AND tenant_id=pr.tenant_id
   AND country_code=coalesce(pr.registration_country_code,pr.country_code) AND state='completed' ORDER BY updated_at DESC LIMIT 1 FOR UPDATE;
- IF a.provider<>'flutterwave' OR a.country_code<>'NG' OR a.currency_code<>'NGN'
+ -- The market's configured provider selects the adapter; the account provider
+ -- must match it and must be one the server can actually pay through.
+ IF a.country_code<>'NG' OR a.currency_code<>'NGN'
+  OR NOT payout_withdrawal_provider_supported(a.provider)
   OR NOT EXISTS(SELECT 1 FROM public.driver_payout_markets m WHERE m.country_code=a.country_code AND m.currency_code=a.currency_code
-   AND m.merchant_account_ref=a.merchant_account_ref AND m.provider='flutterwave' AND m.enabled AND m.merchant_approved AND m.adapter_ready
+   AND m.merchant_account_ref=a.merchant_account_ref AND m.provider=a.provider AND m.enabled AND m.merchant_approved AND m.adapter_ready
    AND m.capability_verified_at IS NOT NULL AND m.capability_evidence_ref IS NOT NULL AND m.merchant_mode='test'
    AND m.sandbox_driver_id=p_driver AND m.sandbox_tenant_id=pr.tenant_id)
  THEN RAISE EXCEPTION 'Approved payout destination required';END IF;
@@ -242,11 +258,29 @@ BEGIN
  v_event:=public.post_wallet_event('driver-withdraw-reserve:'||w.id::text,'withdrawal_reserve',pr.tenant_id,p_driver,a.currency_code,
   jsonb_build_array(jsonb_build_object('accountPurpose','earnings_payable','amountMinor',-p_amount_minor),
                     jsonb_build_object('accountPurpose','earnings_payable_held','amountMinor',p_amount_minor)));
- INSERT INTO public.driver_withdrawals(id,driver_id,tenant_id,currency_code,amount_minor,payout_account_id,merchant_account_ref,reference,reserve_event_id)
- VALUES(w.id,p_driver,pr.tenant_id,a.currency_code,p_amount_minor,a.id,a.merchant_account_ref,'vaydu-'||w.id::text||'_PMCK',v_event)
+ INSERT INTO public.driver_withdrawals(id,driver_id,tenant_id,currency_code,amount_minor,provider,payout_account_id,merchant_account_ref,reference,reserve_event_id)
+ VALUES(w.id,p_driver,pr.tenant_id,a.currency_code,p_amount_minor,a.provider,a.id,a.merchant_account_ref,'vaydu-'||w.id::text||'_PMCK',v_event)
  RETURNING * INTO w;
  RETURN w;
 END $$;
+
+-- Worker retry marker: the only path that may move a live withdrawal between
+-- processing/reconcile/blocked or reschedule it — fenced by the claim lease so
+-- a stale worker can never mark a row another worker holds.
+CREATE FUNCTION public.mark_driver_withdrawal_retry(p_id uuid,p_lease uuid,p_status text,p_code text)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
+BEGIN
+ IF p_status NOT IN('reconcile','blocked') THEN RAISE EXCEPTION 'A retry marker can only set reconcile or blocked';END IF;
+ UPDATE public.driver_withdrawals SET status=p_status,last_error=p_code,lease_until=NULL,lease_token=NULL,
+  retry_at=now()+interval '5 minutes',updated_at=now()
+ WHERE id=p_id AND lease_token=p_lease AND status IN('processing','reconcile');
+ RETURN FOUND;
+END $$;
+
+-- Operator/test scheduling only: retry_at is timing metadata, never money
+-- state — the frozen-identity guard and function-only status transitions still
+-- hold. This grant lets a worker or rehearsal nudge a stuck retry window.
+GRANT UPDATE (retry_at) ON public.driver_withdrawals TO service_role;
 
 CREATE FUNCTION public.claim_driver_withdrawal(p_id uuid)
 RETURNS SETOF public.driver_withdrawals LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
@@ -264,7 +298,7 @@ DECLARE w public.driver_withdrawals%ROWTYPE;BEGIN
  SELECT * INTO STRICT w FROM public.driver_withdrawals WHERE id=p_id FOR UPDATE;
  IF w.lease_token IS DISTINCT FROM p_lease OR w.status NOT IN('processing','reconcile')
   OR p_reference IS DISTINCT FROM 'vaydu-'||p_id::text||'_PMCK' THEN RETURN false;END IF;
- INSERT INTO public.flutterwave_withdrawal_submissions(withdrawal_id,reference) VALUES(p_id,p_reference) ON CONFLICT(withdrawal_id) DO NOTHING;
+ INSERT INTO public.driver_withdrawal_submissions(withdrawal_id,provider,reference) VALUES(p_id,w.provider,p_reference) ON CONFLICT(withdrawal_id) DO NOTHING;
  RETURN FOUND;
 END $$;
 
@@ -275,14 +309,14 @@ DECLARE w public.driver_withdrawals%ROWTYPE; v_event uuid;BEGIN
  IF w.status='paid' THEN RETURN w.provider_transfer_id=p_transfer;END IF;
  IF w.lease_token IS DISTINCT FROM p_lease OR w.status NOT IN('processing','reconcile')
   OR p_transfer IS NULL OR p_transfer !~ '^\d+$'
-  OR NOT EXISTS(SELECT 1 FROM public.flutterwave_withdrawal_submissions WHERE withdrawal_id=p_id)
+  OR NOT EXISTS(SELECT 1 FROM public.driver_withdrawal_submissions WHERE withdrawal_id=p_id)
  THEN RETURN false;END IF;
  v_event:=public.post_wallet_event('driver-withdraw-settle:'||p_id::text,'withdrawal_settle',w.tenant_id,w.driver_id,w.currency_code,
   jsonb_build_array(jsonb_build_object('accountPurpose','earnings_payable_held','amountMinor',-w.amount_minor),
                     jsonb_build_object('accountPurpose','earnings_paid_out','amountMinor',w.amount_minor)));
  UPDATE public.driver_withdrawals SET status='paid',provider_transfer_id=p_transfer,provider_fee=p_fee,settle_event_id=v_event,
   lease_until=NULL,lease_token=NULL,last_error=NULL,updated_at=now() WHERE id=p_id;
- UPDATE public.flutterwave_withdrawal_submissions SET provider_transfer_id=p_transfer,provider_fee=p_fee WHERE withdrawal_id=p_id;
+ UPDATE public.driver_withdrawal_submissions SET provider_transfer_id=p_transfer,provider_fee=p_fee WHERE withdrawal_id=p_id;
  RETURN true;
 END $$;
 
@@ -305,6 +339,7 @@ END $$;
 REVOKE ALL ON FUNCTION public.finish_wallet_job_payout(uuid,uuid),
  public.driver_earnings_wallet_balance(uuid,uuid,text),
  public.request_driver_withdrawal(uuid,bigint),
+ public.mark_driver_withdrawal_retry(uuid,uuid,text,text),
  public.claim_driver_withdrawal(uuid),
  public.claim_withdrawal_submission(uuid,uuid,text),
  public.finish_driver_withdrawal(uuid,uuid,text,numeric),
@@ -312,6 +347,7 @@ REVOKE ALL ON FUNCTION public.finish_wallet_job_payout(uuid,uuid),
 GRANT EXECUTE ON FUNCTION public.finish_wallet_job_payout(uuid,uuid),
  public.driver_earnings_wallet_balance(uuid,uuid,text),
  public.request_driver_withdrawal(uuid,bigint),
+ public.mark_driver_withdrawal_retry(uuid,uuid,text,text),
  public.claim_driver_withdrawal(uuid),
  public.claim_withdrawal_submission(uuid,uuid,text),
  public.finish_driver_withdrawal(uuid,uuid,text,numeric),

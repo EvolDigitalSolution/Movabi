@@ -151,8 +151,8 @@ DO $d$ DECLARE j uuid; n int; BEGIN
       'currency','gbp','amountMinor',850,'destination','acct_drv_test','country','GB'),
     jsonb_build_object('completion_pin_verified_at',now()));
  END LOOP; END $d$;
--- An NG wallet-mode entitlement: same verified flutterwave identity, but its
--- settlement method freezes 'wallet' — the worker must credit the earnings
+-- An NG wallet-mode entitlement: the driver preference (trusted server policy,
+-- not job metadata) freezes 'wallet' — the worker must credit the earnings
 -- ledger and submit no provider transfer.
 INSERT INTO public.market_availability(country_code,launch_status,supported_currency) VALUES ('NG','live','NGN')
  ON CONFLICT DO NOTHING;
@@ -170,6 +170,8 @@ INSERT INTO public.driver_payout_markets(country_code,currency_code,provider,mer
  VALUES ('NG','NGN','flutterwave','flw_merchant_ng',true,true,true,now(),'cap-evidence-1','test',
    'eeeeeeee-aaaa-4aaa-8aaa-0000000000ee','11111111-1111-4111-8111-111111111111')
  ON CONFLICT DO NOTHING;
+-- Server policy (not the job metadata key) selects the wallet settlement mode.
+SELECT public.set_driver_settlement_preference('eeeeeeee-aaaa-4aaa-8aaa-0000000000ee','wallet');
 DO $d$ DECLARE j uuid; BEGIN
  INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
    payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)

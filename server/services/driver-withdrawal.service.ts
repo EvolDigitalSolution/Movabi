@@ -1,6 +1,8 @@
-import {DriverPaymentAccountService,sandboxPayoutProvider,beneficiaryOf} from './driver-payment-account.service';
-import {payoutTransfersEnabled,type FlutterwaveDriverPayout,type FrozenTransfer} from './payments/flutterwave-driver-payout';
+import {DriverPaymentAccountService,sandboxDestinationProvider,beneficiaryOf} from './driver-payment-account.service';
+import {payoutTransfersEnabled,type FrozenTransfer} from './payments/flutterwave-driver-payout';
 import {supabaseAdmin} from './supabase.service';
+
+type PayoutAdapter={lookup(t:FrozenTransfer):Promise<{state:string;id?:string;fee?:string}|null>;submit(t:FrozenTransfer):Promise<unknown>};
 
 /**
  * Driver earnings-wallet withdrawal worker (NG/NGN sandbox scope).
@@ -23,7 +25,7 @@ export class DriverWithdrawalService {
     this.running = true;
     try {
       // Sandbox-only rail: skip entirely when the payout provider is not configured.
-      try { sandboxPayoutProvider(); } catch { return; }
+      try { sandboxDestinationProvider('flutterwave',''); } catch { return; }
       const { data, error } = await supabaseAdmin.from('driver_withdrawals').select('id')
         .in('status', ['processing','reconcile']).lte('retry_at', new Date().toISOString()).order('retry_at').limit(20);
       if (error) throw error;
@@ -39,21 +41,23 @@ export class DriverWithdrawalService {
     const w = claim.data?.[0];
     if (!w) return;
     const update = async (status: string, code: string) => {
-      const result = await supabaseAdmin.from('driver_withdrawals').update({ status, last_error: code,
-        lease_until: null, lease_token: null, retry_at: new Date(Date.now()+300000).toISOString(), updated_at: new Date().toISOString() })
-        .eq('id', w.id).eq('lease_token', w.lease_token).in('status', ['processing','reconcile']).select('id');
-      if (result.error || !result.data?.length) throw new Error('Withdrawal retry marker was not persisted');
+      const result = await supabaseAdmin.rpc('mark_driver_withdrawal_retry',
+        { p_id: w.id, p_lease: w.lease_token, p_status: status, p_code: code });
+      if (result.error || result.data !== true) throw new Error('Withdrawal retry marker was not persisted');
     };
     // Account setup never authorizes money movement. Dispatch requires the
     // separate explicit transfer flag; otherwise the withdrawal stays blocked.
     if (!payoutTransfersEnabled()) { await update('blocked','transfer_dispatch_disabled'); return; }
-    let provider: FlutterwaveDriverPayout; let scope: any;
+    let provider: PayoutAdapter; let scope: any;
     try {
-      scope = await new DriverPaymentAccountService(supabaseAdmin, sandboxPayoutProvider).ready(w.driver_id);
-      provider = sandboxPayoutProvider(scope.market.merchant_account_ref);
+      scope = await new DriverPaymentAccountService(supabaseAdmin, sandboxDestinationProvider).ready(w.driver_id);
+      // The market's configured provider selects the adapter. Providers whose
+      // adapter cannot pay (e.g. paystack setup-only) never reach dispatch:
+      // request_driver_withdrawal gates on payout_withdrawal_provider_supported.
+      provider = sandboxDestinationProvider(scope.market.provider, scope.market.merchant_account_ref) as unknown as PayoutAdapter;
     } catch { await update('reconcile','sandbox_payout_unavailable'); return; }
     if (w.merchant_account_ref !== scope.market.merchant_account_ref || w.payout_account_id !== scope.account.id
-      || String(w.currency_code).toUpperCase() !== scope.currency) { await update('blocked','withdrawal_scope_mismatch'); return; }
+      || w.provider !== scope.market.provider || String(w.currency_code).toUpperCase() !== scope.currency) { await update('blocked','withdrawal_scope_mismatch'); return; }
     const t: FrozenTransfer = { reference: w.reference, amountMinor: Number(w.amount_minor), currency: scope.currency,
       beneficiary: beneficiaryOf(scope.account) };
     let found;

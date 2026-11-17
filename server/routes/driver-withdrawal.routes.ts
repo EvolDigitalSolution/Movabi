@@ -21,7 +21,7 @@ export function driverWithdrawalRouter(db:any=supabaseAdmin){
  router.get('/',async(_req,res)=>{
   res.setHeader('Cache-Control','no-store');
   try{
-   const {data,error}=await db.from('driver_withdrawals').select('id,status,amount_minor,currency_code,reference,last_error,created_at,updated_at')
+   const {data,error}=await db.from('driver_withdrawals').select('id,status,amount_minor,currency_code,provider,reference,provider_transfer_id,last_error,created_at,updated_at')
     .eq('driver_id',res.locals.driverId).order('created_at',{ascending:false}).limit(50);
    if(error)throw error;return res.json({withdrawals:data||[]});
   }catch{return res.status(503).json({error:'Withdrawal history is temporarily unavailable.'});}

@@ -46,6 +46,16 @@ export function driverPaymentAccountRouter(db:any=supabaseAdmin,service:any=new 
   bankCode:String(req.body?.bankCode||''),accountNumber:String(req.body?.accountNumber||''),confirmedName:String(req.body?.accountName||'')
  }):Promise.reject(new Error('Confirmation required.'))));
  router.post('/reconcile',handler((_,id)=>service.reconcile(id)));
+ // Settlement method is driver choice, written through trusted server policy —
+ // never through jobs.metadata. The resolver defaults to 'transfer'.
+ router.get('/settlement-method',handler(async(_,id)=>{
+  const {data,error}=await db.rpc('resolve_driver_settlement_method',{p_driver:id});
+  if(error)throw new Error(error.message);return{settlementMethod:data||'transfer'};
+ }));
+ router.post('/settlement-method',handler(async(req,id)=>{
+  const {data,error}=await db.rpc('set_driver_settlement_preference',{p_driver:id,p_method:String(req.body?.method||'')});
+  if(error)throw new Error(error.message);return{settlementMethod:data?.method};
+ }));
  return router;
 }
 export default driverPaymentAccountRouter();
