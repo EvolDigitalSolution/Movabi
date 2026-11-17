@@ -128,6 +128,9 @@ type WalletTransaction = Record<string, unknown>;
             <p class="text-sm text-blue-800">
               Wallet top-ups are not available for your account yet. You can use your existing balance for bookings.
             </p>
+            @if(topupUnavailableReason()) {
+              <p class="mt-1 text-xs text-blue-700">{{ topupUnavailableReason() }}</p>
+            }
           </div>
         }
 
@@ -240,6 +243,34 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
     topupMessage = signal<string | null>(null);
     topupSuccess = signal(false);
     readonly quickAmounts = [10, 20, 50, 100];
+
+    readonly topupUnavailableReason = computed(() => {
+        const r = this.topupReadiness();
+        if (!r || r.collectionAvailable) return null;
+        const labels: Record<string, string> = {
+            registration_not_ready: 'Account registration is not complete.',
+            market_unavailable: 'Wallet top-ups are not enabled for your market yet.',
+            wallet_not_set_up: 'Your wallet is not set up yet.',
+            wallet_currency_mismatch: 'Your wallet currency does not match your market.',
+            not_preferred: 'No preferred collection route is configured for your market.',
+            route_disabled: 'The collection route for your market is temporarily disabled.',
+            merchant_not_approved: 'Merchant approval for this market is still pending.',
+            adapter_not_ready: 'The payment provider is not ready.',
+            merchant_reference_missing: 'Provider merchant configuration is incomplete.',
+            collection_capability_missing: 'The configured provider cannot accept collections here.',
+            collection_disabled: 'Collection is disabled for this market.',
+            wallet_disabled: 'Your wallet is disabled.',
+            provider_missing: 'No payment provider is configured for your market.'
+        };
+        const parts: string[] = [];
+        if (r.reason) parts.push(labels[r.reason] ?? `Reason: ${String(r.reason).replace(/_/g, ' ')}.`);
+        for (const b of r.blockers ?? []) {
+            const label = labels[b];
+            if (label && !parts.includes(label)) parts.push(label);
+            else if (!label) parts.push(`Blocked by: ${String(b).replace(/_/g, ' ')}.`);
+        }
+        return parts.length ? parts.join(' ') : 'The collection service did not report a reason.';
+    });
 
     get canSubmitTopUp(): boolean {
         return !!this.topupReadiness()?.collectionAvailable && !!this.topUpAmount && this.topUpAmount > 0
