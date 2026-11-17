@@ -57,6 +57,9 @@ export class DriverWithdrawalService {
       // request_driver_withdrawal gates on payout_withdrawal_provider_supported.
       provider = sandboxDestinationProvider(scope.market.provider, scope.market.merchant_account_ref) as unknown as PayoutAdapter;
     } catch { await update('reconcile','sandbox_payout_unavailable'); return; }
+    // The armed provider is the market's own — a master flag without the
+    // per-provider flag blocks deterministically rather than looping.
+    if (!payoutTransfersEnabled(scope.market.provider)) { await update('blocked','provider_transfer_dispatch_disabled'); return; }
     if (w.merchant_account_ref !== scope.market.merchant_account_ref || w.payout_account_id !== scope.account.id
       || w.provider !== scope.market.provider || String(w.currency_code).toUpperCase() !== scope.currency) { await update('blocked','withdrawal_scope_mismatch'); return; }
     const t: FrozenTransfer = { reference: w.reference, amountMinor: Number(w.amount_minor), currency: scope.currency,

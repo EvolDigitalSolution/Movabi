@@ -19,7 +19,14 @@ export interface FrozenTransfer {
 export type TransferResult={state:'pending'|'completed'|'failed'|'unknown';id?:string;fee?:string};
 const unavailable=()=>new Error('Payment account provider unavailable. Please retry or contact support.');
 /** Transfers are a separate, explicit capability from account setup. */
-export function payoutTransfersEnabled(env:NodeJS.ProcessEnv=process.env):boolean{return env.VAYDU_DRIVER_PAYOUT_TRANSFERS==='true';}
+// Transfer arming is two-level: the master flag gates ALL money movement and a
+// per-provider flag arms one adapter. Enabling VAYDU_DRIVER_PAYOUT_TRANSFERS to
+// test Kora can therefore never arm Flutterwave (or any other provider).
+export function payoutTransfersEnabled(provider?:string,env:NodeJS.ProcessEnv=process.env):boolean{
+ if(env.VAYDU_DRIVER_PAYOUT_TRANSFERS!=='true')return false;
+ if(provider===undefined)return true;
+ return env['VAYDU_DRIVER_PAYOUT_TRANSFERS_'+provider.toUpperCase()]==='true';
+}
 /** v3 test-mode bank beneficiaries; no hosted Connect, virtual account or live API support.
  * Setup (banks/resolve/beneficiary/verification) is independent of transfer
  * submission: `allowTransfers` is false unless a separate explicit flag is set. */

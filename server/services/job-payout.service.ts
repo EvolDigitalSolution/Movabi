@@ -49,7 +49,7 @@ export class JobPayoutService {
     if(q.terms?.payout_provider==='flutterwave'){
       // Account setup never authorizes money movement. Dispatch requires the
       // separate explicit transfer flag; otherwise the job stays blocked.
-      if(!payoutTransfersEnabled()){await update('blocked','transfer_dispatch_disabled');return;}
+      if(!payoutTransfersEnabled('flutterwave')){await update('blocked','transfer_dispatch_disabled');return;}
       await new FlutterwaveJobPayoutService(supabaseAdmin,new DriverPaymentAccountService(supabaseAdmin,sandboxPayoutProvider),sandboxPayoutProvider).process(q,update);return;
     }
     if(q.terms?.payout_provider && q.terms.payout_provider!=='stripe'){await update('blocked','unsupported_payout_provider');return;}

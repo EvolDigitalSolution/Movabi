@@ -11,7 +11,7 @@ function payoutMarketReady(m) {
     && m.enabled === true && m.merchant_approved === true && m.adapter_ready === true && !!m.merchant_account_ref
     && !!m.capability_verified_at && m.merchant_mode === 'test' && !!m.capability_evidence_ref;
 }
-function payoutTransfersEnabled() { return process.env.VAYDU_DRIVER_PAYOUT_TRANSFERS === 'true'; }
+function payoutTransfersEnabled(provider) { if (process.env.VAYDU_DRIVER_PAYOUT_TRANSFERS !== 'true') return false; if (provider === undefined) return true; return process.env['VAYDU_DRIVER_PAYOUT_TRANSFERS_' + provider.toUpperCase()] === 'true'; }
 
 class FlutterwaveDriverPayout {
   constructor(secret, fingerprintKey) {

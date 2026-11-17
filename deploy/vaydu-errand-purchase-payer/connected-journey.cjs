@@ -130,7 +130,9 @@ function step(name, cond, detail = '') { steps.push({ name, ok: !!cond }); conso
   app.use('/api/driver-payment-account', require(path.join(root, 'server/routes/driver-payment-account.routes.ts')).driverPaymentAccountRouter());
   app.use('/api/market-safety', require(path.join(root, 'server/routes/market-safety.routes.ts')).default);
   Object.assign(process.env, {
-    NODE_ENV: 'test', VAYDU_DEPLOYMENT_ENV: 'develop', VAYDU_DRIVER_PAYOUT_SANDBOX: 'true', VAYDU_DRIVER_PAYOUT_TRANSFERS: 'true',
+    NODE_ENV: 'test', VAYDU_DEPLOYMENT_ENV: 'develop', VAYDU_DRIVER_PAYOUT_SANDBOX: 'true', VAYDU_DRIVER_PAYOUT_TRANSFERS: 'true', VAYDU_DRIVER_PAYOUT_TRANSFERS_KORA: 'true',
+    // Deliberately NOT set: VAYDU_DRIVER_PAYOUT_TRANSFERS_FLUTTERWAVE — arming the
+    // master flag for the kora leg must never arm the flutterwave adapter.
     FLUTTERWAVE_PAYOUT_MERCHANT_REF: 'flw_merchant_ng', FLUTTERWAVE_TEST_SECRET_KEY: 'FLWSECK_TEST-journey',
     FLUTTERWAVE_PAYOUT_WEBHOOK_SECRET: 'whsec-journey-0123456789abcdef01234567',
     FLUTTERWAVE_PAYOUT_CALLBACK_URL: 'https://movabi-develop.apps.evolsolution.com/api/driver-payment-account/webhook',

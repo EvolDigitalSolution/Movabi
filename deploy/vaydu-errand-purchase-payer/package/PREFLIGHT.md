@@ -17,7 +17,7 @@ Deploy target: develop only. Production is not authorised.
 | Behavioural money-authority `src/testing/batch2c-money-authority.spec.ts` | executes the real booking-create allow-list + server mode derivation against a hostile payload | 53/53 — forged client payment/negotiation modes are discarded; server-derived modes win |
 | Unit + runtime specs | wallet/errand/payout scope | `check-customer-wallet-collection-runtime` 12/12 (route-seeded binding, missing/mismatched/drifted, retry, cross-tenant) + 89/89 across the touched spec files (batch1a/1h/1i/1l/1m harnesses, wallet-booking-lifecycle, batch2c, wallet-sandbox-ui, admin-campaigns) + 19/19 `status-wallet-browser` |
 | Full suite `npx vitest run` | — | 3663 passed / 21 failed — all remaining failures are Docker-environmental or parallel-load flakes, classified in `docs/roadmap-evidence/full-suite-failures-b09997f.md`; zero regressions |
-| Package integrity | clean Windows checkout (`git worktree`, `core.autocrlf=true`) | `sha256sum -c CHECKSUMS.sha256` → 10/10 OK; `*.sql`/`*.sha256`/`*.md` pinned `-text` so CRLF conversion cannot corrupt checksummed bytes. Checksums are recorded over committed (LF) bytes — verify from a clean checkout, not a CRLF working copy |
+| Package integrity | clean Windows checkout (`git worktree`, `core.autocrlf=true`) | `sha256sum -c CHECKSUMS.sha256` → 12/12 OK; `*.sql`/`*.sha256`/`*.md` pinned `-text` so CRLF conversion cannot corrupt checksummed bytes. Checksums are recorded over committed (LF) bytes — verify from a clean checkout, not a CRLF working copy |
 
 Reproduce:
 `PG_IMAGE=supabase/postgres:15.1.1.78 BASELINE=develop_live_public_schema_20261112.sql PSQL_USER=supabase_admin bash scripts/errand-purchase-payer/run-realdb-tests.sh`
@@ -266,9 +266,9 @@ capabilities:
 
 | Provider | Payout capability | State here |
 |---|---|---|
-| **Flutterwave v3** | Full beneficiary model: `POST /beneficiaries` → `GET /beneficiaries/{id}` re-verified by bank-code + HMAC fingerprint → `POST /transfers` (`beneficiary:<id>` + merchant `reference`) → `GET /transfers?reference=` re-validating reference/currency/amount/bank/fingerprint | **Enabled** behind existing sandbox gates + `VAYDU_DRIVER_PAYOUT_TRANSFERS` — never silent |
+| **Flutterwave v3** | Full beneficiary model: `POST /beneficiaries` → `GET /beneficiaries/{id}` re-verified by bank-code + HMAC fingerprint → `POST /transfers` (`beneficiary:<id>` + merchant `reference`) → `GET /transfers?reference=` re-validating reference/currency/amount/bank/fingerprint | **Enabled** behind existing sandbox gates + master flag + `VAYDU_DRIVER_PAYOUT_TRANSFERS_FLUTTERWAVE` — never silent |
 | **Paystack** | `PaystackDriverPayout` implements recipient setup/verification only; `submit()` is deliberately unimplemented | **Refused at request time** (`payout_withdrawal_provider_supported` returns false — §10 proves a paystack beneficiary cannot withdraw) |
-| **Kora** | Official Payout API reviewed and implemented in `KoraDriverPayout`: `GET /misc/banks?countryCode=NG` → `POST /misc/banks/resolve` (beneficiary verification — Kora requires no pre-created beneficiary; the resolved account IS the identity, frozen as a 10-digit NUBV `beneficiary_id` + bank/account HMAC fingerprint) → `POST /transactions/disburse` (our merchant `reference`, `bank_account` destination, required `destination.customer` with the re-resolved account name, amount in **major** units) → `GET /transactions/:reference` — Kora assigns no separate payout id: `data.reference` echoes our reference and is the settle identity; `trace_id` is internal. Statuses `success`/`failed`/`processing`; per Kora's guidance 5xx/timeouts are never definitive, so submit throws and the worker verifies via lookup. Duplicate references are rejected upstream and reconcile through the same lookup-only path | **Implemented, sandbox-only** — `sk_test_` key enforced at construction, `KORA_PAYOUT_MERCHANT_REF` binding, market-configured dispatch through `sandboxDestinationProvider`, same `VAYDU_DRIVER_PAYOUT_TRANSFERS` flag + test-mode `driver_payout_markets` row. No programme approval or live keys implied. |
+| **Kora** | Official Payout API reviewed and implemented in `KoraDriverPayout`: `GET /misc/banks?countryCode=NG` → `POST /misc/banks/resolve` (beneficiary verification — Kora requires no pre-created beneficiary; the resolved account IS the identity, frozen as a 10-digit NUBV `beneficiary_id` + bank/account HMAC fingerprint) → `POST /transactions/disburse` (our merchant `reference`, `bank_account` destination, required `destination.customer` with the re-resolved account name, amount in **major** units) → `GET /transactions/:reference` — Kora assigns no separate payout id: `data.reference` echoes our reference and is the settle identity; `trace_id` is internal. Statuses `success`/`failed`/`processing`; per Kora's guidance 5xx/timeouts are never definitive, so submit throws and the worker verifies via lookup. Duplicate references are rejected upstream and reconcile through the same lookup-only path | **Implemented, sandbox-only** — `sk_test_` key enforced at construction, `KORA_PAYOUT_MERCHANT_REF` binding, market-configured dispatch through `sandboxDestinationProvider`, master flag + `VAYDU_DRIVER_PAYOUT_TRANSFERS_KORA` arm + test-mode `driver_payout_markets` row. No programme approval or live keys implied. |
 | **Fincra** | Reviewed (`POST /disbursements/payouts`, `customerReference` idempotency, `successful`/`processing`/`failed`); **no adapter implemented — not selected** | Not selectable — never claimed |
 
 Adding a provider to `payout_withdrawal_provider_supported` without a verified
@@ -303,7 +303,7 @@ concerns — a row being green never implies another:
 
 | Concern | State |
 |---|---|
-| Provider **programme approval** (Flutterwave, Kora) | Develop-sandbox scope only: `FLWSECK_TEST-` + `merchant_mode='test'` + sandbox driver/tenant binding, dispatch behind `VAYDU_DRIVER_PAYOUT_TRANSFERS`. No production/live approval exists or is implied. |
+| Provider **programme approval** (Flutterwave, Kora) | Develop-sandbox scope only: `FLWSECK_TEST-` + `merchant_mode='test'` + sandbox driver/tenant binding, dispatch behind the master flag + per-provider arm (`…_KORA`/`…_FLUTTERWAVE`). No production/live approval exists or is implied. |
 | Adapter **implementation** | Done — `FlutterwaveDriverPayout` (beneficiary create/verify + reference-bound transfer + reconcile-before-create) **and `KoraDriverPayout`** (bank resolve + `transactions/disburse` + `transactions/{ref}` lookup; adapter spec 14/14) behind the neutral `sandboxDestinationProvider`; `payout_withdrawal_provider_supported` gates the DB side. |
 | **Deployment** to `movabi_develop` | Not yet applied — package + instructions below are the artefact. |
 | Connected integration **journey** (simulated provider HTTP) | **Verified** — 15/15 on the disposable stack (`run-connected-journey.sh`): real GoTrue/PostgREST/Express/services with provider HTTP simulated. One run against the deployed stack with live test keys remains a deploy-day check. |
@@ -320,6 +320,14 @@ concerns — a row being green never implies another:
 | Develop deployment | Not yet applied — this package + migration order are the deploy artefact. Legacy ambiguous jobs remain in reconciliation until adjudicated. |
 
 ## Deploy instructions (develop)
+
+The authoritative step-by-step runbook — backup + restore rehearsal, the
+apply-only-what-is-missing inspection, trusted-binding seeding rules, the
+two-level transfer flag matrix, verification and rollback limits — is
+`package/RUNBOOK.md`. `package/preflight-schema-check.sql` performs the
+read-only present/missing inspection of every object this package requires
+against the CURRENT develop schema; apply only files whose objects report
+`missing`, in the order below.
 
 1. Confirm target: `select current_database()` must return `movabi_develop`.
    707 raises `'Develop database required'` anywhere else.
@@ -357,7 +365,11 @@ concerns — a row being green never implies another:
    `DRIVER_PAYOUT_FINGERPRINT_KEY`, plus the **Kora** binding when a kora
    `driver_payout_markets` row is used (`KORA_TEST_SECRET_KEY` matching
    `sk_test_*`, `KORA_PAYOUT_MERCHANT_REF`), and `VAYDU_DRIVER_PAYOUT_TRANSFERS=true`
-   to dispatch bank transfers (job payouts **and** withdrawals share this
+   plus the per-provider arm `VAYDU_DRIVER_PAYOUT_TRANSFERS_KORA=true` (kora)
+   or `VAYDU_DRIVER_PAYOUT_TRANSFERS_FLUTTERWAVE=true` (flutterwave).
+   Transfer arming is two-level by design — the master flag alone arms
+   **nothing**; arming the master + `…_KORA` can never enable a flutterwave
+   dispatch (job payouts **and** withdrawals are gated the same way)
    flag — leave unset to hold all NG transfers safely queued).
 
 ## Package

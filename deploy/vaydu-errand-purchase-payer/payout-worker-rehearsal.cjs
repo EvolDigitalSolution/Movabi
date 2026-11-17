@@ -173,6 +173,7 @@ const createsFor = (job) => S.calls.filter(c => c.params.transfer_group === `job
   process.env.VAYDU_DEPLOYMENT_ENV = 'develop';
   process.env.VAYDU_DRIVER_PAYOUT_SANDBOX = 'true';
   process.env.VAYDU_DRIVER_PAYOUT_TRANSFERS = 'true';
+  process.env.VAYDU_DRIVER_PAYOUT_TRANSFERS_FLUTTERWAVE = 'true';
   process.env.FLUTTERWAVE_PAYOUT_MERCHANT_REF = 'flw_merchant_ng';
   process.env.FLUTTERWAVE_TEST_SECRET_KEY = 'FLWSECK_TEST-rehearsal';
   process.env.FLUTTERWAVE_PAYOUT_WEBHOOK_SECRET = 'whsec-rehearsal-0123456789abcdef0123456789';

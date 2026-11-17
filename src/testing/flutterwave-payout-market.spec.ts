@@ -43,9 +43,14 @@ describe('Flutterwave payout market readiness', () => {
 
 describe('account setup is separated from money movement', () => {
   it('transfers stay disabled unless the separate explicit flag is set', () => {
-    expect(payoutTransfersEnabled({} as NodeJS.ProcessEnv)).toBe(false);
-    expect(payoutTransfersEnabled({ VAYDU_DRIVER_PAYOUT_SANDBOX: 'true' } as NodeJS.ProcessEnv)).toBe(false);
-    expect(payoutTransfersEnabled({ VAYDU_DRIVER_PAYOUT_TRANSFERS: 'true' } as NodeJS.ProcessEnv)).toBe(true);
+    expect(payoutTransfersEnabled(undefined,{} as NodeJS.ProcessEnv)).toBe(false);
+    expect(payoutTransfersEnabled(undefined,{ VAYDU_DRIVER_PAYOUT_SANDBOX: 'true' } as NodeJS.ProcessEnv)).toBe(false);
+    expect(payoutTransfersEnabled(undefined,{ VAYDU_DRIVER_PAYOUT_TRANSFERS: 'true' } as NodeJS.ProcessEnv)).toBe(true);
+    // The master flag alone never arms a provider — each adapter needs its own flag.
+    expect(payoutTransfersEnabled('kora',{ VAYDU_DRIVER_PAYOUT_TRANSFERS: 'true' } as NodeJS.ProcessEnv)).toBe(false);
+    expect(payoutTransfersEnabled('flutterwave',{ VAYDU_DRIVER_PAYOUT_TRANSFERS: 'true' } as NodeJS.ProcessEnv)).toBe(false);
+    expect(payoutTransfersEnabled('kora',{ VAYDU_DRIVER_PAYOUT_TRANSFERS: 'true', VAYDU_DRIVER_PAYOUT_TRANSFERS_KORA: 'true' } as NodeJS.ProcessEnv)).toBe(true);
+    expect(payoutTransfersEnabled('flutterwave',{ VAYDU_DRIVER_PAYOUT_TRANSFERS: 'true', VAYDU_DRIVER_PAYOUT_TRANSFERS_KORA: 'true' } as NodeJS.ProcessEnv)).toBe(false);
   });
 
   it('a setup-only adapter refuses to submit a transfer (no network call)', async () => {

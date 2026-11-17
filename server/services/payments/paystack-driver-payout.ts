@@ -90,7 +90,7 @@ export class PaystackDriverPayout {
         return data;
     }
     async submit(): Promise<never> {
-        if (!this.allowTransfers || !payoutTransfersEnabled())
+        if (!this.allowTransfers || !payoutTransfersEnabled('paystack'))
             throw new Error('Driver payout transfers are disabled; account setup is verification-only.');
         throw unavailable();
     }
