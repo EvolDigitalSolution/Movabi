@@ -64,18 +64,18 @@ DO $d$ DECLARE t text; tbl text; BEGIN
 INSERT INTO public.tenants(id,name,slug)
  SELECT '11111111-1111-4111-8111-111111111111'::uuid,'t','t'
  WHERE NOT EXISTS (SELECT 1 FROM public.tenants WHERE slug='t' OR id='11111111-1111-4111-8111-111111111111'::uuid);
-DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.tenants WHERE slug='t')
- THEN RAISE EXCEPTION 'fixture isolation failed: tenants slug ''t'' occupied by another id'; END IF; END $$;
-SELECT set_config('fixture.t_id',(SELECT id::text FROM public.tenants WHERE slug='t'),false) AS t_id;
+DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.tenants WHERE slug='t' OR id='11111111-1111-4111-8111-111111111111'::uuid)
+ THEN RAISE EXCEPTION 'fixture isolation failed: no adoptable tenant row'; END IF; END $$;
+SELECT set_config('fixture.t_id',(SELECT id::text FROM public.tenants WHERE slug='t' OR id='11111111-1111-4111-8111-111111111111'::uuid ORDER BY (slug='t') DESC LIMIT 1),false) AS t_id;
 INSERT INTO public.market_availability(country_code,launch_status,supported_currency)
  SELECT 'GB','live','GBP' WHERE NOT EXISTS (SELECT 1 FROM public.market_availability WHERE country_code='GB');
 UPDATE public.market_availability SET launch_status='live', supported_currency='GBP' WHERE country_code='GB';
 INSERT INTO public.service_types(id,slug,name)
  SELECT 'dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid,'errand','Errand'
  WHERE NOT EXISTS (SELECT 1 FROM public.service_types WHERE slug='errand' OR id='dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid);
-DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.service_types WHERE slug='errand')
- THEN RAISE EXCEPTION 'fixture isolation failed: service_types slug ''errand'' occupied by another id'; END IF; END $$;
-SELECT set_config('fixture.st_id',(SELECT id::text FROM public.service_types WHERE slug='errand'),false) AS st_id;
+DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.service_types WHERE slug='errand' OR id='dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid)
+ THEN RAISE EXCEPTION 'fixture isolation failed: no adoptable service_types row'; END IF; END $$;
+SELECT set_config('fixture.st_id',(SELECT id::text FROM public.service_types WHERE slug='errand' OR id='dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid ORDER BY (slug='errand') DESC LIMIT 1),false) AS st_id;
 -- One driver per concurrently-active job: idx_jobs_one_active_per_driver enforces it.
 INSERT INTO auth.users(id) SELECT ('dddddddd-aaaa-4aaa-8aaa-'||lpad(to_hex(g),12,'0'))::uuid FROM generate_series(1,8) g
  ON CONFLICT (id) DO NOTHING;
@@ -715,6 +715,57 @@ DO $t$ DECLARE k_driver uuid:='99999999-dddd-4ddd-8ddd-dddddddddddd'::uuid;
    AND EXISTS(SELECT 1 FROM public.driver_withdrawal_submissions WHERE withdrawal_id=w.id AND provider_transfer_id=w.reference),
    'settled='||v_settled||' ref='||(SELECT w2.provider_transfer_id FROM public.driver_withdrawals w2 WHERE w2.id=w.id));
 END $t$;
+
+-- 12. NG cash security (20261271300000): the customer-wallet reservation
+-- mirrors the card-hold contract with no card provider — reserve, capture the
+-- fee and release the remainder, idempotent and fail-closed.
+DO $w$ DECLARE cust uuid:='f0000000-0000-4000-8000-0000000000c1'::uuid;
+ j1 uuid:='f0000000-0000-4000-8000-0000000000a1'::uuid; j2 uuid:='f0000000-0000-4000-8000-0000000000a2'::uuid;
+ j3 uuid:='f0000000-0000-4000-8000-0000000000a3'::uuid; j4 uuid:='f0000000-0000-4000-8000-0000000000a4'::uuid;
+ t uuid:=(current_setting('fixture.t_id'))::uuid; st uuid:=(current_setting('fixture.st_id'))::uuid;
+ ref text; bal text; blocked boolean; BEGIN
+ INSERT INTO auth.users(id) VALUES (cust) ON CONFLICT (id) DO NOTHING;
+ INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code)
+   VALUES (cust,t,'customer','NG','NG') ON CONFLICT (id) DO NOTHING;
+ INSERT INTO public.wallets(user_id,available_balance,reserved_balance,currency_code) VALUES (cust,1000.00,0,'NGN');
+ INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
+   payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown)
+   SELECT id,t,cust,'a','b',now(),st,'pending','NG','NGN','requested',15000,
+     jsonb_build_object('cash_collection_mode','full_customer_charge'),'{}'::jsonb
+   FROM (VALUES (j1),(j2),(j3),(j4)) v(id);
+ INSERT INTO public.cash_ride_fee_holds_v1e(job_id,tenant_id,customer_id,provider,merchant_account_ref,amount_minor,currency_code,fee_terms,status)
+   SELECT id,t,cust,'customer_wallet','customer-wallet:NG/NGN',5000,'NGN','{}','created' FROM (VALUES (j1),(j2),(j3),(j4)) v(id);
+ ref := public.cash_wallet_reserve_hold(j1,cust,5000,'NGN');
+ SELECT available_balance||'/'||reserved_balance INTO bal FROM public.wallets WHERE user_id=cust;
+ INSERT INTO results VALUES (12,'wallet fee reservation moves spendable into reserved',ref='wres:'||j1::text AND bal='950.00/50.00',ref||' '||bal);
+ INSERT INTO results VALUES (12,'reservation replay with same terms is idempotent',public.cash_wallet_reserve_hold(j1,cust,5000,'NGN')=ref,'');
+ BEGIN PERFORM public.cash_wallet_reserve_hold(j1,cust,6000,'NGN'); blocked:=false;
+   EXCEPTION WHEN others THEN blocked:=true; END;
+ INSERT INTO results VALUES (12,'reservation replay with different terms is refused',blocked,'');
+ PERFORM public.cash_wallet_capture_hold(j1,ref,3000);
+ SELECT available_balance||'/'||reserved_balance INTO bal FROM public.wallets WHERE user_id=cust;
+ INSERT INTO results VALUES (12,'capture debits the fee and releases the remainder',
+   bal='970.00/0.00' AND public.cash_wallet_hold_status(j1)='captured'
+   AND (SELECT captured_minor FROM public.cash_wallet_hold_reservations_v1e WHERE job_id=j1)=3000,bal);
+ PERFORM public.cash_wallet_capture_hold(j1,ref,3000);
+ INSERT INTO results VALUES (12,'capture replay with same amount is idempotent',true,'');
+ BEGIN PERFORM public.cash_wallet_capture_hold(j1,ref,1000); blocked:=false;
+   EXCEPTION WHEN others THEN blocked:=true; END;
+ INSERT INTO results VALUES (12,'capture replay with a different amount is refused',blocked,'');
+ PERFORM public.cash_wallet_reserve_hold(j2,cust,5000,'NGN');
+ PERFORM public.cash_wallet_release_hold(j2,'wres:'||j2::text);
+ SELECT available_balance||'/'||reserved_balance INTO bal FROM public.wallets WHERE user_id=cust;
+ INSERT INTO results VALUES (12,'release returns the full reservation to spendable',bal='970.00/0.00' AND public.cash_wallet_hold_status(j2)='released',bal);
+ PERFORM public.cash_wallet_release_hold(j2,'wres:'||j2::text);
+ INSERT INTO results VALUES (12,'release replay is idempotent',true,'');
+ PERFORM public.cash_wallet_reserve_hold(j3,cust,5000,'NGN');
+ BEGIN PERFORM public.cash_wallet_release_hold(j3,'wres:WRONG'); blocked:=false;
+   EXCEPTION WHEN others THEN blocked:=true; END;
+ INSERT INTO results VALUES (12,'a foreign reference cannot release this reservation',blocked,'');
+ BEGIN PERFORM public.cash_wallet_reserve_hold(j4,cust,200000,'NGN'); blocked:=false;
+   EXCEPTION WHEN others THEN blocked:=true; END;
+ INSERT INTO results VALUES (12,'insufficient spendable balance refuses the reservation',blocked,'');
+END $w$;
 
 SELECT n, name, CASE WHEN ok THEN 'PASS' ELSE 'FAIL' END AS result, left(detail,90) AS detail FROM results ORDER BY n, name;
 SELECT count(*) FILTER (WHERE NOT ok) AS failures, count(*) AS checks FROM results;

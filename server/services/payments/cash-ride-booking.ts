@@ -85,6 +85,56 @@ export class StripeCashFeeHold implements CashFeeHoldProvider {
   }
 }
 
+/** NG flow: the fee exposure is reserved in the customer's wallet (no card provider).
+ * All balance movement is atomic and idempotent inside the DB functions; this
+ * adapter only maps the hold contract. */
+export class WalletCashFeeHold implements CashFeeHoldProvider {
+  readonly provider = 'customer_wallet';
+  constructor(private readonly db: CashBookingDeps['db']) {}
+  private async call(fn: string, args: Record<string, unknown>) {
+    const r = await this.db.rpc(fn, args);
+    if (r.error) {
+      const code = String(r.error.code || '');
+      if (code === 'WH004') fail('CASH_WALLET_INSUFFICIENT', 'Your wallet balance cannot cover the cash fee reservation');
+      if (code === 'WH003') fail('CASH_WALLET_MISSING', 'A wallet in this currency is required for a cash ride');
+      fail('CASH_HOLD_UNCONFIRMED', 'Wallet reservation needs reconciliation');
+    }
+    return r.data;
+  }
+  async create(input: CashFeeHoldInput) {
+    const ref = await this.call('cash_wallet_reserve_hold', { p_job_id: input.jobId, p_customer_id: input.customerId, p_amount_minor: input.amountMinor, p_currency: input.currency });
+    if (typeof ref !== 'string' || ref !== 'wres:' + input.jobId) fail('CASH_HOLD_UNCONFIRMED', 'Wallet reservation needs reconciliation');
+    return { reference: ref, clientSecret: 'wres-client:' + ref };
+  }
+  async resume(reference: string, input: CashFeeHoldInput) {
+    if (reference !== 'wres:' + input.jobId) fail('CASH_HOLD_UNCONFIRMED', 'Wallet reservation needs reconciliation');
+    const status = await this.call('cash_wallet_hold_status', { p_job_id: input.jobId });
+    if (status !== 'reserved') fail('CASH_HOLD_NOT_RESUMABLE', 'This wallet reservation cannot be continued');
+    return { clientSecret: 'wres-client:' + reference };
+  }
+  async verifyAuthorised(reference: string, input: CashFeeHoldInput) {
+    if (reference !== 'wres:' + input.jobId) fail('CASH_HOLD_UNCONFIRMED', 'Wallet reservation needs reconciliation');
+    const status = await this.call('cash_wallet_hold_status', { p_job_id: input.jobId });
+    if (status !== 'reserved') fail('CASH_HOLD_NOT_AUTHORISED', 'The wallet fee reservation is not in place');
+  }
+  async capture(reference: string, input: CashFeeHoldInput, amountMinor: number, _idempotencyKey: string) {
+    if (reference !== 'wres:' + input.jobId) fail('CASH_HOLD_UNCONFIRMED', 'Wallet reservation needs reconciliation');
+    await this.call('cash_wallet_capture_hold', { p_job_id: input.jobId, p_reference: reference, p_amount_minor: amountMinor });
+    if (await this.call('cash_wallet_hold_status', { p_job_id: input.jobId }) !== 'captured') fail('CASH_HOLD_CAPTURE_UNCONFIRMED', 'Fee capture requires reconciliation');
+  }
+  async inspectCaptured(reference: string, input: CashFeeHoldInput) {
+    if (reference !== 'wres:' + input.jobId || await this.call('cash_wallet_hold_status', { p_job_id: input.jobId }) !== 'captured')
+      fail('CASH_HOLD_CAPTURE_UNCONFIRMED', 'Fee capture requires reconciliation');
+    return { provider: 'customer_wallet', reference, status: 'captured' };
+  }
+  async release(reference: string, input: CashFeeHoldInput) {
+    if (reference !== 'wres:' + input.jobId) fail('CASH_HOLD_UNCONFIRMED', 'Wallet reservation needs reconciliation');
+    await this.call('cash_wallet_release_hold', { p_job_id: input.jobId, p_reference: reference });
+    const status = await this.call('cash_wallet_hold_status', { p_job_id: input.jobId });
+    if (status !== 'released' && status !== 'captured') fail('CASH_HOLD_RELEASE_UNCONFIRMED', 'Hold release requires reconciliation');
+  }
+}
+
 export interface CashBookingTerms {
   available: true; version: string; provider: string; merchantAccountRef: string; amountMinor: number; currency: string;
   noShowFeeMinor: number; lateCancelFeeMinor: number; cancellationPolicyVersion: number | null;
@@ -106,12 +156,21 @@ export class CashRideBookingService {
     if (!/^[A-Z]{2}$/.test(country) || !/^[A-Z]{3}$/.test(currency) || !uuid(input.tenantId) || !minor(input.noShowFeeMinor)) fail('CASH_MARKET_UNAVAILABLE');
     const enabled = await this.deps.db.rpc('driver_cash_credit_market_enabled_v1e', { p_country: country, p_currency: currency });
     if (enabled.error || enabled.data !== true) fail('CASH_MARKET_NOT_ENABLED', 'Cash rides are not available in this market');
+    // Market-specific security: card_hold keeps the on-session card hold;
+    // wallet_reservation (NG) secures the exposure from the customer's wallet instead.
+    const modeRow = await this.deps.db.rpc('cash_market_security_mode_v1e', { p_country: country, p_currency: currency });
+    const mode = modeRow.error ? 'card_hold' : String(modeRow.data || 'card_hold');
     let route: { provider: string; merchantAccountRef: string };
-    try {
-      route = selectMarketPayment({ countryCode: country, currency, paymentEnabled: true },
-        await loadDatabasePaymentPolicies(this.deps.db, { country, currency, method: 'card' } as any), 'card', ['authorise', 'capture', 'release']);
-    } catch { return fail('CASH_HOLD_ROUTE_UNAVAILABLE', 'A card hold is not available in this market'); }
-    if (!this.deps.holdProviders[route.provider]) fail('CASH_HOLD_PROVIDER_UNAVAILABLE', 'A card hold is not available in this market');
+    if (mode === 'wallet_reservation') {
+      if (!this.deps.holdProviders['customer_wallet']) fail('CASH_HOLD_PROVIDER_UNAVAILABLE', 'Wallet reservation is not available in this market');
+      route = { provider: 'customer_wallet', merchantAccountRef: 'customer-wallet:' + country + '/' + currency };
+    } else {
+      try {
+        route = selectMarketPayment({ countryCode: country, currency, paymentEnabled: true },
+          await loadDatabasePaymentPolicies(this.deps.db, { country, currency, method: 'card' } as any), 'card', ['authorise', 'capture', 'release']);
+      } catch { return fail('CASH_HOLD_ROUTE_UNAVAILABLE', 'A card hold is not available in this market'); }
+      if (!this.deps.holdProviders[route.provider]) fail('CASH_HOLD_PROVIDER_UNAVAILABLE', 'A card hold is not available in this market');
+    }
     const policy = await this.deps.db.rpc('active_cancellation_policy', { p_tenant: input.tenantId, p_market: country });
     if (policy.error) fail('CASH_FEE_TERMS_UNAVAILABLE', 'Cancellation terms could not be loaded');
     const p = Array.isArray(policy.data) ? policy.data[0] : policy.data;

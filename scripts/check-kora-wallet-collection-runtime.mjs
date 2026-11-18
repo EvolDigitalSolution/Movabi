@@ -131,5 +131,78 @@ let pass=0,fail=0;const check=(name,cond,detail='')=>{if(cond){pass++;console.lo
  check('saved cards not installed',(await code(()=>sandbox.createCheckout({...expected(),email,redirectUrl,methods:['card'],saveForFuture:true})))==='PAYMENT_CAPABILITY_UNAVAILABLE');
 }
 
-console.log(`\n${pass} passed, ${fail} failed`);
+console.log(`\nkora-adapter: ${pass} passed, ${fail} failed`);
+
+// ==== Versioned customer fee terms (approved 5% retained; zero-fee pin removed) ====
+{
+ const svcModule=await load('server/services/payments/customer-wallet-collection.service.ts');
+ const {assertApprovedCustomerFee}=svcModule;
+ const approved={version:'vaydu-customer-card-5pct-v1',fee_basis:'wallet',fee_basis_points:500,fee_fixed_minor:0,
+  fee_cap_minor:null,rounding:'half_up',approved_by:'eds-release-review',approved_at:'2026-01-01T00:00:00Z',active:true};
+ const rejects=p=>{try{assertApprovedCustomerFee(p);return 'ACCEPTED';}catch(e){return e.code||'ERR';}};
+ check('approved 5% schedule accepted',rejects(approved)==='ACCEPTED');
+ let threw=false;try{assertApprovedCustomerFee(approved);}catch{threw=true;}
+ check('approved 5% schedule accepted(no-throw)',threw===false);
+ threw=false;try{assertApprovedCustomerFee({...approved,fee_cap_minor:150000});}catch{threw=true;}
+ check('approved capped schedule accepted',threw===false);
+ check('unapproved schedule rejected',rejects({...approved,approved_by:null})==='PAYMENT_FEE_MISSING');
+ check('inactive schedule rejected',rejects({...approved,active:false})==='PAYMENT_FEE_MISSING');
+ check('non-wallet basis rejected',rejects({...approved,fee_basis:'gross'})==='PAYMENT_FEE_MISSING');
+ check('missing version rejected',rejects({...approved,version:null})==='PAYMENT_FEE_MISSING');
+ check('out-of-range bps rejected',rejects({...approved,fee_basis_points:10000})==='PAYMENT_FEE_MISSING');
+ check('non-half-up rounding rejected',rejects({...approved,rounding:'down'})==='PAYMENT_FEE_MISSING');
+ check('null policy rejected',rejects(null)==='PAYMENT_FEE_MISSING');
+}
+
+// ==== NG wallet-reservation cash hold adapter ====
+{
+ globalThis.__koraMocks['./market-payment-store']={};
+ globalThis.__koraMocks['./market-payment-registry']={};
+ const cashModule=await load('server/services/payments/cash-ride-booking.ts');
+ const {WalletCashFeeHold}=cashModule;
+ const JOB='11111111-2222-4333-8444-555555555555',CUST='22222222-3333-4444-8555-666666666666';
+ const INPUT={jobId:JOB,customerId:CUST,merchantAccountRef:'customer-wallet:NG/NGN',amountMinor:50000,currency:'NGN'};
+ const mkDb=handlers=>({rpc:async(fn,args)=>handlers[fn]?handlers[fn](args):{data:null,error:{code:'XX',message:'no mock'}}});
+ // create binds the deterministic reference
+ {
+  const a=new WalletCashFeeHold(mkDb({cash_wallet_reserve_hold:async()=>({data:'wres:'+JOB,error:null})}));
+  const c=await a.create(INPUT);
+  check('wallet hold create binds wres reference',c.reference==='wres:'+JOB&&c.clientSecret==='wres-client:wres:'+JOB);
+ }
+ // wrong reference -> reconciliation
+ {
+  const a=new WalletCashFeeHold(mkDb({cash_wallet_reserve_hold:async()=>({data:'wres:other',error:null})}));
+  check('wallet hold foreign reference refused',(await code(()=>a.create(INPUT)))==='CASH_HOLD_UNCONFIRMED');
+ }
+ // insufficient spendable balance maps to a customer-facing reason
+ {
+  const a=new WalletCashFeeHold(mkDb({cash_wallet_reserve_hold:async()=>({data:null,error:{code:'WH004'}})}));
+  check('insufficient wallet mapped',(await code(()=>a.create(INPUT)))==='CASH_WALLET_INSUFFICIENT');
+ }
+ // verifyAuthorised requires the reservation in place
+ {
+  const a=new WalletCashFeeHold(mkDb({cash_wallet_hold_status:async()=>({data:'reserved',error:null})}));
+  let okv=true;try{await a.verifyAuthorised('wres:'+JOB,INPUT);}catch{okv=false;}
+  check('reserved wallet hold verifies',okv===true);
+  const b=new WalletCashFeeHold(mkDb({cash_wallet_hold_status:async()=>({data:'released',error:null})}));
+  check('released wallet hold refused',(await code(()=>b.verifyAuthorised('wres:'+JOB,INPUT)))==='CASH_HOLD_NOT_AUTHORISED');
+ }
+ // capture re-verifies the provider-side state
+ {
+  const a=new WalletCashFeeHold(mkDb({cash_wallet_capture_hold:async()=>({data:null,error:null}),cash_wallet_hold_status:async()=>({data:'captured',error:null})}));
+  let okc=true;try{await a.capture('wres:'+JOB,INPUT,30000,'k1');}catch{okc=false;}
+  check('wallet capture confirmed',okc===true);
+  const b=new WalletCashFeeHold(mkDb({cash_wallet_capture_hold:async()=>({data:null,error:null}),cash_wallet_hold_status:async()=>({data:'reserved',error:null})}));
+  check('unconfirmed capture refused',(await code(()=>b.capture('wres:'+JOB,INPUT,30000,'k2')))==='CASH_HOLD_CAPTURE_UNCONFIRMED');
+ }
+ // release accepts released-or-captured terminal states
+ {
+  const a=new WalletCashFeeHold(mkDb({cash_wallet_release_hold:async()=>({data:null,error:null}),cash_wallet_hold_status:async()=>({data:'released',error:null})}));
+  let okr=true;try{await a.release('wres:'+JOB,INPUT);}catch{okr=false;}
+  check('wallet release confirmed',okr===true);
+  const b=new WalletCashFeeHold(mkDb({cash_wallet_release_hold:async()=>({data:null,error:null}),cash_wallet_hold_status:async()=>({data:'reserved',error:null})}));
+  check('unconfirmed release refused',(await code(()=>b.release('wres:'+JOB,INPUT)))==='CASH_HOLD_RELEASE_UNCONFIRMED');
+ }
+}
+console.log(`TOTAL ${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

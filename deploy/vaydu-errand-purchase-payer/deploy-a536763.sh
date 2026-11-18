@@ -174,6 +174,14 @@ prereq/548|table:public.job_settlement_methods|missing
 202612709|function:public.payout_withdrawal_provider_supported|missing
 202612710|column:public.market_payment_routes.provider_account_id|missing
 202612711|function:public.finish_driver_withdrawal|missing
+202612712|condef:market_payment_routes_check1|missing
+202612713|column:public.driver_cash_credit_markets_v1e.cash_security_mode|missing
+202612713|table:public.cash_wallet_hold_reservations_v1e|missing
+202612713|function:public.cash_market_security_mode_v1e|missing
+202612713|function:public.cash_wallet_reserve_hold|missing
+202612713|function:public.cash_wallet_release_hold|missing
+202612713|function:public.cash_wallet_capture_hold|missing
+202612713|function:public.cash_wallet_hold_status|missing
 202612705|complete_job_with_pending_payout|DEFINITION-DIFFERS
 202612705|finish_queued_job_payout|DEFINITION-DIFFERS
 202612705|finish_flutterwave_job_payout|function-absent
@@ -182,6 +190,8 @@ prereq/548|table:public.job_settlement_methods|missing
 202612709|payout_withdrawal_provider_supported|function-absent
 202612710|freeze_wallet_topup_fee|definition-verified
 202612711|finish_driver_withdrawal|function-absent
+202612713|cash_wallet_reserve_hold|function-absent
+202612713|cash_wallet_capture_hold|function-absent
 prereq/547|claim_flutterwave_job_submission|function-absent
 20261254700000_flutterwave_payout_outbox.sql|unknown|4
 20261254800000_flutterwave_collection_subaccounts.sql|unknown|5
@@ -192,9 +202,11 @@ prereq/547|claim_flutterwave_job_submission|function-absent
 20261270900000_kora_payout_adapter.sql|unknown|2
 20261271000000_customer_collection_account_binding.sql|unknown|1
 20261271100000_kora_settle_reference.sql|unknown|1
+20261271200000_ng_kora_collection_route.sql|unknown|1
+20261271300000_ng_cash_wallet_reservation.sql|unknown|7
 EOF
   local out rc
-  step "selftest 1 — missing prerequisites select the nine reviewed files"
+  step "selftest 1 — missing prerequisites select the eleven reviewed files"
   out="$(select_apply_list "$T/need9.txt" "$ROOT" 2>/dev/null)" \
     || die "selftest 1: selection failed on the missing-state capture"
   printf '%s\n' "$out" > "$T/got.txt"
@@ -208,10 +220,12 @@ db/migrations/20261270800000_driver_settlement_policy.sql
 db/migrations/20261270900000_kora_payout_adapter.sql
 db/migrations/20261271000000_customer_collection_account_binding.sql
 db/migrations/20261271100000_kora_settle_reference.sql
+db/migrations/20261271200000_ng_kora_collection_route.sql
+db/migrations/20261271300000_ng_cash_wallet_reservation.sql
 EOF
-  diff -u "$T/want.txt" "$T/got.txt" || die "selftest 1: apply list is not the expected nine files"
+  diff -u "$T/want.txt" "$T/got.txt" || die "selftest 1: apply list is not the expected eleven files"
   gate_preflight "$T/need9.txt" || die "selftest 1: gate rejected a valid capture"
-  echo "  nine files selected, gate passed"
+  echo "  eleven files selected, gate passed"
 
   expect_stop(){ # $1=label $2=file — gate or select must reject (subshell so die is catchable)
     local rc=0
@@ -255,7 +269,7 @@ case "${1:-}" in
         20261270500000_errand_purchase_payer 20261270600000_customer_wallet_booking_bridge \
         20261270700000_driver_wallet_settlement 20261270800000_driver_settlement_policy \
         20261270900000_kora_payout_adapter 20261271000000_customer_collection_account_binding \
-        20261271100000_kora_settle_reference > /tmp/a536763-fake/db/migrations/APPLY-ORDER.txt
+        20261271100000_kora_settle_reference 20261271200000_ng_kora_collection_route \n        20261271300000_ng_cash_wallet_reservation > /tmp/a536763-fake/db/migrations/APPLY-ORDER.txt
       R="/tmp/a536763-fake"
     fi
     selftest "$R"; exit 0 ;;

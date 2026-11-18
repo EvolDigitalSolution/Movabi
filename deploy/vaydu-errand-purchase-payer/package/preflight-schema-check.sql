@@ -65,7 +65,17 @@ WITH req(migration,obj) AS (VALUES
  -- 710 collection account binding
  ('202612710','column:public.market_payment_routes.provider_account_id'),
  -- 711 kora settle reference (function replaced; presence proven by 709 row)
- ('202612711','function:public.finish_driver_withdrawal')
+ ('202612711','function:public.finish_driver_withdrawal'),
+ -- 712 NG kora collection route (constraint definition, not mere presence)
+ ('202612712','condef:market_payment_routes_check1'),
+ -- 713 NG cash wallet reservation
+ ('202612713','column:public.driver_cash_credit_markets_v1e.cash_security_mode'),
+ ('202612713','table:public.cash_wallet_hold_reservations_v1e'),
+ ('202612713','function:public.cash_market_security_mode_v1e'),
+ ('202612713','function:public.cash_wallet_reserve_hold'),
+ ('202612713','function:public.cash_wallet_release_hold'),
+ ('202612713','function:public.cash_wallet_capture_hold'),
+ ('202612713','function:public.cash_wallet_hold_status')
 ), chk AS (
  SELECT migration,obj,
   CASE
@@ -77,6 +87,11 @@ WITH req(migration,obj) AS (VALUES
    WHEN obj LIKE 'function:%' THEN EXISTS(
      SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
      WHERE n.nspname||'.'||p.proname=substring(obj from 10))
+   WHEN obj LIKE 'condef:%' THEN EXISTS(
+     SELECT 1 FROM pg_constraint c WHERE c.conname=substring(obj from 8)
+      AND position('capabilities <@' IN pg_get_constraintdef(c.oid))>0
+      AND position('collect' IN pg_get_constraintdef(c.oid))>0
+      AND position('NGN' IN pg_get_constraintdef(c.oid))>0)
   END AS present
  FROM req)
 SELECT * INTO TEMP TABLE _preflight_chk FROM chk;
@@ -120,6 +135,8 @@ FROM (VALUES
  ('202612709','payout_withdrawal_provider_supported',NULL,'kora',NULL,NULL),
  ('202612710','freeze_wallet_topup_fee','uuid, text','provider_account_id',NULL,NULL),
  ('202612711','finish_driver_withdrawal',NULL,NULL,NULL,'KPY-'),
+ ('202612713','cash_wallet_reserve_hold',NULL,'wres:',NULL,NULL),
+ ('202612713','cash_wallet_capture_hold',NULL,'cash-wallet-capture:',NULL,NULL),
  ('prereq/547','claim_flutterwave_job_submission',NULL,'flutterwave_job_submissions','_PMCK',NULL)
 ) d(grp,name,sig,anchor1,anchor2,absent)
 LEFT JOIN LATERAL (
@@ -159,7 +176,9 @@ FROM (VALUES
  ('20261270800000','20261270800000_driver_settlement_policy.sql','202612708'),
  ('20261270900000','20261270900000_kora_payout_adapter.sql','202612709'),
  ('20261271000000','20261271000000_customer_collection_account_binding.sql','202612710'),
- ('20261271100000','20261271100000_kora_settle_reference.sql','202612711')
+ ('20261271100000','20261271100000_kora_settle_reference.sql','202612711'),
+ ('20261271200000','20261271200000_ng_kora_collection_route.sql','202612712'),
+ ('20261271300000','20261271300000_ng_cash_wallet_reservation.sql','202612713')
 ) v(version,filename,mig)
 LEFT JOIN (SELECT migration,count(*) AS cnt FROM _preflight_chk WHERE NOT present GROUP BY migration) m
  ON m.migration=v.mig
@@ -182,5 +201,5 @@ ORDER BY v.version;
 --    no shipped file is authorised to fix it; reconcile manually first.
 -- Dependency order is defined by the package manifest, not discovered from
 -- objects: apply files strictly in this order —
---   202612547 -> 202612548 -> 202612705 -> 706 -> 707 -> 708 -> 709 -> 710 -> 711
+--   202612547 -> 202612548 -> 202612705 -> 706 -> 707 -> 708 -> 709 -> 710 -> 711 -> 712 -> 713
 -- each file's in-file guard also raises when its prerequisites are absent.

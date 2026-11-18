@@ -65,18 +65,18 @@ DO $d$ DECLARE t text; tbl text; BEGIN
 INSERT INTO public.tenants(id,name,slug)
  SELECT '11111111-1111-4111-8111-111111111111'::uuid,'t','t'
  WHERE NOT EXISTS (SELECT 1 FROM public.tenants WHERE slug='t' OR id='11111111-1111-4111-8111-111111111111'::uuid);
-DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.tenants WHERE slug='t')
- THEN RAISE EXCEPTION 'fixture isolation failed: tenants slug ''t'' occupied by another id'; END IF; END $$;
-SELECT set_config('fixture.t_id',(SELECT id::text FROM public.tenants WHERE slug='t'),false) AS t_id;
+DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.tenants WHERE slug='t' OR id='11111111-1111-4111-8111-111111111111'::uuid)
+ THEN RAISE EXCEPTION 'fixture isolation failed: no adoptable tenant row'; END IF; END $$;
+SELECT set_config('fixture.t_id',(SELECT id::text FROM public.tenants WHERE slug='t' OR id='11111111-1111-4111-8111-111111111111'::uuid ORDER BY (slug='t') DESC LIMIT 1),false) AS t_id;
 INSERT INTO public.market_availability(country_code,launch_status,supported_currency)
  SELECT 'GB','live','GBP' WHERE NOT EXISTS (SELECT 1 FROM public.market_availability WHERE country_code='GB');
 UPDATE public.market_availability SET launch_status='live', supported_currency='GBP' WHERE country_code='GB';
 INSERT INTO public.service_types(id,slug,name)
  SELECT 'dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid,'errand','Errand'
  WHERE NOT EXISTS (SELECT 1 FROM public.service_types WHERE slug='errand' OR id='dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid);
-DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.service_types WHERE slug='errand')
- THEN RAISE EXCEPTION 'fixture isolation failed: service_types slug ''errand'' occupied by another id'; END IF; END $$;
-SELECT set_config('fixture.st_id',(SELECT id::text FROM public.service_types WHERE slug='errand'),false) AS st_id;
+DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.service_types WHERE slug='errand' OR id='dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid)
+ THEN RAISE EXCEPTION 'fixture isolation failed: no adoptable service_types row'; END IF; END $$;
+SELECT set_config('fixture.st_id',(SELECT id::text FROM public.service_types WHERE slug='errand' OR id='dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid ORDER BY (slug='errand') DESC LIMIT 1),false) AS st_id;
 INSERT INTO auth.users(id) VALUES ('dddddddd-aaaa-4aaa-8aaa-000000000009'),
  ('ffffffff-dddd-4ddd-8ddd-dddddddddddd'),('aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee')
  ON CONFLICT (id) DO NOTHING;
@@ -295,6 +295,36 @@ DO $t$ DECLARE a uuid; ev uuid; BEGIN
    AND NOT EXISTS(SELECT 1 FROM public.wallet_transactions WHERE user_id='aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee'
      AND balance_purpose='customer_credit'),'');
 END $t$;
+
+-- 4. Route gate (20261271200000): only the reviewed NG/NGN kora card collect
+-- shape is permitted; every other kora/fincra/payout shape stays blocked.
+DO $r$ DECLARE a1 boolean; a2 boolean; a3 boolean; a4 boolean; a5 boolean; a6 boolean; BEGIN
+ BEGIN
+   INSERT INTO public.market_payment_routes(country_code,currency_code,method,provider,merchant_account_ref,preferred,enabled,merchant_approved,adapter_ready,capabilities)
+     VALUES('NG','NGN','card','kora','suite_kora_collect',false,true,true,true,ARRAY['collect']); a1:=true;
+   EXCEPTION WHEN others THEN a1:=false; END;
+ INSERT INTO results VALUES (4,'NG/NGN kora card collect route is permitted',a1,'');
+ BEGIN INSERT INTO public.market_payment_routes(country_code,currency_code,method,provider,merchant_account_ref,preferred,enabled,merchant_approved,adapter_ready,capabilities)
+   VALUES('NG','NGN','bank_transfer','kora','suite_kora_pay',false,true,true,true,ARRAY['payout']); a2:=false;
+   EXCEPTION WHEN check_violation THEN a2:=true; END;
+ INSERT INTO results VALUES (4,'kora payout capability remains forbidden',a2,'');
+ BEGIN INSERT INTO public.market_payment_routes(country_code,currency_code,method,provider,merchant_account_ref,preferred,enabled,merchant_approved,adapter_ready,capabilities)
+   VALUES('GB','GBP','card','kora','suite_kora_gb',false,true,true,true,ARRAY['collect']); a3:=false;
+   EXCEPTION WHEN check_violation THEN a3:=true; END;
+ INSERT INTO results VALUES (4,'kora outside NG/NGN remains forbidden',a3,'');
+ BEGIN INSERT INTO public.market_payment_routes(country_code,currency_code,method,provider,merchant_account_ref,preferred,enabled,merchant_approved,adapter_ready,capabilities)
+   VALUES('NG','NGN','card','fincra','suite_fincra_ng',false,true,true,true,ARRAY['collect']); a4:=false;
+   EXCEPTION WHEN check_violation THEN a4:=true; END;
+ INSERT INTO results VALUES (4,'fincra enabled remains forbidden',a4,'');
+ BEGIN INSERT INTO public.market_payment_routes(country_code,currency_code,method,provider,merchant_account_ref,preferred,enabled,merchant_approved,adapter_ready,capabilities,payout_approved)
+   VALUES('NG','NGN','card','kora','suite_kora_pa',false,true,true,true,ARRAY['collect'],true); a5:=false;
+   EXCEPTION WHEN check_violation THEN a5:=true; END;
+ INSERT INTO results VALUES (4,'kora payout_approved remains forbidden',a5,'');
+ BEGIN INSERT INTO public.market_payment_routes(country_code,currency_code,method,provider,merchant_account_ref,preferred,enabled,merchant_approved,adapter_ready,capabilities)
+   VALUES('NG','NGN','card','kora','suite_kora_extra',false,true,true,true,ARRAY['collect','refund']); a6:=false;
+   EXCEPTION WHEN check_violation THEN a6:=true; END;
+ INSERT INTO results VALUES (4,'kora collect route cannot grow extra capabilities',a6,'');
+END $r$;
 
 SELECT n, name, CASE WHEN ok THEN 'PASS' ELSE 'FAIL' END AS result, left(detail,90) AS detail FROM results ORDER BY n, name;
 SELECT count(*) FILTER (WHERE NOT ok) AS failures, count(*) AS checks FROM results;

@@ -6,3 +6,5 @@ Apply strictly in this order. Each file aborts itself if the database is not mov
 20261270900000_kora_payout_adapter.sql
 20261271000000_customer_collection_account_binding.sql
 20261271100000_kora_settle_reference.sql
+20261271200000_ng_kora_collection_route.sql
+20261271300000_ng_cash_wallet_reservation.sql

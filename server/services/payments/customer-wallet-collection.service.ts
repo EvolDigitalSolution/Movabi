@@ -16,11 +16,16 @@ export interface CustomerTopupDb {
 export interface CustomerTopupConfig {
   callbackUrl(): string;
 }
-export const CUSTOMER_CARD_FEE_VERSION = 'vaydu-customer-card-0fee-test-v1';
-export const CUSTOMER_CARD_FEE_LABEL = 'No card fee';
+export const CUSTOMER_CARD_FEE_LABEL = 'Approved card funding fee';
+/** Versioned fee terms: any ACTIVE, explicitly approved wallet-basis schedule is
+ * valid — the approved terms live in the DB row (currently the approved 5% card
+ * funding fee), never in code. The frozen version travels on the attempt so the
+ * fee charged is the fee that was disclosed at initiation. */
 export function assertApprovedCustomerFee(policy: any): void {
-  if (!policy || policy.version !== CUSTOMER_CARD_FEE_VERSION || policy.fee_basis !== 'wallet' ||
-      Number(policy.fee_basis_points) !== 0 || Number(policy.fee_fixed_minor) !== 0 || policy.fee_cap_minor != null ||
+  const bps = Number(policy?.fee_basis_points), fixed = Number(policy?.fee_fixed_minor), cap = policy?.fee_cap_minor;
+  if (!policy || typeof policy.version !== 'string' || !policy.version.trim() || policy.fee_basis !== 'wallet' ||
+      !Number.isInteger(bps) || bps < 0 || bps >= 10000 || !Number.isInteger(fixed) || fixed < 0 ||
+      (cap != null && (!Number.isInteger(Number(cap)) || Number(cap) <= 0)) ||
       policy.rounding !== 'half_up' || !policy.approved_by || !policy.approved_at || policy.active !== true)
     throw new PaymentLayerError('PAYMENT_FEE_MISSING', 'Approved customer card fee schedule is unavailable');
 }
