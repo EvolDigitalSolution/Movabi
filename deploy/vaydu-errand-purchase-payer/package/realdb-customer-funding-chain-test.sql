@@ -103,17 +103,19 @@ UPDATE public.market_payment_routes SET preferred=true,enabled=true,merchant_app
  WHERE country_code='GB' AND currency_code='GBP' AND method='card' AND provider='stripe' AND merchant_account_ref='acct_vaydu_platform_gb';
 INSERT INTO public.wallet_topup_fee_schedules(version,provider,country_code,currency_code,method,exponent,fee_basis,fee_basis_points,fee_fixed_minor,rounding,approved_by,approved_at,active)
  SELECT 'vaydu-customer-card-0fee-test-v1','stripe','GB','GBP','card',2,'wallet',0,0,'half_up','rehearsal',now(),true
- WHERE NOT EXISTS(SELECT 1 FROM public.wallet_topup_fee_schedules WHERE version='vaydu-customer-card-0fee-test-v1');
-UPDATE public.wallet_topup_fee_schedules SET provider='stripe',country_code='GB',currency_code='GBP',method='card',exponent=2,
-  fee_basis='wallet',fee_basis_points=0,fee_fixed_minor=0,rounding='half_up',approved_by='rehearsal',approved_at=now(),active=true
- WHERE version='vaydu-customer-card-0fee-test-v1';
+ WHERE NOT EXISTS(SELECT 1 FROM public.wallet_topup_fee_schedules WHERE version='vaydu-customer-card-0fee-test-v1'
+   AND provider='stripe' AND country_code='GB' AND currency_code='GBP' AND method='card');
+UPDATE public.wallet_topup_fee_schedules SET exponent=2,fee_basis='wallet',fee_basis_points=0,fee_fixed_minor=0,
+  rounding='half_up',approved_by='rehearsal',approved_at=now(),active=true
+ WHERE version='vaydu-customer-card-0fee-test-v1' AND provider='stripe' AND country_code='GB' AND currency_code='GBP' AND method='card';
 -- The batch-2b freeze reads wallet_topup_fee_policies (post-202612541 schema); the older
 -- schedules table is kept above so this fixture works against either function version.
 INSERT INTO public.wallet_topup_fee_policies(version,provider,country_code,currency_code,method,fee_basis_points,fee_fixed_minor,exponent,active)
  SELECT 'vaydu-customer-card-0fee-test-v1','stripe','GB','GBP','card',0,1,2,true
- WHERE NOT EXISTS(SELECT 1 FROM public.wallet_topup_fee_policies WHERE version='vaydu-customer-card-0fee-test-v1');
-UPDATE public.wallet_topup_fee_policies SET provider='stripe',country_code='GB',currency_code='GBP',method='card',
-  fee_basis_points=0,fee_fixed_minor=1,exponent=2,active=true WHERE version='vaydu-customer-card-0fee-test-v1';
+ WHERE NOT EXISTS(SELECT 1 FROM public.wallet_topup_fee_policies WHERE version='vaydu-customer-card-0fee-test-v1'
+   AND provider='stripe' AND country_code='GB' AND currency_code='GBP' AND method='card');
+UPDATE public.wallet_topup_fee_policies SET fee_basis_points=0,fee_fixed_minor=1,exponent=2,active=true
+ WHERE version='vaydu-customer-card-0fee-test-v1' AND provider='stripe' AND country_code='GB' AND currency_code='GBP' AND method='card';
 UPDATE public.wallet_collection_config SET value='true' WHERE key='enabled';
 INSERT INTO public.wallet_collection_config(key,value) SELECT 'enabled','true' WHERE NOT EXISTS(SELECT 1 FROM public.wallet_collection_config WHERE key='enabled');
 UPDATE public.wallet_collection_config SET value='1000000' WHERE key='max_amount_minor_GBP';

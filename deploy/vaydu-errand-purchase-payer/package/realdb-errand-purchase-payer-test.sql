@@ -27,7 +27,7 @@ CREATE TEMP TABLE pre_rows AS
    ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc')
  UNION ALL SELECT 'driver_payment_accounts', to_jsonb(t) FROM public.driver_payment_accounts t WHERE t.driver_id='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
  UNION ALL SELECT 'driver_payout_markets', to_jsonb(t) FROM public.driver_payout_markets t
-   WHERE t.country_code='NG' AND t.currency_code='NGN' AND t.provider='flutterwave' AND t.merchant_account_ref='flw_merchant_ng';
+   WHERE t.country_code='NG' AND t.currency_code='NGN';
 CREATE TEMP TABLE pre_triggers AS
  SELECT c.relname AS tbl, t.tgname, t.tgenabled FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE NOT t.tgisinternal;
 CREATE TEMP TABLE pre_acl AS
@@ -384,13 +384,15 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
  INSERT INTO public.driver_payment_accounts(id,driver_id,tenant_id,country_code,currency_code,provider,merchant_account_ref,state,beneficiary_id,bank_code,last4,fingerprint)
   VALUES (acct,ng_driver,(current_setting('fixture.t_id'))::uuid,'NG','NGN','flutterwave','flw_merchant_ng','completed',
     '123456','044','1234',repeat('a',64));
+ -- driver_payout_markets PK is (country_code,currency_code): adopt whatever
+ -- provider/merchant the existing NG/NGN row carries, or insert when absent.
  INSERT INTO public.driver_payout_markets(country_code,currency_code,provider,merchant_account_ref,enabled,merchant_approved,adapter_ready,capability_verified_at,capability_evidence_ref,merchant_mode,sandbox_driver_id,sandbox_tenant_id)
   SELECT 'NG','NGN','flutterwave','flw_merchant_ng',true,true,true,now(),'cap-evidence-1','test',ng_driver,(current_setting('fixture.t_id'))::uuid
-  WHERE NOT EXISTS(SELECT 1 FROM public.driver_payout_markets WHERE country_code='NG' AND currency_code='NGN'
-    AND provider='flutterwave' AND merchant_account_ref='flw_merchant_ng');
- UPDATE public.driver_payout_markets SET enabled=true,merchant_approved=true,adapter_ready=true,capability_verified_at=now(),
-   capability_evidence_ref='cap-evidence-1',merchant_mode='test',sandbox_driver_id=ng_driver,sandbox_tenant_id=(current_setting('fixture.t_id'))::uuid
-  WHERE country_code='NG' AND currency_code='NGN' AND provider='flutterwave' AND merchant_account_ref='flw_merchant_ng';
+  WHERE NOT EXISTS(SELECT 1 FROM public.driver_payout_markets WHERE country_code='NG' AND currency_code='NGN');
+ UPDATE public.driver_payout_markets SET provider='flutterwave',merchant_account_ref='flw_merchant_ng',enabled=true,merchant_approved=true,
+   adapter_ready=true,capability_verified_at=now(),capability_evidence_ref='cap-evidence-1',merchant_mode='test',
+   sandbox_driver_id=ng_driver,sandbox_tenant_id=(current_setting('fixture.t_id'))::uuid
+  WHERE country_code='NG' AND currency_code='NGN';
  -- An NG errand (no purchase spend): completes on the verified flutterwave identity.
  INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
    payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
@@ -735,7 +737,7 @@ CREATE TEMP TABLE post_rows AS
    ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc')
  UNION ALL SELECT 'driver_payment_accounts', to_jsonb(t) FROM public.driver_payment_accounts t WHERE t.driver_id='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
  UNION ALL SELECT 'driver_payout_markets', to_jsonb(t) FROM public.driver_payout_markets t
-   WHERE t.country_code='NG' AND t.currency_code='NGN' AND t.provider='flutterwave' AND t.merchant_account_ref='flw_merchant_ng';
+   WHERE t.country_code='NG' AND t.currency_code='NGN';
 CREATE TEMP TABLE post_triggers AS
  SELECT c.relname AS tbl, t.tgname, t.tgenabled FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE NOT t.tgisinternal;
 CREATE TEMP TABLE post_acl AS
