@@ -312,10 +312,18 @@ fi
 TOOLS_DIR="$(cd "$(dirname "$0")" && pwd)"
 [ -f "$TOOLS_DIR/rehearse-restore.sh" ] || die "corrected rehearse-restore.sh missing next to this wrapper"
 [ -f "$TOOLS_DIR/capture-roles.sql" ]   || die "capture-roles.sql missing next to this wrapper"
+for s in realdb-errand-purchase-payer-test.sql realdb-customer-funding-chain-test.sql; do
+  [ -f "$TOOLS_DIR/$s" ] || die "corrected behaviour suite missing next to this wrapper: $s"
+done
 if [ -f "$TOOLS_DIR/CHECKSUMS.sha256" ]; then
   (cd "$TOOLS_DIR" && sha256sum -c --quiet CHECKSUMS.sha256) || die "tooling checksum mismatch"
 fi
 install -m 755 "$TOOLS_DIR/rehearse-restore.sh" "$R/runbook/rehearse-restore.sh"
+# Fixture-isolation corrected suites (adopt-or-insert + post-rollback
+# preservation proof) replace the archived copies before the rehearsal runs.
+for s in realdb-errand-purchase-payer-test.sql realdb-customer-funding-chain-test.sql; do
+  install -m 644 "$TOOLS_DIR/$s" "$R/db/tests/$s"
+done
 
 DBQ() { docker exec -i movabi-develop-db sh -c \
   'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -U supabase_admin -d movabi_develop -v ON_ERROR_STOP=1 -P pager=off'; }

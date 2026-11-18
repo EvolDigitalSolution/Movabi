@@ -9,6 +9,33 @@
 --   cancellation after purchase requires reconciliation (no silent customer release)
 -- Everything runs in one transaction and ROLLS BACK.
 \set ON_ERROR_STOP on
+-- Disposable-DB fixture isolation: capture every row the fixture section can
+-- touch, every trigger state and every table/function/schema ACL BEFORE the
+-- transaction so the post-suite check can prove the restored backup is
+-- byte-identical afterwards. TEMP tables outlive the ROLLBACK below.
+CREATE TEMP TABLE pre_rows AS
+ SELECT 'market_availability' AS tbl, to_jsonb(t) AS row FROM public.market_availability t WHERE t.country_code IN ('GB','NG')
+ UNION ALL SELECT 'tenants', to_jsonb(t) FROM public.tenants t WHERE t.slug='t' OR t.id='11111111-1111-4111-8111-111111111111'::uuid
+ UNION ALL SELECT 'service_types', to_jsonb(t) FROM public.service_types t WHERE t.slug='errand' OR t.id='dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid
+ UNION ALL SELECT 'auth_users', to_jsonb(t) FROM auth.users t WHERE t.id IN
+   ('dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb','cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc')
+   OR t.id::text LIKE 'dddddddd-aaaa-4aaa-8aaa-%'
+ UNION ALL SELECT 'profiles', to_jsonb(t) FROM public.profiles t WHERE t.id IN
+   ('dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb','cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc')
+   OR t.id::text LIKE 'dddddddd-aaaa-4aaa-8aaa-%'
+ UNION ALL SELECT 'wallets', to_jsonb(t) FROM public.wallets t WHERE t.user_id IN
+   ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc')
+ UNION ALL SELECT 'driver_payment_accounts', to_jsonb(t) FROM public.driver_payment_accounts t WHERE t.driver_id='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+ UNION ALL SELECT 'driver_payout_markets', to_jsonb(t) FROM public.driver_payout_markets t
+   WHERE t.country_code='NG' AND t.currency_code='NGN' AND t.provider='flutterwave' AND t.merchant_account_ref='flw_merchant_ng';
+CREATE TEMP TABLE pre_triggers AS
+ SELECT c.relname AS tbl, t.tgname, t.tgenabled FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE NOT t.tgisinternal;
+CREATE TEMP TABLE pre_acl AS
+ SELECT n.nspname, c.relname, c.relacl FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','auth') AND c.relkind='r';
+CREATE TEMP TABLE pre_facl AS
+ SELECT p.oid::regprocedure::text AS sig, p.proacl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN ('public','auth');
+CREATE TEMP TABLE pre_nacl AS
+ SELECT nspname, nspacl FROM pg_namespace WHERE nspname IN ('public','auth');
 BEGIN;
 -- Fixture-only trigger bypass (disposable DB, never production): jobs triggers that
 -- require live auth context (auth.uid()/notification fan-out/market eligibility) are
@@ -17,25 +44,50 @@ BEGIN;
 --   trg_enforce_job_payment_eligibility, enforce_ride_cash_credit_v1e (payment integrity)
 --   tr_check_errand_completion_guard (blocks completion with a pending over-budget request)
 --   reward_credit_reserve, trg_sync_job_prices, tr_update_jobs_updated_at (data-only)
-DO $d$ DECLARE t text; BEGIN
+DO $d$ DECLARE t text; tbl text; BEGIN
  FOR t IN SELECT tgname FROM pg_trigger tr JOIN pg_class c ON c.oid=tr.tgrelid WHERE c.relname='jobs' AND NOT tgisinternal
    AND tgname NOT IN ('trg_enforce_job_payment_eligibility','enforce_ride_cash_credit_v1e',
      'tr_check_errand_completion_guard','reward_credit_reserve','trg_sync_job_prices','tr_update_jobs_updated_at')
- LOOP EXECUTE format('ALTER TABLE public.jobs DISABLE TRIGGER %I', t); END LOOP; END $d$;
+ LOOP EXECUTE format('ALTER TABLE public.jobs DISABLE TRIGGER %I', t); END LOOP;
+ -- Fixture-write guards on config/market tables (immutability, approval checks)
+ -- are bypassed only so adopt-or-update fixtures can prepare pre-existing rows;
+ -- every enabled-state is restored by the ROLLBACK and proven below.
+ FOR t, tbl IN SELECT tgname, c.relname FROM pg_trigger tr JOIN pg_class c ON c.oid=tr.tgrelid
+   WHERE c.relname IN ('market_availability','driver_payout_markets','driver_payment_accounts','tenants','service_types')
+   AND NOT tgisinternal
+ LOOP EXECUTE format('ALTER TABLE public.%I DISABLE TRIGGER %I', tbl, t); END LOOP; END $d$;
 
-INSERT INTO public.tenants(id,name,slug) VALUES ('11111111-1111-4111-8111-111111111111','t','t');
-INSERT INTO public.market_availability(country_code,launch_status,supported_currency) VALUES ('GB','live','GBP');
-INSERT INTO public.service_types(id,slug,name) VALUES ('dddddddd-dddd-4ddd-8ddd-dddddddddd02','errand','Errand');
+-- Adopt-or-insert fixtures (disposable DB only): a pre-existing real row is
+-- reused/updated to the required state INSIDE this transaction and restored by
+-- ROLLBACK; a missing row is inserted under the fixture identity. Slug occupied
+-- by a different id is a loud error, never a suppressed skip.
+INSERT INTO public.tenants(id,name,slug)
+ SELECT '11111111-1111-4111-8111-111111111111'::uuid,'t','t'
+ WHERE NOT EXISTS (SELECT 1 FROM public.tenants WHERE slug='t' OR id='11111111-1111-4111-8111-111111111111'::uuid);
+DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.tenants WHERE slug='t')
+ THEN RAISE EXCEPTION 'fixture isolation failed: tenants slug ''t'' occupied by another id'; END IF; END $$;
+SELECT set_config('fixture.t_id',(SELECT id::text FROM public.tenants WHERE slug='t'),false) AS t_id;
+INSERT INTO public.market_availability(country_code,launch_status,supported_currency)
+ SELECT 'GB','live','GBP' WHERE NOT EXISTS (SELECT 1 FROM public.market_availability WHERE country_code='GB');
+UPDATE public.market_availability SET launch_status='live', supported_currency='GBP' WHERE country_code='GB';
+INSERT INTO public.service_types(id,slug,name)
+ SELECT 'dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid,'errand','Errand'
+ WHERE NOT EXISTS (SELECT 1 FROM public.service_types WHERE slug='errand' OR id='dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid);
+DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.service_types WHERE slug='errand')
+ THEN RAISE EXCEPTION 'fixture isolation failed: service_types slug ''errand'' occupied by another id'; END IF; END $$;
+SELECT set_config('fixture.st_id',(SELECT id::text FROM public.service_types WHERE slug='errand'),false) AS st_id;
 -- One driver per concurrently-active job: idx_jobs_one_active_per_driver enforces it.
-INSERT INTO auth.users(id) SELECT ('dddddddd-aaaa-4aaa-8aaa-'||lpad(to_hex(g),12,'0'))::uuid FROM generate_series(1,8) g;
-INSERT INTO auth.users(id) VALUES ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc');
+INSERT INTO auth.users(id) SELECT ('dddddddd-aaaa-4aaa-8aaa-'||lpad(to_hex(g),12,'0'))::uuid FROM generate_series(1,8) g
+ ON CONFLICT (id) DO NOTHING;
+INSERT INTO auth.users(id) VALUES ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc')
+ ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code)
- SELECT ('dddddddd-aaaa-4aaa-8aaa-'||lpad(to_hex(g),12,'0'))::uuid,'11111111-1111-4111-8111-111111111111','driver','GB','GB' FROM generate_series(1,8) g
+ SELECT ('dddddddd-aaaa-4aaa-8aaa-'||lpad(to_hex(g),12,'0'))::uuid,(current_setting('fixture.t_id'))::uuid,'driver','GB','GB' FROM generate_series(1,8) g
  ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
    country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code;
 INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code) VALUES
- ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb','11111111-1111-4111-8111-111111111111','customer','GB','GB'),
- ('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','11111111-1111-4111-8111-111111111111','customer','GB','GB')
+ ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb',(current_setting('fixture.t_id'))::uuid,'customer','GB','GB'),
+ ('eeeeeeee-cccc-4ccc-8ccc-cccccccccccc',(current_setting('fixture.t_id'))::uuid,'customer','GB','GB')
  ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
    country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code;
 INSERT INTO public.wallets(user_id,available_balance,reserved_balance,currency_code)
@@ -52,7 +104,7 @@ CREATE FUNCTION pg_temp.errand_job(fare numeric, estimate numeric, funded numeri
 RETURNS uuid LANGUAGE plpgsql AS $f$ DECLARE id uuid:=gen_random_uuid(); BEGIN
  INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
    payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown)
- VALUES (id,'11111111-1111-4111-8111-111111111111',customer,'a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+ VALUES (id,(current_setting('fixture.t_id'))::uuid,customer,'a','b',now(),(current_setting('fixture.st_id'))::uuid,
    'pending','GB','GBP','requested',fare,
    jsonb_build_object('quote_id',gen_random_uuid(),'quote_expires_at',now()+interval '10 minutes'),
    jsonb_build_object('calculationVersion','test-v1'));
@@ -63,7 +115,7 @@ RETURNS uuid LANGUAGE plpgsql AS $f$ DECLARE id uuid:=gen_random_uuid(); BEGIN
  END IF;
  RETURN id; END $f$;
 CREATE FUNCTION pg_temp.pay(j uuid, amount numeric, customer uuid DEFAULT 'cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
-RETURNS jsonb LANGUAGE sql AS $f$ SELECT public.pay_job_from_wallet(j,customer,amount,'GBP','11111111-1111-4111-8111-111111111111'::uuid) $f$;
+RETURNS jsonb LANGUAGE sql AS $f$ SELECT public.pay_job_from_wallet(j,customer,amount,'GBP',(current_setting('fixture.t_id'))::uuid::uuid) $f$;
 CREATE FUNCTION pg_temp.drv(n int) RETURNS uuid LANGUAGE sql AS $f$
  SELECT ('dddddddd-aaaa-4aaa-8aaa-'||lpad(to_hex(n),12,'0'))::uuid $f$;
 CREATE FUNCTION pg_temp.assign(j uuid, d uuid) RETURNS void LANGUAGE sql AS $f$
@@ -254,7 +306,7 @@ DO $t$ DECLARE j uuid; q public.job_payout_queue; tok uuid; ok boolean; msg text
  DELETE FROM public.errand_purchase_payments WHERE job_id=j;
  UPDATE public.errand_funding SET purchase_method=NULL,metadata=metadata||'{"shopping_spend_source":"issuing"}' WHERE job_id=j;
  INSERT INTO public.job_issuing_spend_controls(job_id,driver_id,customer_id,tenant_id,stripe_card_id,amount_limit,currency_code,status)
-  VALUES (j,pg_temp.drv(6),'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','11111111-1111-4111-8111-111111111111','card_leg',50,'GBP','active');
+  VALUES (j,pg_temp.drv(6),'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc',(current_setting('fixture.t_id'))::uuid,'card_leg',50,'GBP','active');
  UPDATE public.jobs SET status='in_progress' WHERE id=j;
  PERFORM public.complete_job_with_pending_payout(j,pg_temp.drv(6),pg_temp.job_terms(),
    jsonb_build_object('completion_pin_verified_at',now()));
@@ -320,22 +372,29 @@ END $t$;
 -- =========================================================================
 DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid;
   acct uuid:=gen_random_uuid(); msg text; BEGIN
- INSERT INTO auth.users(id) VALUES (ng_driver);
+ INSERT INTO auth.users(id) VALUES (ng_driver) ON CONFLICT (id) DO NOTHING;
  INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code,registration_activated_at)
-  VALUES (ng_driver,'11111111-1111-4111-8111-111111111111','driver','NG','NG',now())
+  VALUES (ng_driver,(current_setting('fixture.t_id'))::uuid,'driver','NG','NG',now())
   ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
     country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code,
     registration_activated_at=EXCLUDED.registration_activated_at;
- INSERT INTO public.market_availability(country_code,launch_status,supported_currency) VALUES ('NG','live','NGN');
+ INSERT INTO public.market_availability(country_code,launch_status,supported_currency)
+  SELECT 'NG','live','NGN' WHERE NOT EXISTS(SELECT 1 FROM public.market_availability WHERE country_code='NG');
+ UPDATE public.market_availability SET launch_status='live',supported_currency='NGN' WHERE country_code='NG';
  INSERT INTO public.driver_payment_accounts(id,driver_id,tenant_id,country_code,currency_code,provider,merchant_account_ref,state,beneficiary_id,bank_code,last4,fingerprint)
-  VALUES (acct,ng_driver,'11111111-1111-4111-8111-111111111111','NG','NGN','flutterwave','flw_merchant_ng','completed',
+  VALUES (acct,ng_driver,(current_setting('fixture.t_id'))::uuid,'NG','NGN','flutterwave','flw_merchant_ng','completed',
     '123456','044','1234',repeat('a',64));
  INSERT INTO public.driver_payout_markets(country_code,currency_code,provider,merchant_account_ref,enabled,merchant_approved,adapter_ready,capability_verified_at,capability_evidence_ref,merchant_mode,sandbox_driver_id,sandbox_tenant_id)
-  VALUES ('NG','NGN','flutterwave','flw_merchant_ng',true,true,true,now(),'cap-evidence-1','test',ng_driver,'11111111-1111-4111-8111-111111111111');
+  SELECT 'NG','NGN','flutterwave','flw_merchant_ng',true,true,true,now(),'cap-evidence-1','test',ng_driver,(current_setting('fixture.t_id'))::uuid
+  WHERE NOT EXISTS(SELECT 1 FROM public.driver_payout_markets WHERE country_code='NG' AND currency_code='NGN'
+    AND provider='flutterwave' AND merchant_account_ref='flw_merchant_ng');
+ UPDATE public.driver_payout_markets SET enabled=true,merchant_approved=true,adapter_ready=true,capability_verified_at=now(),
+   capability_evidence_ref='cap-evidence-1',merchant_mode='test',sandbox_driver_id=ng_driver,sandbox_tenant_id=(current_setting('fixture.t_id'))::uuid
+  WHERE country_code='NG' AND currency_code='NGN' AND provider='flutterwave' AND merchant_account_ref='flw_merchant_ng';
  -- An NG errand (no purchase spend): completes on the verified flutterwave identity.
  INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
    payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
- VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+ VALUES (gen_random_uuid(),(current_setting('fixture.t_id'))::uuid,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),(current_setting('fixture.st_id'))::uuid,
    'paid','NG','NGN','in_progress',1000,
    jsonb_build_object('quote_id',gen_random_uuid(),'quote_expires_at',now()+interval '10 minutes','driver_settlement_method','transfer'),
    jsonb_build_object('calculationVersion','test-v1'),ng_driver,ng_driver) RETURNING id INTO j;
@@ -344,7 +403,7 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
    jsonb_build_object('total',1000,'payout',800,'platformFee',150,'commission',50,'commissionRate',15,
      'currency','ngn','amountMinor',80000,'destination','flw:'||acct::text,'country','NG',
      'payout_provider','flutterwave','payout_account_id',acct::text,'payout_merchant','flw_merchant_ng',
-     'payout_tenant','11111111-1111-4111-8111-111111111111'),
+     'payout_tenant',(current_setting('fixture.t_id'))::uuid),
    jsonb_build_object('completion_pin_verified_at',now()));
  INSERT INTO results VALUES (8,'NG completion queued on the flutterwave provider, not Stripe Connect',
    (SELECT q.terms->>'payout_provider' FROM public.job_payout_queue q WHERE q.job_id=j)='flutterwave'
@@ -353,7 +412,7 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
  -- A stripe-shaped destination with NG terms is refused (provider isolation).
  INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
    payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
- VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+ VALUES (gen_random_uuid(),(current_setting('fixture.t_id'))::uuid,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),(current_setting('fixture.st_id'))::uuid,
    'paid','NG','NGN','in_progress',1000,jsonb_build_object('quote_id',gen_random_uuid(),'driver_settlement_method','transfer'),'{}'::jsonb,ng_driver,ng_driver) RETURNING id INTO j;
  INSERT INTO public.errand_details(job_id,items_list,estimated_budget) VALUES (j,'[]',0);
  BEGIN PERFORM public.complete_job_with_pending_payout(j,ng_driver,
@@ -382,7 +441,7 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
  -- preference row still freezes 'transfer'.
  INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
    payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
- VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+ VALUES (gen_random_uuid(),(current_setting('fixture.t_id'))::uuid,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),(current_setting('fixture.st_id'))::uuid,
    'paid','NG','NGN','in_progress',1000,
    jsonb_build_object('quote_id',gen_random_uuid(),'driver_settlement_method','wallet'),
    '{}'::jsonb,ng_driver,ng_driver) RETURNING id INTO j;
@@ -391,7 +450,7 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
    jsonb_build_object('total',1000,'payout',800,'platformFee',150,'commission',50,'commissionRate',15,
      'currency','ngn','amountMinor',80000,'destination','flw:'||acct::text,'country','NG',
      'payout_provider','flutterwave','payout_account_id',acct::text,'payout_merchant','flw_merchant_ng',
-     'payout_tenant','11111111-1111-4111-8111-111111111111'),
+     'payout_tenant',(current_setting('fixture.t_id'))::uuid),
    jsonb_build_object('completion_pin_verified_at',now()));
  INSERT INTO results VALUES (9,'client metadata cannot select the wallet settlement mode',
    (SELECT s.method FROM public.job_settlement_methods s WHERE s.job_id=j)='transfer',
@@ -402,7 +461,7 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
  PERFORM public.set_driver_settlement_preference(ng_driver,'wallet');
  INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
    payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
- VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+ VALUES (gen_random_uuid(),(current_setting('fixture.t_id'))::uuid,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),(current_setting('fixture.st_id'))::uuid,
    'paid','NG','NGN','in_progress',1000,
    jsonb_build_object('quote_id',gen_random_uuid(),'quote_expires_at',now()+interval '10 minutes','driver_settlement_method','transfer'),
    jsonb_build_object('calculationVersion','test-v1'),ng_driver,ng_driver) RETURNING id INTO j;
@@ -411,7 +470,7 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
    jsonb_build_object('total',1000,'payout',800,'platformFee',150,'commission',50,'commissionRate',15,
      'currency','ngn','amountMinor',80000,'destination','flw:'||acct::text,'country','NG',
      'payout_provider','flutterwave','payout_account_id',acct::text,'payout_merchant','flw_merchant_ng',
-     'payout_tenant','11111111-1111-4111-8111-111111111111','settlement_mode','wallet'),
+     'payout_tenant',(current_setting('fixture.t_id'))::uuid,'settlement_mode','wallet'),
    jsonb_build_object('completion_pin_verified_at',now()));
  INSERT INTO results VALUES (9,'wallet method frozen on the entitlement record',
    (SELECT s.method FROM public.job_settlement_methods s WHERE s.job_id=j)='wallet'
@@ -423,14 +482,14 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
  v_ok:=public.finish_wallet_job_payout(j,q.token);
  INSERT INTO results VALUES (9,'wallet finish credits earnings_payable once',
    v_ok
-   AND public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN')=80000
+   AND public.driver_earnings_wallet_balance(ng_driver,(current_setting('fixture.t_id'))::uuid,'NGN')=80000
    AND (SELECT q2.transfer_id FROM public.job_payout_queue q2 WHERE q2.job_id=j)='wallet:'||j::text,
-   'finish='||v_ok||' balance='||public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN'));
+   'finish='||v_ok||' balance='||public.driver_earnings_wallet_balance(ng_driver,(current_setting('fixture.t_id'))::uuid,'NGN'));
  SELECT count(*) INTO ev_count FROM public.wallet_business_events WHERE event_key='driver-earnings:'||j::text;
  v_ok:=public.finish_wallet_job_payout(j,q.token);
  INSERT INTO results VALUES (9,'wallet finish replay does not credit twice',
    v_ok AND ev_count=1
-   AND public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN')=80000
+   AND public.driver_earnings_wallet_balance(ng_driver,(current_setting('fixture.t_id'))::uuid,'NGN')=80000
    AND (SELECT d.payout_provider FROM public.driver_earnings d WHERE d.job_id=j)='wallet',
    'events='||ev_count);
  -- Mutual exclusion: provider paths cannot touch a wallet-mode entitlement.
@@ -443,13 +502,13 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
  SELECT * INTO w FROM public.request_driver_withdrawal(ng_driver,30000);
  INSERT INTO results VALUES (9,'withdrawal reserves the spendable balance',
    w.status='processing' AND w.payout_account_id=acct
-   AND public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN')=50000,
-   'spendable='||public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN'));
+   AND public.driver_earnings_wallet_balance(ng_driver,(current_setting('fixture.t_id'))::uuid,'NGN')=50000,
+   'spendable='||public.driver_earnings_wallet_balance(ng_driver,(current_setting('fixture.t_id'))::uuid,'NGN'));
  -- Over-balance withdrawal is refused before any reservation.
  BEGIN PERFORM public.request_driver_withdrawal(ng_driver,999999); msg:='NO ERROR';
  EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
  INSERT INTO results VALUES (9,'over-balance withdrawal is refused',
-   msg LIKE '%exceeds the withdrawable%' AND public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN')=50000,msg);
+   msg LIKE '%exceeds the withdrawable%' AND public.driver_earnings_wallet_balance(ng_driver,(current_setting('fixture.t_id'))::uuid,'NGN')=50000,msg);
  -- Settle path: submission marker, then verified transfer moves held→paid_out.
  SELECT * INTO w FROM public.claim_driver_withdrawal(w.id);
  v_ok:=public.claim_withdrawal_submission(w.id,w.lease_token,w.reference);
@@ -457,7 +516,7 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
  INSERT INTO results VALUES (9,'withdrawal settles held funds on verified transfer',
    v_ok AND v_ok2
    AND (SELECT w2.status FROM public.driver_withdrawals w2 WHERE w2.id=w.id)='paid'
-   AND public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN')=50000,
+   AND public.driver_earnings_wallet_balance(ng_driver,(current_setting('fixture.t_id'))::uuid,'NGN')=50000,
    'claim='||v_ok||' finish='||v_ok2||' status='||(SELECT w2.status FROM public.driver_withdrawals w2 WHERE w2.id=w.id));
  -- A definitive provider failure reverses the reserve back to spendable.
  SELECT * INTO w FROM public.request_driver_withdrawal(ng_driver,10000);
@@ -466,23 +525,23 @@ DO $t$ DECLARE j uuid; ng_driver uuid:='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::u
  v_ok:=public.reverse_driver_withdrawal(w.id,w.lease_token,'provider_transfer_failed');
  INSERT INTO results VALUES (9,'failed transfer reverses the reservation',
    v_ok
-   AND public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN')=50000
+   AND public.driver_earnings_wallet_balance(ng_driver,(current_setting('fixture.t_id'))::uuid,'NGN')=50000
    AND (SELECT w2.status FROM public.driver_withdrawals w2 WHERE w2.id=w.id)='failed',
-   'reverse='||v_ok||' spendable='||public.driver_earnings_wallet_balance(ng_driver,'11111111-1111-4111-8111-111111111111','NGN'));
+   'reverse='||v_ok||' spendable='||public.driver_earnings_wallet_balance(ng_driver,(current_setting('fixture.t_id'))::uuid,'NGN'));
  -- A transfer-method entitlement cannot carry wallet terms (mode confusion).
  -- Policy is flipped back to transfer first — the guard derives the method
  -- from the preference row, so wallet terms now mismatch the frozen method.
  PERFORM public.set_driver_settlement_preference(ng_driver,'transfer');
  INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
    payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
- VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+ VALUES (gen_random_uuid(),(current_setting('fixture.t_id'))::uuid,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),(current_setting('fixture.st_id'))::uuid,
    'paid','NG','NGN','in_progress',1000,jsonb_build_object('quote_id',gen_random_uuid(),'driver_settlement_method','transfer'),'{}'::jsonb,ng_driver,ng_driver) RETURNING id INTO j;
  INSERT INTO public.errand_details(job_id,items_list,estimated_budget) VALUES (j,'[]',0);
  BEGIN PERFORM public.complete_job_with_pending_payout(j,ng_driver,
    jsonb_build_object('total',1000,'payout',800,'platformFee',150,'commission',50,'commissionRate',15,
      'currency','ngn','amountMinor',80000,'destination','flw:'||acct::text,'country','NG',
      'payout_provider','flutterwave','payout_account_id',acct::text,'payout_merchant','flw_merchant_ng',
-     'payout_tenant','11111111-1111-4111-8111-111111111111','settlement_mode','wallet'),
+     'payout_tenant',(current_setting('fixture.t_id'))::uuid,'settlement_mode','wallet'),
    jsonb_build_object('completion_pin_verified_at',now())); msg:='NO ERROR';
  EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
  INSERT INTO results VALUES (9,'transfer method refuses wallet terms',
@@ -502,13 +561,13 @@ DO $t$ DECLARE j uuid; w_driver uuid:='99999999-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uu
  -- can still earn into the wallet (earning != withdrawing).
  INSERT INTO auth.users(id) VALUES (w_driver);
  INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code,registration_activated_at)
-  VALUES (w_driver,'11111111-1111-4111-8111-111111111111','driver','NG','NG',now())
+  VALUES (w_driver,(current_setting('fixture.t_id'))::uuid,'driver','NG','NG',now())
   ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
     country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code,
     registration_activated_at=EXCLUDED.registration_activated_at;
  INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
    payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown,driver_id,accepted_driver_id)
- VALUES (gen_random_uuid(),'11111111-1111-4111-8111-111111111111','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+ VALUES (gen_random_uuid(),(current_setting('fixture.t_id'))::uuid,'eeeeeeee-cccc-4ccc-8ccc-cccccccccccc','a','b',now(),(current_setting('fixture.st_id'))::uuid,
    'paid','NG','NGN','in_progress',1000,
    jsonb_build_object('quote_id',gen_random_uuid(),'quote_expires_at',now()+interval '10 minutes','driver_settlement_method','wallet'),
    jsonb_build_object('calculationVersion','test-v1'),w_driver,w_driver) RETURNING id INTO j;
@@ -520,13 +579,13 @@ DO $t$ DECLARE j uuid; w_driver uuid:='99999999-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uu
  PERFORM public.complete_job_with_pending_payout(j,w_driver,
    jsonb_build_object('total',1000,'payout',800,'platformFee',150,'commission',50,'commissionRate',15,
      'currency','ngn','amountMinor',80000,'destination','wallet:'||j::text,'country','NG',
-     'payout_provider','flutterwave','payout_tenant','11111111-1111-4111-8111-111111111111','settlement_mode','wallet'),
+     'payout_provider','flutterwave','payout_tenant',(current_setting('fixture.t_id'))::uuid,'settlement_mode','wallet'),
    jsonb_build_object('completion_pin_verified_at',now()));
  SELECT * INTO q FROM public.claim_queued_job_payout(j);
  INSERT INTO results VALUES (10,'earning into the wallet needs no verified beneficiary account',
    public.finish_wallet_job_payout(j,q.token)
-   AND public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN')=80000,
-   'balance='||public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN'));
+   AND public.driver_earnings_wallet_balance(w_driver,(current_setting('fixture.t_id'))::uuid,'NGN')=80000,
+   'balance='||public.driver_earnings_wallet_balance(w_driver,(current_setting('fixture.t_id'))::uuid,'NGN'));
  -- Withdrawing is the action that requires the verified beneficiary.
  BEGIN PERFORM public.request_driver_withdrawal(w_driver,10000); msg:='NO ERROR';
  EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
@@ -535,23 +594,23 @@ DO $t$ DECLARE j uuid; w_driver uuid:='99999999-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uu
  -- Give the driver a verified beneficiary afterwards — withdrawal then works
  -- against the SAME wallet balance (no re-earning needed).
  INSERT INTO public.driver_payment_accounts(id,driver_id,tenant_id,country_code,currency_code,provider,merchant_account_ref,state,beneficiary_id,bank_code,last4,fingerprint)
-  VALUES (gen_random_uuid(),w_driver,'11111111-1111-4111-8111-111111111111','NG','NGN','flutterwave','flw_merchant_ng','completed',
+  VALUES (gen_random_uuid(),w_driver,(current_setting('fixture.t_id'))::uuid,'NG','NGN','flutterwave','flw_merchant_ng','completed',
     '123456','044','9999',repeat('c',64)) RETURNING id INTO acct;
  UPDATE public.driver_payout_markets SET sandbox_driver_id=w_driver WHERE country_code='NG' AND currency_code='NGN';
  SELECT * INTO w FROM public.request_driver_withdrawal(w_driver,20000);
  INSERT INTO results VALUES (10,'withdrawal works once the beneficiary is verified',
-   w.status='processing' AND public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN')=60000,
-   'spendable='||public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN'));
+   w.status='processing' AND public.driver_earnings_wallet_balance(w_driver,(current_setting('fixture.t_id'))::uuid,'NGN')=60000,
+   'spendable='||public.driver_earnings_wallet_balance(w_driver,(current_setting('fixture.t_id'))::uuid,'NGN'));
  -- Double-spend: a second request for MORE than the remaining balance fails
  -- before reserving (the reservation is serialized on the account row).
  BEGIN PERFORM public.request_driver_withdrawal(w_driver,80000); msg:='NO ERROR';
  EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
  INSERT INTO results VALUES (10,'a second withdrawal cannot exceed the remaining spendable balance',
-   msg LIKE '%exceeds the withdrawable%' AND public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN')=60000,msg);
+   msg LIKE '%exceeds the withdrawable%' AND public.driver_earnings_wallet_balance(w_driver,(current_setting('fixture.t_id'))::uuid,'NGN')=60000,msg);
  -- Tenant isolation: the balance exists only under this tenant.
  INSERT INTO results VALUES (10,'balances are tenant- and currency-scoped',
    public.driver_earnings_wallet_balance(w_driver,'22222222-2222-4222-8222-222222222222','NGN')=0
-   AND public.driver_earnings_wallet_balance('dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb','11111111-1111-4111-8111-111111111111','NGN')=50000,
+   AND public.driver_earnings_wallet_balance('dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb',(current_setting('fixture.t_id'))::uuid,'NGN')=50000,
    'other-tenant='||public.driver_earnings_wallet_balance(w_driver,'22222222-2222-4222-8222-222222222222','NGN'));
  -- Lease reclaim: an abandoned claim becomes claimable again after expiry
  -- without losing the reservation or minting a second row.
@@ -563,14 +622,14 @@ DO $t$ DECLARE j uuid; w_driver uuid:='99999999-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uu
  SELECT * INTO w FROM public.claim_driver_withdrawal(w.id);
  INSERT INTO results VALUES (10,'an expired lease is reclaimable and still holds the reserve',
    w.id IS NOT NULL AND w.status='processing'
-   AND public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN')=60000,'reclaimed');
+   AND public.driver_earnings_wallet_balance(w_driver,(current_setting('fixture.t_id'))::uuid,'NGN')=60000,'reclaimed');
  -- Uncertain transfer: submission marker lands, no provider outcome yet —
  -- the row stays reconcile-eligible and funds stay held (not spendable,
  -- not paid out).
  PERFORM public.claim_withdrawal_submission(w.id,w.lease_token,w.reference);
  INSERT INTO results VALUES (10,'an uncertain transfer keeps funds held, never spendable, never paid',
    EXISTS(SELECT 1 FROM public.driver_withdrawal_submissions WHERE withdrawal_id=w.id)
-   AND public.driver_earnings_wallet_balance(w_driver,'11111111-1111-4111-8111-111111111111','NGN')=60000
+   AND public.driver_earnings_wallet_balance(w_driver,(current_setting('fixture.t_id'))::uuid,'NGN')=60000
    AND (SELECT w2.status FROM public.driver_withdrawals w2 WHERE w2.id=w.id)='processing','held');
  -- Beneficiary freeze: the frozen withdrawal identity cannot be repointed at
  -- a different account (e.g. after the driver changes their bank).
@@ -580,14 +639,14 @@ DO $t$ DECLARE j uuid; w_driver uuid:='99999999-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uu
    msg LIKE '%Frozen withdrawal identity%',msg);
  -- Currency isolation: only NGN withdrawals are representable.
  BEGIN INSERT INTO public.driver_withdrawals(id,driver_id,tenant_id,currency_code,amount_minor,provider,payout_account_id,merchant_account_ref,reference,reserve_event_id)
-   VALUES(gen_random_uuid(),w_driver,'11111111-1111-4111-8111-111111111111','GBP',1000,'flutterwave',acct,'m','r',gen_random_uuid()); msg:='NO ERROR';
+   VALUES(gen_random_uuid(),w_driver,(current_setting('fixture.t_id'))::uuid,'GBP',1000,'flutterwave',acct,'m','r',gen_random_uuid()); msg:='NO ERROR';
  EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
  INSERT INTO results VALUES (10,'non-NGN withdrawals are rejected by the currency check',msg LIKE '%currency_code%',msg);
  -- Provider neutrality without invented capability: a paystack beneficiary is
  -- a valid account row, but no adapter can pay it — withdrawal is refused at
  -- request time, not after funds are held.
  INSERT INTO public.driver_payment_accounts(id,driver_id,tenant_id,country_code,currency_code,provider,merchant_account_ref,state,beneficiary_id,bank_code,last4,fingerprint,updated_at)
-  VALUES (gen_random_uuid(),w_driver,'11111111-1111-4111-8111-111111111111','NG','NGN','paystack','pstk_merchant','completed',
+  VALUES (gen_random_uuid(),w_driver,(current_setting('fixture.t_id'))::uuid,'NG','NGN','paystack','pstk_merchant','completed',
     'RCP_test','044','8888',repeat('d',64),now()+interval '1 minute');
  BEGIN PERFORM public.request_driver_withdrawal(w_driver,10000); msg:='NO ERROR';
  EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
@@ -608,35 +667,35 @@ DO $t$ DECLARE k_driver uuid:='99999999-dddd-4ddd-8ddd-dddddddddddd'::uuid;
    AND NOT public.payout_withdrawal_provider_supported('paystack') AND NOT public.payout_withdrawal_provider_supported('fincra'),'gate');
  -- A completed kora beneficiary is the verified 10-digit account itself.
  BEGIN INSERT INTO public.driver_payment_accounts(id,driver_id,tenant_id,country_code,currency_code,provider,merchant_account_ref,state,beneficiary_id,bank_code,last4,fingerprint)
-   VALUES (gen_random_uuid(),k_driver,'11111111-1111-4111-8111-111111111111','NG','NGN','kora','kora_merchant_ng','completed','123','044','0123',repeat('e',64)); msg:='NO ERROR';
+   VALUES (gen_random_uuid(),k_driver,(current_setting('fixture.t_id'))::uuid,'NG','NGN','kora','kora_merchant_ng','completed','123','044','0123',repeat('e',64)); msg:='NO ERROR';
  EXCEPTION WHEN OTHERS THEN msg:=SQLERRM; END;
  INSERT INTO results VALUES (11,'a malformed kora beneficiary identity is rejected by the completion check',msg LIKE '%completion_check%',msg);
  INSERT INTO auth.users(id) VALUES (k_driver);
  INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code,registration_activated_at)
-  VALUES (k_driver,'11111111-1111-4111-8111-111111111111','driver','NG','NG',now())
+  VALUES (k_driver,(current_setting('fixture.t_id'))::uuid,'driver','NG','NG',now())
   ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
     country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code,
     registration_activated_at=EXCLUDED.registration_activated_at;
  INSERT INTO public.driver_payment_accounts(id,driver_id,tenant_id,country_code,currency_code,provider,merchant_account_ref,state,beneficiary_id,bank_code,last4,fingerprint)
-  VALUES (gen_random_uuid(),k_driver,'11111111-1111-4111-8111-111111111111','NG','NGN','kora','kora_merchant_ng','completed',
+  VALUES (gen_random_uuid(),k_driver,(current_setting('fixture.t_id'))::uuid,'NG','NGN','kora','kora_merchant_ng','completed',
     '0123456789','044','6789',repeat('e',64));
  UPDATE public.driver_payout_markets SET provider='kora',merchant_account_ref='kora_merchant_ng',sandbox_driver_id=k_driver
   WHERE country_code='NG' AND currency_code='NGN';
  -- Fund the wallet directly through the shared ledger (earning path is proven
  -- in sections 9-10; this section isolates the provider swap).
- PERFORM public.post_wallet_event('kora-fund:'||k_driver::text,'driver_earnings_credit','11111111-1111-4111-8111-111111111111',k_driver,'NGN',
+ PERFORM public.post_wallet_event('kora-fund:'||k_driver::text,'driver_earnings_credit',(current_setting('fixture.t_id'))::uuid,k_driver,'NGN',
   jsonb_build_array(jsonb_build_object('accountPurpose','earnings_clearing','amountMinor',-30000),
                     jsonb_build_object('accountPurpose','earnings_payable','amountMinor',30000)));
  SELECT * INTO w FROM public.request_driver_withdrawal(k_driver,12000);
  INSERT INTO results VALUES (11,'a kora-bound withdrawal reserves held funds under the same gate',
    w.status='processing' AND w.provider='kora' AND w.merchant_account_ref='kora_merchant_ng'
-   AND public.driver_earnings_wallet_balance(k_driver,'11111111-1111-4111-8111-111111111111','NGN')=18000,
-   'provider='||w.provider||' spendable='||public.driver_earnings_wallet_balance(k_driver,'11111111-1111-4111-8111-111111111111','NGN'));
+   AND public.driver_earnings_wallet_balance(k_driver,(current_setting('fixture.t_id'))::uuid,'NGN')=18000,
+   'provider='||w.provider||' spendable='||public.driver_earnings_wallet_balance(k_driver,(current_setting('fixture.t_id'))::uuid,'NGN'));
  SELECT * INTO w FROM public.claim_driver_withdrawal(w.id);
  PERFORM public.claim_withdrawal_submission(w.id,w.lease_token,w.reference);
  INSERT INTO results VALUES (11,'an unverified kora transfer keeps the reserve held in reconcile state',
    (SELECT w2.status FROM public.driver_withdrawals w2 WHERE w2.id=w.id)='processing'
-   AND public.driver_earnings_wallet_balance(k_driver,'11111111-1111-4111-8111-111111111111','NGN')=18000,'held');
+   AND public.driver_earnings_wallet_balance(k_driver,(current_setting('fixture.t_id'))::uuid,'NGN')=18000,'held');
  -- Kora echoes our merchant reference — a numeric id, a different withdrawal's
  -- reference, or a fabricated KPY-style string can never settle this one.
  INSERT INTO results VALUES (11,'a numeric flutterwave-shaped id cannot settle a kora withdrawal',
@@ -650,7 +709,7 @@ DO $t$ DECLARE k_driver uuid:='99999999-dddd-4ddd-8ddd-dddddddddddd'::uuid;
    v_settled
    AND (SELECT w2.status='paid' AND w2.provider_transfer_id=w.reference AND w2.provider='kora'
         FROM public.driver_withdrawals w2 WHERE w2.id=w.id)
-   AND public.driver_earnings_wallet_balance(k_driver,'11111111-1111-4111-8111-111111111111','NGN')=18000
+   AND public.driver_earnings_wallet_balance(k_driver,(current_setting('fixture.t_id'))::uuid,'NGN')=18000
    AND EXISTS(SELECT 1 FROM public.driver_withdrawal_submissions WHERE withdrawal_id=w.id AND provider_transfer_id=w.reference),
    'settled='||v_settled||' ref='||(SELECT w2.provider_transfer_id FROM public.driver_withdrawals w2 WHERE w2.id=w.id));
 END $t$;
@@ -658,3 +717,44 @@ END $t$;
 SELECT n, name, CASE WHEN ok THEN 'PASS' ELSE 'FAIL' END AS result, left(detail,90) AS detail FROM results ORDER BY n, name;
 SELECT count(*) FILTER (WHERE NOT ok) AS failures, count(*) AS checks FROM results;
 ROLLBACK;
+-- Post-suite preservation proof (runs AFTER ROLLBACK, outside the fixture
+-- transaction): every fixture-reachable row, every trigger enabled-state and
+-- every table/function/schema ACL must equal the pre-suite capture. Any
+-- residual fixture write, disabled trigger or permission drift fails loudly.
+CREATE TEMP TABLE post_rows AS
+ SELECT 'market_availability' AS tbl, to_jsonb(t) AS row FROM public.market_availability t WHERE t.country_code IN ('GB','NG')
+ UNION ALL SELECT 'tenants', to_jsonb(t) FROM public.tenants t WHERE t.slug='t' OR t.id='11111111-1111-4111-8111-111111111111'::uuid
+ UNION ALL SELECT 'service_types', to_jsonb(t) FROM public.service_types t WHERE t.slug='errand' OR t.id='dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid
+ UNION ALL SELECT 'auth_users', to_jsonb(t) FROM auth.users t WHERE t.id IN
+   ('dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb','cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc')
+   OR t.id::text LIKE 'dddddddd-aaaa-4aaa-8aaa-%'
+ UNION ALL SELECT 'profiles', to_jsonb(t) FROM public.profiles t WHERE t.id IN
+   ('dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb','cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc')
+   OR t.id::text LIKE 'dddddddd-aaaa-4aaa-8aaa-%'
+ UNION ALL SELECT 'wallets', to_jsonb(t) FROM public.wallets t WHERE t.user_id IN
+   ('cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb','eeeeeeee-cccc-4ccc-8ccc-cccccccccccc')
+ UNION ALL SELECT 'driver_payment_accounts', to_jsonb(t) FROM public.driver_payment_accounts t WHERE t.driver_id='dddddddd-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+ UNION ALL SELECT 'driver_payout_markets', to_jsonb(t) FROM public.driver_payout_markets t
+   WHERE t.country_code='NG' AND t.currency_code='NGN' AND t.provider='flutterwave' AND t.merchant_account_ref='flw_merchant_ng';
+CREATE TEMP TABLE post_triggers AS
+ SELECT c.relname AS tbl, t.tgname, t.tgenabled FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE NOT t.tgisinternal;
+CREATE TEMP TABLE post_acl AS
+ SELECT n.nspname, c.relname, c.relacl FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','auth') AND c.relkind='r';
+CREATE TEMP TABLE post_facl AS
+ SELECT p.oid::regprocedure::text AS sig, p.proacl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN ('public','auth');
+CREATE TEMP TABLE post_nacl AS
+ SELECT nspname, nspacl FROM pg_namespace WHERE nspname IN ('public','auth');
+DO $post$ DECLARE d record; n bigint := 0; BEGIN
+ FOR d IN
+  SELECT 'fixture-reachable rows' AS part, count(*) AS diffs FROM ((TABLE pre_rows EXCEPT TABLE post_rows) UNION ALL (TABLE post_rows EXCEPT TABLE pre_rows)) x
+  UNION ALL SELECT 'trigger enabled-states', count(*) FROM ((TABLE pre_triggers EXCEPT TABLE post_triggers) UNION ALL (TABLE post_triggers EXCEPT TABLE pre_triggers)) x
+  UNION ALL SELECT 'table ACLs', count(*) FROM ((TABLE pre_acl EXCEPT TABLE post_acl) UNION ALL (TABLE post_acl EXCEPT TABLE pre_acl)) x
+  UNION ALL SELECT 'function ACLs', count(*) FROM ((TABLE pre_facl EXCEPT TABLE post_facl) UNION ALL (TABLE post_facl EXCEPT TABLE pre_facl)) x
+  UNION ALL SELECT 'schema ACLs', count(*) FROM ((TABLE pre_nacl EXCEPT TABLE post_nacl) UNION ALL (TABLE post_nacl EXCEPT TABLE pre_nacl)) x
+ LOOP
+  IF d.diffs > 0 THEN RAISE WARNING 'post-suite preservation diff in %: %', d.part, d.diffs; END IF;
+  n := n + d.diffs;
+ END LOOP;
+ IF n > 0 THEN RAISE EXCEPTION 'POST-SUITE PRESERVATION FAILED: % differences', n; END IF;
+ RAISE NOTICE 'POST-SUITE PRESERVATION PASSED';
+END $post$;

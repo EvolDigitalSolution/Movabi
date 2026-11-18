@@ -14,39 +14,110 @@
 --
 -- Everything runs in one transaction and ROLLS BACK.
 \set ON_ERROR_STOP on
+-- Disposable-DB fixture isolation: capture every row the fixture section can
+-- touch, every trigger state and every table/function/schema ACL BEFORE the
+-- transaction so the post-suite check can prove the restored backup is
+-- byte-identical afterwards. TEMP tables outlive the ROLLBACK below.
+CREATE TEMP TABLE pre_rows AS
+ SELECT 'market_availability' AS tbl, to_jsonb(t) AS row FROM public.market_availability t WHERE t.country_code IN ('GB','NG')
+ UNION ALL SELECT 'tenants', to_jsonb(t) FROM public.tenants t WHERE t.slug='t' OR t.id='11111111-1111-4111-8111-111111111111'::uuid
+ UNION ALL SELECT 'service_types', to_jsonb(t) FROM public.service_types t WHERE t.slug='errand' OR t.id='dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid
+ UNION ALL SELECT 'auth_users', to_jsonb(t) FROM auth.users t WHERE t.id IN
+   ('dddddddd-aaaa-4aaa-8aaa-000000000009','ffffffff-dddd-4ddd-8ddd-dddddddddddd','aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee')
+ UNION ALL SELECT 'profiles', to_jsonb(t) FROM public.profiles t WHERE t.id IN
+   ('dddddddd-aaaa-4aaa-8aaa-000000000009','ffffffff-dddd-4ddd-8ddd-dddddddddddd','aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee')
+ UNION ALL SELECT 'wallets', to_jsonb(t) FROM public.wallets t WHERE t.user_id IN
+   ('dddddddd-aaaa-4aaa-8aaa-000000000009','ffffffff-dddd-4ddd-8ddd-dddddddddddd','aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee')
+ UNION ALL SELECT 'market_payment_routes', to_jsonb(t) FROM public.market_payment_routes t
+   WHERE t.country_code='GB' AND t.currency_code='GBP' AND t.method='card'
+ UNION ALL SELECT 'wallet_topup_fee_schedules', to_jsonb(t) FROM public.wallet_topup_fee_schedules t WHERE t.version='vaydu-customer-card-0fee-test-v1'
+ UNION ALL SELECT 'wallet_topup_fee_policies', to_jsonb(t) FROM public.wallet_topup_fee_policies t WHERE t.version='vaydu-customer-card-0fee-test-v1'
+ UNION ALL SELECT 'wallet_collection_config', to_jsonb(t) FROM public.wallet_collection_config t WHERE t.key IN ('enabled','max_amount_minor_GBP');
+CREATE TEMP TABLE pre_triggers AS
+ SELECT c.relname AS tbl, t.tgname, t.tgenabled FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE NOT t.tgisinternal;
+CREATE TEMP TABLE pre_acl AS
+ SELECT n.nspname, c.relname, c.relacl FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','auth') AND c.relkind='r';
+CREATE TEMP TABLE pre_facl AS
+ SELECT p.oid::regprocedure::text AS sig, p.proacl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN ('public','auth');
+CREATE TEMP TABLE pre_nacl AS
+ SELECT nspname, nspacl FROM pg_namespace WHERE nspname IN ('public','auth');
 BEGIN;
 -- Fixture-only trigger bypass (disposable DB, never production): same keep-list as
 -- realdb-errand-purchase-payer-test.sql — payment-integrity and the data-only
 -- completion/price/reward triggers stay ENABLED; auth-context triggers are disabled.
-DO $d$ DECLARE t text; BEGIN
+DO $d$ DECLARE t text; tbl text; BEGIN
  FOR t IN SELECT tgname FROM pg_trigger tr JOIN pg_class c ON c.oid=tr.tgrelid WHERE c.relname='jobs' AND NOT tgisinternal
    AND tgname NOT IN ('trg_enforce_job_payment_eligibility','enforce_ride_cash_credit_v1e',
      'tr_check_errand_completion_guard','reward_credit_reserve','trg_sync_job_prices','tr_update_jobs_updated_at')
- LOOP EXECUTE format('ALTER TABLE public.jobs DISABLE TRIGGER %I', t); END LOOP; END $d$;
+ LOOP EXECUTE format('ALTER TABLE public.jobs DISABLE TRIGGER %I', t); END LOOP;
+ -- Fixture-write guards on config/market tables (immutability, approval checks)
+ -- are bypassed only so adopt-or-update fixtures can prepare pre-existing rows;
+ -- every enabled-state is restored by the ROLLBACK and proven below.
+ FOR t, tbl IN SELECT tgname, c.relname FROM pg_trigger tr JOIN pg_class c ON c.oid=tr.tgrelid
+   WHERE c.relname IN ('market_availability','market_payment_routes','wallet_topup_fee_schedules','wallet_topup_fee_policies','wallet_collection_config','tenants','service_types')
+   AND NOT tgisinternal
+ LOOP EXECUTE format('ALTER TABLE public.%I DISABLE TRIGGER %I', tbl, t); END LOOP; END $d$;
 
-INSERT INTO public.tenants(id,name,slug) VALUES ('11111111-1111-4111-8111-111111111111','t','t');
-INSERT INTO public.market_availability(country_code,launch_status,supported_currency) VALUES ('GB','live','GBP');
-INSERT INTO public.service_types(id,slug,name) VALUES ('dddddddd-dddd-4ddd-8ddd-dddddddddd02','errand','Errand');
+-- Adopt-or-insert fixtures (disposable DB only): a pre-existing real row is
+-- reused/updated to the required state INSIDE this transaction and restored by
+-- ROLLBACK; a missing row is inserted under the fixture identity. Slug occupied
+-- by a different id is a loud error, never a suppressed skip.
+INSERT INTO public.tenants(id,name,slug)
+ SELECT '11111111-1111-4111-8111-111111111111'::uuid,'t','t'
+ WHERE NOT EXISTS (SELECT 1 FROM public.tenants WHERE slug='t' OR id='11111111-1111-4111-8111-111111111111'::uuid);
+DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.tenants WHERE slug='t')
+ THEN RAISE EXCEPTION 'fixture isolation failed: tenants slug ''t'' occupied by another id'; END IF; END $$;
+SELECT set_config('fixture.t_id',(SELECT id::text FROM public.tenants WHERE slug='t'),false) AS t_id;
+INSERT INTO public.market_availability(country_code,launch_status,supported_currency)
+ SELECT 'GB','live','GBP' WHERE NOT EXISTS (SELECT 1 FROM public.market_availability WHERE country_code='GB');
+UPDATE public.market_availability SET launch_status='live', supported_currency='GBP' WHERE country_code='GB';
+INSERT INTO public.service_types(id,slug,name)
+ SELECT 'dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid,'errand','Errand'
+ WHERE NOT EXISTS (SELECT 1 FROM public.service_types WHERE slug='errand' OR id='dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid);
+DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.service_types WHERE slug='errand')
+ THEN RAISE EXCEPTION 'fixture isolation failed: service_types slug ''errand'' occupied by another id'; END IF; END $$;
+SELECT set_config('fixture.st_id',(SELECT id::text FROM public.service_types WHERE slug='errand'),false) AS st_id;
 INSERT INTO auth.users(id) VALUES ('dddddddd-aaaa-4aaa-8aaa-000000000009'),
- ('ffffffff-dddd-4ddd-8ddd-dddddddddddd'),('aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee');
+ ('ffffffff-dddd-4ddd-8ddd-dddddddddddd'),('aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee')
+ ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_country_code) VALUES
- ('dddddddd-aaaa-4aaa-8aaa-000000000009','11111111-1111-4111-8111-111111111111','driver','GB','GB'),
- ('ffffffff-dddd-4ddd-8ddd-dddddddddddd','11111111-1111-4111-8111-111111111111','customer','GB','GB'),
- ('aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee','11111111-1111-4111-8111-111111111111','driver','GB','GB')
+ ('dddddddd-aaaa-4aaa-8aaa-000000000009',(current_setting('fixture.t_id'))::uuid,'driver','GB','GB'),
+ ('ffffffff-dddd-4ddd-8ddd-dddddddddddd',(current_setting('fixture.t_id'))::uuid,'customer','GB','GB'),
+ ('aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee',(current_setting('fixture.t_id'))::uuid,'driver','GB','GB')
  ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,role=EXCLUDED.role,
    country_code=EXCLUDED.country_code,registration_country_code=EXCLUDED.registration_country_code;
 
 -- Collection plumbing: exactly one eligible GB/GBP card collect route on the
 -- platform Stripe merchant, an approved zero-fee schedule, kill switches on.
+-- Any other GB/GBP card route is neutralised INSIDE this transaction so the
+-- fixture stays the exactly-one eligible collect route (restored on rollback).
+UPDATE public.market_payment_routes SET preferred=false, enabled=false
+ WHERE country_code='GB' AND currency_code='GBP' AND method='card'
+   AND NOT (provider='stripe' AND merchant_account_ref='acct_vaydu_platform_gb');
 INSERT INTO public.market_payment_routes(country_code,currency_code,method,provider,merchant_account_ref,preferred,enabled,merchant_approved,adapter_ready,capabilities,provider_account_id)
- VALUES ('GB','GBP','card','stripe','acct_vaydu_platform_gb',true,true,true,true,ARRAY['collect'],'acct_vaydu_gb_test');
+ SELECT 'GB','GBP','card','stripe','acct_vaydu_platform_gb',true,true,true,true,ARRAY['collect'],'acct_vaydu_gb_test'
+ WHERE NOT EXISTS(SELECT 1 FROM public.market_payment_routes WHERE country_code='GB' AND currency_code='GBP' AND method='card'
+   AND provider='stripe' AND merchant_account_ref='acct_vaydu_platform_gb');
+UPDATE public.market_payment_routes SET preferred=true,enabled=true,merchant_approved=true,adapter_ready=true,
+  capabilities=ARRAY['collect'],provider_account_id='acct_vaydu_gb_test'
+ WHERE country_code='GB' AND currency_code='GBP' AND method='card' AND provider='stripe' AND merchant_account_ref='acct_vaydu_platform_gb';
 INSERT INTO public.wallet_topup_fee_schedules(version,provider,country_code,currency_code,method,exponent,fee_basis,fee_basis_points,fee_fixed_minor,rounding,approved_by,approved_at,active)
- VALUES ('vaydu-customer-card-0fee-test-v1','stripe','GB','GBP','card',2,'wallet',0,0,'half_up','rehearsal',now(),true);
+ SELECT 'vaydu-customer-card-0fee-test-v1','stripe','GB','GBP','card',2,'wallet',0,0,'half_up','rehearsal',now(),true
+ WHERE NOT EXISTS(SELECT 1 FROM public.wallet_topup_fee_schedules WHERE version='vaydu-customer-card-0fee-test-v1');
+UPDATE public.wallet_topup_fee_schedules SET provider='stripe',country_code='GB',currency_code='GBP',method='card',exponent=2,
+  fee_basis='wallet',fee_basis_points=0,fee_fixed_minor=0,rounding='half_up',approved_by='rehearsal',approved_at=now(),active=true
+ WHERE version='vaydu-customer-card-0fee-test-v1';
 -- The batch-2b freeze reads wallet_topup_fee_policies (post-202612541 schema); the older
 -- schedules table is kept above so this fixture works against either function version.
 INSERT INTO public.wallet_topup_fee_policies(version,provider,country_code,currency_code,method,fee_basis_points,fee_fixed_minor,exponent,active)
- VALUES ('vaydu-customer-card-0fee-test-v1','stripe','GB','GBP','card',0,1,2,true);
-INSERT INTO public.wallet_collection_config(key,value) VALUES ('enabled','true'),('max_amount_minor_GBP','1000000');
+ SELECT 'vaydu-customer-card-0fee-test-v1','stripe','GB','GBP','card',0,1,2,true
+ WHERE NOT EXISTS(SELECT 1 FROM public.wallet_topup_fee_policies WHERE version='vaydu-customer-card-0fee-test-v1');
+UPDATE public.wallet_topup_fee_policies SET provider='stripe',country_code='GB',currency_code='GBP',method='card',
+  fee_basis_points=0,fee_fixed_minor=1,exponent=2,active=true WHERE version='vaydu-customer-card-0fee-test-v1';
+UPDATE public.wallet_collection_config SET value='true' WHERE key='enabled';
+INSERT INTO public.wallet_collection_config(key,value) SELECT 'enabled','true' WHERE NOT EXISTS(SELECT 1 FROM public.wallet_collection_config WHERE key='enabled');
+UPDATE public.wallet_collection_config SET value='1000000' WHERE key='max_amount_minor_GBP';
+INSERT INTO public.wallet_collection_config(key,value) SELECT 'max_amount_minor_GBP','1000000' WHERE NOT EXISTS(SELECT 1 FROM public.wallet_collection_config WHERE key='max_amount_minor_GBP');
 
 CREATE TEMP TABLE results(n int, name text, ok boolean, detail text);
 
@@ -54,7 +125,7 @@ CREATE FUNCTION pg_temp.errand_job(fare numeric, estimate numeric, funded numeri
 RETURNS uuid LANGUAGE plpgsql AS $f$ DECLARE id uuid:=gen_random_uuid(); BEGIN
  INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,service_type_id,
    payment_status,country_code,currency_code,status,total_price,metadata,fare_breakdown)
- VALUES (id,'11111111-1111-4111-8111-111111111111',customer,'a','b',now(),'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+ VALUES (id,(current_setting('fixture.t_id'))::uuid,customer,'a','b',now(),(current_setting('fixture.st_id'))::uuid,
    'pending','GB','GBP','requested',fare,
    jsonb_build_object('quote_id',gen_random_uuid(),'quote_expires_at',now()+interval '10 minutes'),
    jsonb_build_object('calculationVersion','test-v1'));
@@ -79,7 +150,7 @@ CREATE FUNCTION pg_temp.job_terms() RETURNS jsonb LANGUAGE sql AS $f$ SELECT jso
 DO $t$ DECLARE a uuid; ev uuid; ev2 uuid; ok boolean; BEGIN
  -- A customer_credit collection for a customer with NO wallet row yet.
  a:=public.initiate_wallet_topup('customer-topup:ffffffff-dddd-4ddd-8ddd-dddddddddddd:idem-1',
-   '11111111-1111-4111-8111-111111111111','ffffffff-dddd-4ddd-8ddd-dddddddddddd',
+   (current_setting('fixture.t_id'))::uuid,'ffffffff-dddd-4ddd-8ddd-dddddddddddd',
    'GB','GBP',30000,'customer_credit','stripe','acct_vaydu_platform_gb','idem-1');
  PERFORM public.freeze_wallet_topup_fee(a,'vaydu-customer-card-0fee-test-v1');
  ok:=public.claim_wallet_topup_submission(a);
@@ -137,7 +208,7 @@ DO $t$ DECLARE a uuid; a2 uuid; BEGIN
  UPDATE public.market_payment_routes SET provider_account_id=NULL
   WHERE country_code='GB' AND method='card';
  a:=public.initiate_wallet_topup('customer-topup:ffffffff-dddd-4ddd-8ddd-dddddddddddd:idem-missing',
-   '11111111-1111-4111-8111-111111111111','ffffffff-dddd-4ddd-8ddd-dddddddddddd',
+   (current_setting('fixture.t_id'))::uuid,'ffffffff-dddd-4ddd-8ddd-dddddddddddd',
    'GB','GBP',30000,'customer_credit','stripe','acct_vaydu_platform_gb','idem-missing');
  BEGIN
   PERFORM public.freeze_wallet_topup_fee(a,'vaydu-customer-card-0fee-test-v1');
@@ -150,7 +221,7 @@ DO $t$ DECLARE a uuid; a2 uuid; BEGIN
  UPDATE public.market_payment_routes SET provider_account_id='acct_vaydu_gb_test'
   WHERE country_code='GB' AND method='card';
  a2:=public.initiate_wallet_topup('customer-topup:ffffffff-dddd-4ddd-8ddd-dddddddddddd:idem-missing',
-   '11111111-1111-4111-8111-111111111111','ffffffff-dddd-4ddd-8ddd-dddddddddddd',
+   (current_setting('fixture.t_id'))::uuid,'ffffffff-dddd-4ddd-8ddd-dddddddddddd',
    'GB','GBP',30000,'customer_credit','stripe','acct_vaydu_platform_gb','idem-missing');
  PERFORM public.freeze_wallet_topup_fee(a2,'vaydu-customer-card-0fee-test-v1');
  INSERT INTO results VALUES (1,'a retried checkout reuses the attempt and binds the approved account',
@@ -169,7 +240,7 @@ END $t$;
 -- =========================================================================
 DO $t$ DECLARE j uuid; q public.job_payout_queue; tok uuid; ok boolean; spend text; BEGIN
  j:=pg_temp.errand_job(10,30,30,'ffffffff-dddd-4ddd-8ddd-dddddddddddd');
- PERFORM public.pay_job_from_wallet(j,'ffffffff-dddd-4ddd-8ddd-dddddddddddd',40,'GBP','11111111-1111-4111-8111-111111111111');
+ PERFORM public.pay_job_from_wallet(j,'ffffffff-dddd-4ddd-8ddd-dddddddddddd',40,'GBP',(current_setting('fixture.t_id'))::uuid);
  INSERT INTO results VALUES (2,'the collected balance reserves fare + budget (40.00)',
    pg_temp.wbal('ffffffff-dddd-4ddd-8ddd-dddddddddddd')='260.00/40.00',
    pg_temp.wbal('ffffffff-dddd-4ddd-8ddd-dddddddddddd'));
@@ -206,10 +277,10 @@ END $t$;
 -- =========================================================================
 DO $t$ DECLARE a uuid; ev uuid; BEGIN
  a:=public.initiate_wallet_topup('driver-cash-topup-test:aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee:idem-1',
-   '11111111-1111-4111-8111-111111111111','aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee',
+   (current_setting('fixture.t_id'))::uuid,'aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee',
    'GB','GBP',5000,'driver_cash_credit','stripe','acct_vaydu_platform_gb','idem-2');
  PERFORM public.record_wallet_topup_provider_reference(a,'pi_drv_1');
- ev:=public.post_wallet_event('driver-cash-test:'||a::text,'topup','11111111-1111-4111-8111-111111111111',
+ ev:=public.post_wallet_event('driver-cash-test:'||a::text,'topup',(current_setting('fixture.t_id'))::uuid,
    'aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee','GBP',
    jsonb_build_array(jsonb_build_object('accountPurpose','driver_cash_credit','amountMinor',5000),
      jsonb_build_object('accountPurpose','platform_funding','amountMinor',-5000)),
@@ -226,3 +297,44 @@ END $t$;
 SELECT n, name, CASE WHEN ok THEN 'PASS' ELSE 'FAIL' END AS result, left(detail,90) AS detail FROM results ORDER BY n, name;
 SELECT count(*) FILTER (WHERE NOT ok) AS failures, count(*) AS checks FROM results;
 ROLLBACK;
+-- Post-suite preservation proof (runs AFTER ROLLBACK, outside the fixture
+-- transaction): every fixture-reachable row, every trigger enabled-state and
+-- every table/function/schema ACL must equal the pre-suite capture. Any
+-- residual fixture write, disabled trigger or permission drift fails loudly.
+CREATE TEMP TABLE post_rows AS
+ SELECT 'market_availability' AS tbl, to_jsonb(t) AS row FROM public.market_availability t WHERE t.country_code IN ('GB','NG')
+ UNION ALL SELECT 'tenants', to_jsonb(t) FROM public.tenants t WHERE t.slug='t' OR t.id='11111111-1111-4111-8111-111111111111'::uuid
+ UNION ALL SELECT 'service_types', to_jsonb(t) FROM public.service_types t WHERE t.slug='errand' OR t.id='dddddddd-dddd-4ddd-8ddd-dddddddddd02'::uuid
+ UNION ALL SELECT 'auth_users', to_jsonb(t) FROM auth.users t WHERE t.id IN
+   ('dddddddd-aaaa-4aaa-8aaa-000000000009','ffffffff-dddd-4ddd-8ddd-dddddddddddd','aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee')
+ UNION ALL SELECT 'profiles', to_jsonb(t) FROM public.profiles t WHERE t.id IN
+   ('dddddddd-aaaa-4aaa-8aaa-000000000009','ffffffff-dddd-4ddd-8ddd-dddddddddddd','aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee')
+ UNION ALL SELECT 'wallets', to_jsonb(t) FROM public.wallets t WHERE t.user_id IN
+   ('dddddddd-aaaa-4aaa-8aaa-000000000009','ffffffff-dddd-4ddd-8ddd-dddddddddddd','aaaaaaaa-eeee-4eee-8eee-eeeeeeeeeeee')
+ UNION ALL SELECT 'market_payment_routes', to_jsonb(t) FROM public.market_payment_routes t
+   WHERE t.country_code='GB' AND t.currency_code='GBP' AND t.method='card'
+ UNION ALL SELECT 'wallet_topup_fee_schedules', to_jsonb(t) FROM public.wallet_topup_fee_schedules t WHERE t.version='vaydu-customer-card-0fee-test-v1'
+ UNION ALL SELECT 'wallet_topup_fee_policies', to_jsonb(t) FROM public.wallet_topup_fee_policies t WHERE t.version='vaydu-customer-card-0fee-test-v1'
+ UNION ALL SELECT 'wallet_collection_config', to_jsonb(t) FROM public.wallet_collection_config t WHERE t.key IN ('enabled','max_amount_minor_GBP');
+CREATE TEMP TABLE post_triggers AS
+ SELECT c.relname AS tbl, t.tgname, t.tgenabled FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE NOT t.tgisinternal;
+CREATE TEMP TABLE post_acl AS
+ SELECT n.nspname, c.relname, c.relacl FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','auth') AND c.relkind='r';
+CREATE TEMP TABLE post_facl AS
+ SELECT p.oid::regprocedure::text AS sig, p.proacl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN ('public','auth');
+CREATE TEMP TABLE post_nacl AS
+ SELECT nspname, nspacl FROM pg_namespace WHERE nspname IN ('public','auth');
+DO $post$ DECLARE d record; n bigint := 0; BEGIN
+ FOR d IN
+  SELECT 'fixture-reachable rows' AS part, count(*) AS diffs FROM ((TABLE pre_rows EXCEPT TABLE post_rows) UNION ALL (TABLE post_rows EXCEPT TABLE pre_rows)) x
+  UNION ALL SELECT 'trigger enabled-states', count(*) FROM ((TABLE pre_triggers EXCEPT TABLE post_triggers) UNION ALL (TABLE post_triggers EXCEPT TABLE pre_triggers)) x
+  UNION ALL SELECT 'table ACLs', count(*) FROM ((TABLE pre_acl EXCEPT TABLE post_acl) UNION ALL (TABLE post_acl EXCEPT TABLE pre_acl)) x
+  UNION ALL SELECT 'function ACLs', count(*) FROM ((TABLE pre_facl EXCEPT TABLE post_facl) UNION ALL (TABLE post_facl EXCEPT TABLE pre_facl)) x
+  UNION ALL SELECT 'schema ACLs', count(*) FROM ((TABLE pre_nacl EXCEPT TABLE post_nacl) UNION ALL (TABLE post_nacl EXCEPT TABLE pre_nacl)) x
+ LOOP
+  IF d.diffs > 0 THEN RAISE WARNING 'post-suite preservation diff in %: %', d.part, d.diffs; END IF;
+  n := n + d.diffs;
+ END LOOP;
+ IF n > 0 THEN RAISE EXCEPTION 'POST-SUITE PRESERVATION FAILED: % differences', n; END IF;
+ RAISE NOTICE 'POST-SUITE PRESERVATION PASSED';
+END $post$;
